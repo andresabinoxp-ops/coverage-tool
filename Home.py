@@ -14,70 +14,27 @@ if "last_market" not in st.session_state:
 if "market_config" not in st.session_state:
     st.session_state.market_config = None
 
-st.markdown("""
-<style>
-div.stButton > button {
-    width: 100%;
-    height: 100px;
-    font-size: 15px;
-    font-weight: 600;
-    border-radius: 10px;
-    border: 2px solid rgba(255,255,255,0.15);
-    background: rgba(255,255,255,0.05);
-    color: inherit;
-    cursor: pointer;
-    transition: all 0.2s;
-    white-space: pre-line;
-}
-div.stButton > button:hover {
-    border-color: #00e5a0;
-    background: rgba(0,229,160,0.1);
-    color: #00e5a0;
-}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("Coverage Tool")
 st.subheader("FMCG Store Coverage Playbook Agent")
+
 st.markdown("""
 An end-to-end agent that geocodes your stores, scrapes the full universe via Google Places,
 scores every outlet, identifies gaps, assigns visit frequencies and allocates rep routes.
 """)
-st.markdown("---")
-st.markdown("### Click a page to get started")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    if st.button("Admin Settings\nAPI keys & config", key="nav_admin"):
-        st.switch_page("pages/1_Admin_Settings.py")
-
-with col2:
-    if st.button("Configure\nMarket & weights", key="nav_configure"):
-        st.switch_page("pages/2_Configure.py")
-
-with col3:
-    if st.button("Run Pipeline\nUpload & execute", key="nav_pipeline"):
-        st.switch_page("pages/3_Run_Pipeline.py")
-
-with col4:
-    if st.button("Results\nScores & gaps", key="nav_results"):
-        st.switch_page("pages/4_Results.py")
-
-with col5:
-    if st.button("Routes\nRep route map", key="nav_routes"):
-        st.switch_page("pages/5_Routes.py")
 
 st.markdown("---")
 st.markdown("### How to use")
 
 c1, c2, c3 = st.columns(3)
 with c1:
-    st.info("**Step 1 - First time only**\n\nAdmin Settings - add your Google Maps API key into Streamlit Secrets.")
+    st.info("**Step 1 - First time only**\n\nOpen Admin Settings from the sidebar and add your Google Maps API key.")
 with c2:
-    st.info("**Step 2 - Each market**\n\nConfigure - set bounding box, weights, thresholds - then Save.")
+    st.info("**Step 2 - Each market**\n\nOpen Configure from the sidebar. Set bounding box, weights and thresholds. Save.")
 with c3:
-    st.info("**Step 3 - Run and explore**\n\nRun Pipeline - upload CSV - Run Agent - view Results and Routes.")
+    st.info("**Step 3 - Run and explore**\n\nOpen Run Pipeline. Upload your CSV and click Run Agent. Then view Results and Routes.")
+
+st.markdown("---")
+st.info("👈 Use the sidebar on the left to navigate between pages.")
 
 st.markdown("---")
 col_a, col_b = st.columns(2)
@@ -87,7 +44,7 @@ with col_a:
         mkt = st.session_state["market_config"].get("market_name", "Unknown")
         st.success(f"Market configured: {mkt}")
     else:
-        st.warning("No market configured yet - go to Configure")
+        st.warning("No market configured yet - open Configure in the sidebar")
 
 with col_b:
     if st.session_state.get("run_results"):
@@ -95,6 +52,4 @@ with col_b:
         n = len(st.session_state["run_results"].get("all_stores", []))
         st.success(f"Results ready: {mkt} - {n} stores scored")
     else:
-        st.warning("No results yet - go to Run Pipeline")
-
-st.caption("Tip: use the sidebar on the left to navigate between pages at any time.")
+        st.warning("No results yet - open Run Pipeline in the sidebar")
