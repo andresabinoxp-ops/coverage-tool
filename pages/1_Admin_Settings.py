@@ -48,3 +48,21 @@ st.markdown("""
 2. Find your app and click the three dots menu
 3. Click Settings then Secrets
 4. Paste this and fill in your values:
+5. Click Save — app restarts automatically.
+""")
+
+st.markdown("---")
+st.subheader("How to get a Google Maps API key")
+st.markdown("""
+1. Go to console.cloud.google.com
+2. Create a new project called Coverage Tool
+3. Go to APIs and Services then Library
+4. Enable Geocoding API and Places API
+5. Go to Credentials then Create Credentials then API Key
+6. Copy the key and paste into Streamlit Secrets as GOOGLE_MAPS_API_KEY
+""")
+
+st.markdown("---")
+if st.button("Log out"):
+    st.session_state["admin_authenticated"] = False
+    st.rerun()
