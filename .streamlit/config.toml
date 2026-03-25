@@ -10,21 +10,3 @@ maxUploadSize = 50
 
 [browser]
 gatherUsageStats = false
-```
-
-**Step 3 — Reboot the app**
-
-Go to Streamlit Cloud → your app → **Manage app** (bottom right) → **Reboot app**
-
-After that your structure should be:
-```
-pages/
-  1_Admin_Settings.py
-  2_Configure.py
-  3_Run_Pipeline.py
-  4_Results.py
-  5_Routes.py
-Home.py
-requirements.txt
-.streamlit/
-  config.toml
