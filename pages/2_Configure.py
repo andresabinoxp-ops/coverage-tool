@@ -3,7 +3,27 @@ import pandas as pd
 import requests
 
 st.set_page_config(page_title="Configure - Coverage Tool", page_icon="⚙️", layout="wide")
-st.title("Configure Market")
+
+# ── CSS ───────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stSidebar"] { background-color: #1B4F9B; }
+[data-testid="stSidebar"] * { color: #FFFFFF !important; }
+.page-header { background: linear-gradient(135deg, #1B4F9B 0%, #2563C0 100%); padding: 28px 36px; border-radius: 12px; margin-bottom: 28px; }
+.page-header h1 { color: white !important; font-size: 1.8rem !important; font-weight: 700 !important; margin: 0 0 4px 0 !important; }
+.page-header p  { color: rgba(255,255,255,0.85) !important; font-size: 0.95rem !important; margin: 0 !important; }
+hr { border: none; border-top: 1px solid #E2E8F0; margin: 20px 0; }
+div.stButton > button { border-radius: 6px; font-weight: 600; border: 2px solid #1B4F9B; background: #1B4F9B; color: white; padding: 8px 24px; }
+div.stButton > button:hover { background: #2563C0; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="page-header">
+    <h1>⚙️ Configure Market</h1>
+    <p>Set up market location, scoring weights and pipeline parameters</p>
+</div>
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GOOGLE GEOCODING HELPERS
@@ -17,6 +37,7 @@ def get_api_key():
         return None
 
 def geocode_lookup(query, api_key):
+    """Returns list of results from Google Geocoding API for a query."""
     try:
         r = requests.get(
             "https://maps.googleapis.com/maps/api/geocode/json",
@@ -31,11 +52,18 @@ def geocode_lookup(query, api_key):
     return []
 
 def extract_bbox(result):
+    """Extract bounding box from a geocoding result."""
     vp = result.get("geometry", {}).get("viewport", {})
     sw = vp.get("southwest", {})
     ne = vp.get("northeast", {})
     if sw and ne:
-        return (round(sw["lat"],4), round(ne["lat"],4), round(sw["lng"],4), round(ne["lng"],4))
+        return (
+            round(sw["lat"], 4),
+            round(ne["lat"], 4),
+            round(sw["lng"], 4),
+            round(ne["lng"], 4),
+        )
+    # fallback to location point with small buffer
     loc = result.get("geometry", {}).get("location", {})
     if loc:
         lat, lng = loc["lat"], loc["lng"]
@@ -43,18 +71,29 @@ def extract_bbox(result):
     return None
 
 def extract_component(result, component_type):
+    """Extract a specific address component from a geocoding result."""
     for comp in result.get("address_components", []):
         if component_type in comp.get("types", []):
             return comp.get("long_name", "")
     return ""
 
-def merge_bboxes(boxes):
-    return (
-        min(b[0] for b in boxes),
-        max(b[1] for b in boxes),
-        min(b[2] for b in boxes),
-        max(b[3] for b in boxes),
-    )
+def search_location(query, api_key, restrict_type=None):
+    """
+    Search for a location. Returns list of (display_name, bbox, full_address).
+    restrict_type: 'country', 'region', 'city' to help filter results.
+    """
+    results = geocode_lookup(query, api_key)
+    if not results:
+        return []
+
+    options = []
+    for r in results[:5]:  # top 5 results
+        bbox         = extract_bbox(r)
+        full_address = r.get("formatted_address", "")
+        if bbox:
+            options.append((full_address, bbox))
+    return options
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY MAP & TIERS
@@ -89,19 +128,26 @@ TIER_DEFAULTS = {
     "grocery_or_supermarket":1, "pharmacy":2, "gas_station":2, "liquor_store":2,
 }
 
+def merge_bboxes(boxes):
+    return (
+        min(b[0] for b in boxes),
+        max(b[1] for b in boxes),
+        min(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # INITIALISE SESSION STATE
 # ─────────────────────────────────────────────────────────────────────────────
-if "country_name" not in st.session_state:
-    st.session_state["country_name"] = None
-if "country_bbox" not in st.session_state:
-    st.session_state["country_bbox"] = None
-if "region_entries" not in st.session_state:
-    st.session_state["region_entries"] = []
-if "city_entries" not in st.session_state:
-    st.session_state["city_entries"] = []
-if "custom_city" not in st.session_state:
-    st.session_state["custom_city"] = None
+for key in ["country_name","country_bbox","region_entries","city_entries","portfolio_df"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+if "region_entries" not in st.session_state or st.session_state["region_entries"] is None:
+    st.session_state["region_entries"] = []   # list of {name, bbox}
+
+if "city_entries" not in st.session_state or st.session_state["city_entries"] is None:
+    st.session_state["city_entries"] = []     # list of {name, bbox}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 1: PORTFOLIO UPLOAD
@@ -116,9 +162,9 @@ The app reads the `category` column and automatically sets the scraping categori
 """)
 
 uploaded = st.file_uploader("Upload portfolio CSV", type=["csv"], key="config_upload")
-portfolio_df        = None
+portfolio_df       = None
 detected_categories = []
-google_categories   = []
+google_categories  = []
 
 if uploaded:
     try:
@@ -155,19 +201,20 @@ if uploaded:
                 if google_categories:
                     st.info(f"Portfolio categories: **{', '.join(detected_categories)}**  →  Will scrape: **{', '.join(google_categories)}**")
                 else:
-                    st.warning("Could not match categories automatically. Select them manually in Step 6.")
+                    st.warning("Could not match categories automatically. Select them manually in Step 4.")
             else:
-                st.warning("No category column found. Select scraping categories manually in Step 6.")
+                st.warning("No category column found. Select scraping categories manually in Step 4.")
 
             st.session_state["portfolio_df"] = portfolio_df
     except Exception as e:
         st.error(f"Error reading file: {e}")
 
+# Sample download
 sample = pd.DataFrame([
     {"store_id":"S001","store_name":"Carrefour Express","address":"Qurum","city":"Muscat","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
-    {"store_id":"S002","store_name":"Lulu Hypermarket","address":"Al Khuwair","city":"Muscat","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
-    {"store_id":"S003","store_name":"Pharmacy One","address":"Ruwi","city":"Muscat","category":"pharmacy","annual_sales_usd":22000,"lines_per_store":12},
-    {"store_id":"S004","store_name":"Shell Station","address":"Ghubra","city":"Muscat","category":"gas station","annual_sales_usd":18000,"lines_per_store":8},
+    {"store_id":"S002","store_name":"Lulu Hypermarket", "address":"Al Khuwair","city":"Muscat","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
+    {"store_id":"S003","store_name":"Pharmacy One",     "address":"Ruwi","city":"Muscat","category":"pharmacy","annual_sales_usd":22000,"lines_per_store":12},
+    {"store_id":"S004","store_name":"Shell Station",    "address":"Ghubra","city":"Muscat","category":"gas station","annual_sales_usd":18000,"lines_per_store":8},
 ])
 st.download_button("Download sample CSV template", sample.to_csv(index=False), "sample_portfolio.csv", "text/csv")
 
@@ -180,7 +227,7 @@ st.subheader("2. Select country")
 
 api_key = get_api_key()
 if not api_key:
-    st.warning("Google Maps API key not set. Ask your admin to add GOOGLE_MAPS_API_KEY in Streamlit Secrets. Location search will not work until this is done.")
+    st.warning("Google Maps API key not set. Ask your admin to set GOOGLE_MAPS_API_KEY in Streamlit Secrets. Location search will not work until this is set.")
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -199,28 +246,35 @@ if search_country_btn and country_input:
         st.error("Cannot search — API key not set.")
     else:
         with st.spinner(f"Searching for {country_input}..."):
-            results = geocode_lookup(country_input, api_key)
+            results = search_location(f"{country_input} country", api_key)
         if results:
-            country_result = None
-            for r in results:
-                if "country" in r.get("types", []):
+            # Try to find a result that is actually a country
+            country_results = geocode_lookup(country_input, api_key)
+            country_result  = None
+            for r in country_results:
+                types = r.get("types", [])
+                if "country" in types:
                     country_result = r
                     break
-            if not country_result:
-                country_result = results[0]
-            bbox = extract_bbox(country_result)
-            name = extract_component(country_result, "country") or country_input
-            st.session_state["country_name"]   = name
-            st.session_state["country_bbox"]   = bbox
-            st.session_state["region_entries"] = []
-            st.session_state["city_entries"]   = []
-            st.rerun()
+            if not country_result and country_results:
+                country_result = country_results[0]
+
+            if country_result:
+                bbox = extract_bbox(country_result)
+                name = extract_component(country_result, "country") or country_input
+                st.session_state["country_name"]    = name
+                st.session_state["country_bbox"]    = bbox
+                st.session_state["region_entries"]  = []
+                st.session_state["city_entries"]    = []
+                st.rerun()
+            else:
+                st.error(f"Could not find country: {country_input}")
         else:
-            st.error(f"Could not find {country_input}. Check spelling and try again.")
+            st.error(f"No results for {country_input}. Check spelling.")
 
 if st.session_state.get("country_name"):
     st.success(f"Country set: **{st.session_state['country_name']}**")
-    if st.button("Clear and start over", key="clear_country"):
+    if st.button("Clear country and start over", key="clear_country"):
         st.session_state["country_name"]   = None
         st.session_state["country_bbox"]   = None
         st.session_state["region_entries"] = []
@@ -233,18 +287,18 @@ st.markdown("---")
 # STEP 3: REGIONS
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("3. Add regions / governorates / states")
-st.caption("Add one or more regions. You can skip this and go straight to cities if preferred.")
+st.caption("Add one or more regions. Leave empty to cover the whole country.")
 
 if not st.session_state.get("country_name"):
-    st.info("Complete Step 2 first.")
+    st.info("Search and confirm a country first.")
 else:
     country_name = st.session_state["country_name"]
 
     col1, col2 = st.columns([3, 1])
     with col1:
         region_input = st.text_input(
-            "Type region name",
-            placeholder="e.g. Muscat Governorate, Al Batinah, Dhofar...",
+            "Type region / governorate / state name",
+            placeholder=f"e.g. Muscat Governorate, Al Batinah, Dhofar...",
             key="region_input_field"
         )
     with col2:
@@ -256,19 +310,22 @@ else:
             st.error("Cannot search — API key not set.")
         else:
             with st.spinner(f"Searching for {region_input}..."):
-                results = geocode_lookup(f"{region_input}, {country_name}", api_key)
+                query   = f"{region_input}, {country_name}"
+                results = geocode_lookup(query, api_key)
             if results:
                 r    = results[0]
                 bbox = extract_bbox(r)
                 name = r.get("formatted_address", region_input).split(",")[0].strip()
-                if name in [e["name"] for e in st.session_state["region_entries"]]:
+                existing_names = [e["name"] for e in st.session_state["region_entries"]]
+                if name in existing_names:
                     st.warning(f"{name} is already added.")
                 else:
                     st.session_state["region_entries"].append({"name": name, "bbox": bbox})
                     st.rerun()
             else:
-                st.error(f"Could not find {region_input} in {country_name}.")
+                st.error(f"Could not find {region_input} in {country_name}. Try a different spelling.")
 
+    # Show added regions
     if st.session_state["region_entries"]:
         st.markdown("**Added regions:**")
         for i, entry in enumerate(st.session_state["region_entries"]):
@@ -280,7 +337,7 @@ else:
                     st.session_state["region_entries"].pop(i)
                     st.rerun()
     else:
-        st.info("No regions added yet.")
+        st.info("No regions added — the pipeline will cover the whole country bounding box.")
 
 st.markdown("---")
 
@@ -288,10 +345,10 @@ st.markdown("---")
 # STEP 4: CITIES
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("4. Add cities / areas")
-st.caption("Add one or more cities or specific areas. The more specific you are the more accurate the scraping.")
+st.caption("Add one or more cities or specific areas to scrape. Be as granular as you need.")
 
 if not st.session_state.get("country_name"):
-    st.info("Complete Step 2 first.")
+    st.info("Search and confirm a country first.")
 else:
     country_name = st.session_state["country_name"]
 
@@ -310,6 +367,7 @@ else:
         if not api_key:
             st.error("Cannot search — API key not set.")
         else:
+            # Search with region context if available
             region_context = st.session_state["region_entries"][0]["name"] if st.session_state["region_entries"] else ""
             query = f"{city_input}, {region_context}, {country_name}" if region_context else f"{city_input}, {country_name}"
             with st.spinner(f"Searching for {city_input}..."):
@@ -318,14 +376,16 @@ else:
                 r    = results[0]
                 bbox = extract_bbox(r)
                 name = r.get("formatted_address", city_input).split(",")[0].strip()
-                if name in [e["name"] for e in st.session_state["city_entries"]]:
+                existing_names = [e["name"] for e in st.session_state["city_entries"]]
+                if name in existing_names:
                     st.warning(f"{name} is already added.")
                 else:
                     st.session_state["city_entries"].append({"name": name, "bbox": bbox})
                     st.rerun()
             else:
-                st.error(f"Could not find {city_input} in {country_name}.")
+                st.error(f"Could not find {city_input} in {country_name}. Try a different spelling.")
 
+    # Show added cities
     if st.session_state["city_entries"]:
         st.markdown("**Added cities:**")
         for i, entry in enumerate(st.session_state["city_entries"]):
@@ -337,15 +397,15 @@ else:
                     st.session_state["city_entries"].pop(i)
                     st.rerun()
     else:
-        st.info("No cities added yet.")
+        st.info("No cities added — the pipeline will use the region or country bounding box.")
 
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CALCULATE FINAL BOUNDING BOX
 # ─────────────────────────────────────────────────────────────────────────────
-final_bbox  = None
-final_scope = ""
+final_bbox   = None
+final_scope  = ""
 
 if st.session_state["city_entries"]:
     boxes       = [e["bbox"] for e in st.session_state["city_entries"]]
@@ -357,7 +417,7 @@ elif st.session_state["region_entries"]:
     final_scope = ", ".join(e["name"] for e in st.session_state["region_entries"])
 elif st.session_state.get("country_bbox"):
     final_bbox  = st.session_state["country_bbox"]
-    final_scope = st.session_state.get("country_name", "")
+    final_scope = st.session_state["country_name"]
 
 if final_bbox:
     st.success(f"Coverage area confirmed: **{final_scope}**")
@@ -437,16 +497,19 @@ st.markdown("---")
 # STEP 8: SCORING WEIGHTS
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("8. Scoring weights — must sum to 100%")
-st.caption("Each store gets a score 0-100. Gap stores score 0 on sales and lines — their upside is what you are discovering.")
+st.caption("""
+Each store gets a score 0-100 based on these five signals.
+Gap stores score 0 on sales and lines — their upside is what you are discovering.
+""")
 
 col1, col2 = st.columns(2)
 with col1:
-    w_rating   = st.slider("Rating — Google star rating",          0, 50, 20)
-    w_reviews  = st.slider("Reviews / footfall — store traffic",   0, 50, 25)
-    w_category = st.slider("Category fit — store type relevance",  0, 50, 20)
+    w_rating   = st.slider("Rating — Google star rating",           0, 50, 20)
+    w_reviews  = st.slider("Reviews / footfall — store traffic",    0, 50, 25)
+    w_category = st.slider("Category fit — store type relevance",   0, 50, 20)
 with col2:
-    w_sales    = st.slider("Current sales — your revenue there",   0, 50, 20)
-    w_lines    = st.slider("Lines per store — products you stock",  0, 50, 15)
+    w_sales    = st.slider("Current sales — your revenue there",    0, 50, 20)
+    w_lines    = st.slider("Lines per store — products you stock",   0, 50, 15)
 
 total = w_rating + w_reviews + w_category + w_sales + w_lines
 if total == 100:
@@ -483,15 +546,16 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("10. Save configuration")
 
+# Validation checks
 issues = []
 if not st.session_state.get("country_name"):
-    issues.append("Search and confirm a country in Step 2.")
+    issues.append("Search and confirm a country first.")
 if not final_bbox:
-    issues.append("Add at least one city or region in Steps 3 or 4.")
+    issues.append("Add at least one city or region.")
 if total != 100:
-    issues.append("Fix scoring weights to equal exactly 100% in Step 8.")
+    issues.append("Fix scoring weights to equal 100%.")
 if not final_categories:
-    issues.append("Select at least one scraping category in Step 6.")
+    issues.append("Select at least one scraping category.")
 
 if issues:
     for issue in issues:
