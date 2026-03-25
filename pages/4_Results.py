@@ -3,7 +3,27 @@ import pandas as pd
 import json
 
 st.set_page_config(page_title="Results - Coverage Tool", page_icon="📊", layout="wide")
-st.title("Results Dashboard")
+
+# ── CSS ───────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stSidebar"] { background-color: #1B4F9B; }
+[data-testid="stSidebar"] * { color: #FFFFFF !important; }
+.page-header { background: linear-gradient(135deg, #1B4F9B 0%, #2563C0 100%); padding: 28px 36px; border-radius: 12px; margin-bottom: 28px; }
+.page-header h1 { color: white !important; font-size: 1.8rem !important; font-weight: 700 !important; margin: 0 0 4px 0 !important; }
+.page-header p  { color: rgba(255,255,255,0.85) !important; font-size: 0.95rem !important; margin: 0 !important; }
+hr { border: none; border-top: 1px solid #E2E8F0; margin: 20px 0; }
+div.stButton > button { border-radius: 6px; font-weight: 600; border: 2px solid #1B4F9B; background: #1B4F9B; color: white; padding: 8px 24px; }
+div.stButton > button:hover { background: #2563C0; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="page-header">
+    <h1>Results Dashboard</h1>
+    <p>Scored store universe, gap analysis and downloads</p>
+</div>
+""", unsafe_allow_html=True)
 
 if not st.session_state.get("run_results"):
     st.warning("No results yet. Run the pipeline first.")
