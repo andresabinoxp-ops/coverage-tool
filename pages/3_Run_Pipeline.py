@@ -24,25 +24,17 @@ st.markdown("""
     border-radius: 8px; padding: 0.8rem 1.2rem; margin: 0.5rem 0;
     color: #0D47A1; font-size: 0.88rem;
 }
-
-/* Pre-flight card */
-.preflight-card {
-    border-radius: 10px; padding: 1.4rem 1.8rem; margin: 1rem 0;
-    border: 1.5px solid;
-}
-.preflight-green  { background: #F1F8F1; border-color: #66BB6A; }
-.preflight-amber  { background: #FFFBF0; border-color: #FFA726; }
-.preflight-red    { background: #FFF5F5; border-color: #EF5350; }
-
-.preflight-title {
-    font-size: 1rem; font-weight: 700; margin-bottom: 0.8rem;
-}
-.preflight-green .preflight-title  { color: #2E7D32; }
-.preflight-amber .preflight-title  { color: #E65100; }
-.preflight-red   .preflight-title  { color: #B71C1C; }
-
+.preflight-card { border-radius: 10px; padding: 1.4rem 1.8rem; margin: 1rem 0; border: 1.5px solid; }
+.preflight-green { background: #F1F8F1; border-color: #66BB6A; }
+.preflight-amber { background: #FFFBF0; border-color: #FFA726; }
+.preflight-red   { background: #FFF5F5; border-color: #EF5350; }
+.preflight-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.8rem; }
+.preflight-green .preflight-title { color: #2E7D32; }
+.preflight-amber .preflight-title { color: #E65100; }
+.preflight-red   .preflight-title { color: #B71C1C; }
 .stat-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1rem;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 12px; margin-bottom: 1rem;
 }
 .stat-box {
     background: white; border-radius: 8px; padding: 0.8rem 1rem;
@@ -50,13 +42,11 @@ st.markdown("""
 }
 .stat-val   { font-size: 1.5rem; font-weight: 800; color: #1A2B4A; line-height: 1; }
 .stat-label { font-size: 0.72rem; color: #9E9E9E; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
-
 .suggestion-box {
     background: white; border-radius: 6px; padding: 0.7rem 1rem;
-    border-left: 3px solid #FFA726; font-size: 0.85rem; color: #4A4A4A;
-    margin-top: 0.5rem;
+    border-left: 3px solid #FFA726; font-size: 0.85rem;
+    color: #4A4A4A; margin-top: 0.5rem;
 }
-
 div.stButton > button[kind="primary"] {
     background: #1565C0; border-color: #1565C0; color: white;
     border-radius: 6px; font-weight: 600; font-size: 1rem; padding: 0.6rem 2rem;
@@ -89,6 +79,7 @@ st.markdown(f"""
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 PLACES_URL  = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 TIER_MULT   = {1:1.0, 2:0.8, 3:0.55, 4:0.30}
+MAX_TILES   = 400   # hard cap — never exceed this regardless of area size
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def get_api_key():
@@ -106,7 +97,28 @@ def get_api_key():
     st.error("No Google API key found. Go to Admin Settings or Configure to add your key.")
     st.stop()
 
-def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m=2000):
+def smart_tile_radius(lat_min, lat_max, lng_min, lng_max, max_tiles=MAX_TILES):
+    """
+    Automatically choose the tile radius so the total tiles stay under max_tiles.
+    Returns (radius_m, n_tiles, warning_msg).
+    """
+    mid  = (lat_min + lat_max) / 2
+    lat_span_m = abs(lat_max - lat_min) * 111320
+    lng_span_m = abs(lng_max - lng_min) * 111320 * math.cos(math.radians(mid))
+    area_m2    = lat_span_m * lng_span_m
+
+    for radius_m in [1000, 2000, 3000, 5000, 8000, 10000, 15000, 20000, 30000, 50000]:
+        tile_area  = (radius_m * 2) ** 2
+        n_tiles    = math.ceil(area_m2 / tile_area)
+        if n_tiles <= max_tiles:
+            return radius_m, n_tiles, None
+
+    # Even 50km tiles won't fit — use 50km and warn
+    tile_area = (50000 * 2) ** 2
+    n_tiles   = math.ceil(area_m2 / tile_area)
+    return 50000, min(n_tiles, max_tiles), "The selected area is very large. For best results go to Configure and select specific cities rather than the full country."
+
+def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m):
     dlat = (radius_m*2)/111320
     mid  = (lat_min+lat_max)/2
     dlng = (radius_m*2)/(111320*math.cos(math.radians(mid)))
@@ -118,63 +130,55 @@ def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m=2000):
             centres.append((round(lat,5), round(lng,5)))
             lng += dlng
         lat += dlat
-    return centres
+    return centres[:MAX_TILES]   # hard cap safety
 
-def estimate_scraping(cfg, tile_radius_m=2000):
+def estimate_scraping(cfg):
     """
-    Calculate grid tiles, API calls and time estimate before scraping.
-    Returns dict with all stats and traffic light colour.
+    Calculate time estimate before scraping. Safe against pandas DataFrame bool check.
     """
-    centres       = grid_centres(cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"], tile_radius_m)
-    n_tiles       = len(centres)
-    n_categories  = len(cfg["categories"])
-    n_portfolio   = len(st.session_state.get("portfolio_df") or [])
+    radius_m, n_tiles, area_warning = smart_tile_radius(
+        cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
+    )
+    n_categories = len(cfg["categories"])
 
-    # Each tile × category = 1 initial call
-    # Urban areas avg ~1.8 pages per tile (some spill into page 2/3)
-    avg_pages         = 1.8
-    total_api_calls   = round(n_tiles * n_categories * avg_pages)
+    # Fix: safe portfolio count — avoids pandas bool ambiguity error
+    pf = st.session_state.get("portfolio_df")
+    n_portfolio = len(pf) if pf is not None and hasattr(pf, "__len__") else 0
 
-    # Timing:
-    # - 0.3s per API call (network + processing)
-    # - 2s wait before each page 2/3 (Google requirement)
-    pagination_waits  = round(n_tiles * n_categories * (avg_pages - 1) * 2)
-    call_time         = total_api_calls * 0.3
-    geocode_time      = n_portfolio * 0.15
-    total_seconds     = call_time + pagination_waits + geocode_time + 15  # 15s overhead
-    total_minutes     = total_seconds / 60
+    avg_pages       = 1.8
+    total_api_calls = round(n_tiles * n_categories * avg_pages)
+    pagination_time = round(n_tiles * n_categories * (avg_pages - 1) * 2)
+    call_time       = total_api_calls * 0.35
+    geocode_time    = n_portfolio * 0.15
+    total_seconds   = call_time + pagination_time + geocode_time + 15
+    total_minutes   = total_seconds / 60
 
-    # Bounding box area in km²
-    lat_span  = abs(cfg["lat_max"] - cfg["lat_min"])
-    lng_span  = abs(cfg["lng_max"] - cfg["lng_min"])
-    area_km2  = round(lat_span * 111 * lng_span * 111 * math.cos(math.radians((cfg["lat_min"]+cfg["lat_max"])/2)))
+    lat_span = abs(cfg["lat_max"] - cfg["lat_min"])
+    lng_span = abs(cfg["lng_max"] - cfg["lng_min"])
+    mid      = (cfg["lat_min"] + cfg["lat_max"]) / 2
+    area_km2 = round(lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid)))
 
-    # Traffic light
     if total_minutes < 5:
-        colour = "green"
-        icon   = "✅"
-        label  = "Quick run — ready to go"
+        colour, icon, label = "green", "✅", "Quick run — ready to go"
     elif total_minutes < 15:
-        colour = "amber"
-        icon   = "⚠️"
-        label  = "Moderate run — consider narrowing the area"
+        colour, icon, label = "amber", "⚠️", "Moderate run — consider narrowing the area"
     else:
-        colour = "red"
-        icon   = "🔴"
-        label  = "Long run — we recommend narrowing the area or reducing categories"
+        colour, icon, label = "red",   "🔴", "Long run — recommend selecting specific cities in Configure"
 
-    # Suggestions
     suggestions = []
+    if area_warning:
+        suggestions.append(area_warning)
     if total_minutes > 5 and n_categories > 3:
-        suggestions.append(f"Reduce categories from {n_categories} to 2-3 most important ones to save ~{round(total_minutes*(1-2/n_categories))} minutes.")
+        suggestions.append(f"Reduce categories from {n_categories} to 2-3 most important to save ~{round(total_minutes*(1-2/n_categories))} minutes.")
     if total_minutes > 10 and len(cfg.get("cities",[])) > 2:
         suggestions.append(f"You have {len(cfg.get('cities',[]))} cities selected. Run one city at a time to keep each run under 5 minutes.")
-    if total_minutes > 15 and area_km2 > 500:
-        suggestions.append(f"Coverage area is ~{area_km2:,} km². Try selecting a single district or neighbourhood instead of the full city.")
-    if not suggestions and total_minutes > 5:
-        suggestions.append("Tip: Use Dry Run mode first to test results without using API credits.")
+    if total_minutes > 15 and not area_warning:
+        suggestions.append("Go to Configure and select a specific neighbourhood or district instead of the full city.")
+    if not suggestions and total_minutes > 3:
+        suggestions.append("Tip: Use Dry Run mode first to test the full pipeline without using API credits.")
 
     return {
+        "radius_m":        radius_m,
         "n_tiles":         n_tiles,
         "n_categories":    n_categories,
         "total_api_calls": total_api_calls,
@@ -186,6 +190,7 @@ def estimate_scraping(cfg, tile_radius_m=2000):
         "icon":            icon,
         "label":           label,
         "suggestions":     suggestions,
+        "area_warning":    area_warning,
     }
 
 def geocode_store(address, city, api_key):
@@ -214,9 +219,8 @@ def fetch_places(lat, lng, radius, place_type, api_key, token=None):
 def haversine_m(lat1, lng1, lat2, lng2):
     R = 6371000
     p1,p2 = math.radians(lat1),math.radians(lat2)
-    dp = math.radians(lat2-lat1)
-    dl = math.radians(lng2-lng1)
-    a  = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+    dp,dl = math.radians(lat2-lat1),math.radians(lng2-lng1)
+    a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
     return 2*R*math.asin(math.sqrt(a))
 
 def kmeans_simple(points, k, iterations=20):
@@ -230,7 +234,7 @@ def kmeans_simple(points, k, iterations=20):
         new_c = []
         for j in range(k):
             cluster = [points[i] for i in range(len(points)) if labels[i]==j]
-            new_c.append((sum(p[0] for p in cluster)/len(cluster), sum(p[1] for p in cluster)/len(cluster)) if cluster else centroids[j])
+            new_c.append((sum(p[0] for p in cluster)/len(cluster),sum(p[1] for p in cluster)/len(cluster)) if cluster else centroids[j])
         centroids = new_c
     return labels
 
@@ -239,6 +243,17 @@ def assign_freq(score, t):
     if score >= t["fortnightly"]: return "fortnightly", 2.0
     if score >= t["monthly"]:     return "monthly",     1.0
     return "bi-weekly", 0.5
+
+def fmt_time(seconds):
+    mins = seconds / 60
+    if mins < 1:
+        return f"~{round(seconds)} seconds"
+    elif mins < 60:
+        m = int(mins); s = int((mins-m)*60)
+        return f"~{m} min {s} sec" if s > 0 else f"~{m} minutes"
+    else:
+        h = int(mins//60); m = int(mins%60)
+        return f"~{h}h {m}min"
 
 # ── STEP 1: PORTFOLIO UPLOAD ──────────────────────────────────────────────────
 st.markdown('<div class="section-title">1. Portfolio CSV</div>', unsafe_allow_html=True)
@@ -281,23 +296,16 @@ st.download_button("⬇️ Download sample CSV", sample.to_csv(index=False), "sa
 
 # ── STEP 2: PRE-FLIGHT CHECK ──────────────────────────────────────────────────
 st.markdown('<div class="section-title">2. Pre-flight estimate</div>', unsafe_allow_html=True)
-st.caption("The agent calculates how long the scraping will take before you run it.")
+st.caption("Calculated before you run — shows time, API calls and recommendations.")
 
-est = estimate_scraping(cfg)
-
-# Format time nicely
-if est["total_minutes"] < 1:
-    time_display = f"~{round(est['total_seconds'])} seconds"
-elif est["total_minutes"] < 60:
-    mins = int(est["total_minutes"])
-    secs = int((est["total_minutes"] - mins) * 60)
-    time_display = f"~{mins} min {secs} sec" if secs > 0 else f"~{mins} minutes"
-else:
-    hours = int(est["total_minutes"] // 60)
-    mins  = int(est["total_minutes"] % 60)
-    time_display = f"~{hours}h {mins}min"
-
+est          = estimate_scraping(cfg)
+time_display = fmt_time(est["total_seconds"])
 colour_class = f"preflight-{est['colour']}"
+
+# Tile radius label
+radius_labels = {1000:"1 km",2000:"2 km",3000:"3 km",5000:"5 km",8000:"8 km",
+                 10000:"10 km",15000:"15 km",20000:"20 km",30000:"30 km",50000:"50 km"}
+radius_label = radius_labels.get(est["radius_m"], f"{est['radius_m']//1000} km")
 
 st.markdown(f"""
 <div class="preflight-card {colour_class}">
@@ -320,10 +328,10 @@ st.markdown(f"""
             <div class="stat-label">Categories</div>
         </div>
     </div>
-    <div style="font-size:0.8rem; color:#6B7280; margin-bottom:0.5rem">
-        Coverage area: ~{est['area_km2']:,} km² &nbsp;|&nbsp;
-        Portfolio stores to geocode: {est['n_portfolio']} &nbsp;|&nbsp;
-        Tile radius: 2 km
+    <div style="font-size:0.8rem;color:#6B7280;margin-bottom:0.6rem">
+        Coverage area: ~{est['area_km2']:,} km² &nbsp;·&nbsp;
+        Auto tile radius: {radius_label} &nbsp;·&nbsp;
+        Portfolio stores: {est['n_portfolio']}
     </div>
     {''.join(f'<div class="suggestion-box">💡 {s}</div>' for s in est["suggestions"])}
 </div>
@@ -331,10 +339,10 @@ st.markdown(f"""
 
 if est["colour"] != "green":
     st.markdown("""
-    **To reduce run time:**
-    - Go back to **Configure** and select fewer cities or a smaller area
-    - Remove less important categories from the scraping list
-    - Or use **Dry Run** below to test the full pipeline instantly with sample data
+**To reduce run time — go back to Configure and:**
+- Select a specific city or neighbourhood instead of a full country or region
+- Reduce the number of scraping categories to 2-3 most important
+- Or use **Dry Run** below to test without using any API credits
     """)
 
 # ── STEP 3: RUN ───────────────────────────────────────────────────────────────
@@ -342,7 +350,7 @@ st.markdown('<div class="section-title">3. Run the agent</div>', unsafe_allow_ht
 
 dry_run = st.checkbox("Dry run mode — no API calls, generates sample data for testing", value=True)
 if not dry_run:
-    st.warning(f"⚠️ Live mode will call Google APIs. Estimated time: **{time_display}** and approximately **{est['total_api_calls']:,} API calls**.")
+    st.warning(f"⚠️ Live mode will call Google APIs — estimated **{time_display}** and **{est['total_api_calls']:,} API calls**.")
 
 if st.button("🚀 Run Coverage Agent", type="primary"):
     status = st.empty()
@@ -354,14 +362,15 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
     # ── DRY RUN ───────────────────────────────────────────────────────────────
     if dry_run:
         status.info("Generating sample data...")
-        base = portfolio_df.to_dict("records") if portfolio_df is not None else [
+        pf   = st.session_state.get("portfolio_df")
+        base = pf.to_dict("records") if pf is not None else [
             {"store_id":"S001","store_name":"Carrefour Express","address":"Qurum","city":"Muscat","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
             {"store_id":"S002","store_name":"Lulu Hypermarket","address":"Al Khuwair","city":"Muscat","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
         ]
         all_stores = []
         prefixes = ["Metro","City","Quick","Fresh","Express","Central","Star","Royal","Golden","Prime","Al","New"]
         for row in base:
-            sc = random.randint(50, 100)
+            sc = random.randint(50,100)
             freq, cpm = assign_freq(sc, thresholds)
             all_stores.append({
                 "store_id":row.get("store_id","S0"),"store_name":row.get("store_name","Store"),
@@ -376,7 +385,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             })
         for i in range(60):
             cat = random.choice(cfg["categories"])
-            sc  = random.randint(10, 95)
+            sc  = random.randint(10,95)
             freq, cpm = assign_freq(sc, thresholds)
             all_stores.append({
                 "store_id":f"G{i:03d}","store_name":f"{random.choice(prefixes)} {cat.replace('_',' ').title()} {i+1}",
@@ -392,7 +401,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "coverage_status":"gap",
             })
         bar.progress(100)
-        gap_stores = sorted([s for s in all_stores if s["coverage_status"]=="gap"], key=lambda x:x["score"], reverse=True)
+        gap_stores = sorted([s for s in all_stores if s["coverage_status"]=="gap"],key=lambda x:x["score"],reverse=True)
         covered_n  = sum(1 for s in all_stores if s["covered"])
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
@@ -406,34 +415,38 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
     # ── LIVE RUN ──────────────────────────────────────────────────────────────
     else:
-        api_key    = get_api_key()
-        portfolio  = portfolio_df.to_dict("records") if portfolio_df is not None else []
+        api_key   = get_api_key()
+        pf        = st.session_state.get("portfolio_df")
+        portfolio = pf.to_dict("records") if pf is not None else []
         for s in portfolio:
             s.update({"covered":True,"source":"portfolio","lat":None,"lng":None,"rating":0.0,"review_count":0})
             if "category" not in s: s["category"] = cfg["categories"][0] if cfg["categories"] else "supermarket"
+
+        # Use smart radius — same as pre-flight estimate
+        radius_m, _, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
+        centres = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
 
         # Stage 1: Geocode
         status.info(f"Stage 1/7 — Geocoding {len(portfolio)} portfolio stores...")
         bar.progress(8)
         for s in portfolio:
-            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key)
-            s["lat"], s["lng"] = lat, lng
+            lat,lng = geocode_store(s.get("address",""),s.get("city",""),api_key)
+            s["lat"],s["lng"] = lat,lng
             time.sleep(0.05)
         bar.progress(20)
 
-        # Stage 2: Scrape with live progress
-        centres    = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
-        seen_ids   = set()
-        universe   = []
+        # Stage 2: Scrape
+        seen_ids    = set()
+        universe    = []
         total_tiles = max(len(centres)*len(cfg["categories"]),1)
         done_tiles  = 0
         scrape_start = time.time()
 
         for cat in cfg["categories"]:
-            for lat, lng in centres:
+            for lat,lng in centres:
                 token = None
                 while True:
-                    data = fetch_places(lat,lng,2000,cat,api_key,token)
+                    data = fetch_places(lat,lng,radius_m,cat,api_key,token)
                     for place in data.get("results",[]):
                         pid = place.get("place_id","")
                         if pid in seen_ids: continue
@@ -451,17 +464,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     token = data.get("next_page_token")
                     if not token: break
                 done_tiles += 1
-                pct = 20 + int(done_tiles/total_tiles*45)
-
-                # Live time remaining estimate
-                elapsed   = time.time() - scrape_start
-                remaining = (elapsed / done_tiles) * (total_tiles - done_tiles) if done_tiles > 0 else 0
-                if remaining > 60:
-                    rem_str = f"{int(remaining//60)}m {int(remaining%60)}s remaining"
-                else:
-                    rem_str = f"{int(remaining)}s remaining"
-
-                status.info(f"Stage 2/7 — Scraping {cat}... {done_tiles}/{total_tiles} tiles | {len(universe):,} stores found | ⏱ {rem_str}")
+                pct      = 20 + int(done_tiles/total_tiles*45)
+                elapsed  = time.time() - scrape_start
+                rem      = (elapsed/done_tiles)*(total_tiles-done_tiles) if done_tiles > 0 else 0
+                rem_str  = fmt_time(rem).replace("~","")
+                status.info(f"Stage 2/7 — Scraping {cat}... {done_tiles}/{total_tiles} tiles | {len(universe):,} stores found | ⏱ {rem_str} remaining")
                 bar.progress(pct)
 
         bar.progress(65)
@@ -489,7 +496,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for u in universe:
             if not (u.get("lat") and u.get("lng")): u["coverage_status"]="no_coords"; continue
             matched = any(haversine_m(u["lat"],u["lng"],p["lat"],p["lng"])<=50 for p in covered_p)
-            u["covered"] = matched
+            u["covered"]         = matched
             u["coverage_status"] = "covered" if matched else "gap"
         for p in portfolio: p["coverage_status"] = "covered"
         bar.progress(80)
@@ -497,7 +504,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Stage 5: Frequency
         status.info("Stage 5/7 — Assigning visit frequencies...")
         for s in all_stores:
-            freq, cpm = assign_freq(s.get("score",0), thresholds)
+            freq,cpm = assign_freq(s.get("score",0),thresholds)
             s["visit_frequency"] = freq
             s["calls_per_month"] = cpm
         bar.progress(87)
@@ -507,17 +514,17 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         priority = [s for s in all_stores if s.get("score",0)>=thresholds["monthly"] and s.get("lat") and s.get("lng")]
         if priority:
             pts    = [(s["lat"],s["lng"]) for s in priority]
-            labels = kmeans_simple(pts, cfg["rep_count"])
-            for s, lbl in zip(priority, labels): s["rep_id"] = int(lbl)+1
+            labels = kmeans_simple(pts,cfg["rep_count"])
+            for s,lbl in zip(priority,labels): s["rep_id"] = int(lbl)+1
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
         bar.progress(95)
 
         # Stage 7: Package
         status.info("Stage 7/7 — Packaging results...")
-        gap_stores = sorted([s for s in universe if s.get("coverage_status")=="gap"], key=lambda x:x.get("score",0), reverse=True)
-        covered_n  = sum(1 for s in all_stores if s.get("covered"))
-        total_time = round((time.time() - scrape_start) / 60, 1)
+        gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)
+        covered_n   = sum(1 for s in all_stores if s.get("covered"))
+        actual_time = fmt_time(time.time()-scrape_start).replace("~","")
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
             "coverage_rate_before":round(len(covered_p)/max(len(universe),1)*100,1),
@@ -526,4 +533,4 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         }
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
-        status.success(f"✅ Pipeline complete in {total_time} min — {len(all_stores):,} stores scored, {len(gap_stores):,} gaps found. Open Results in the sidebar.")
+        status.success(f"✅ Pipeline complete in {actual_time} — {len(all_stores):,} stores scored, {len(gap_stores):,} gaps found. Open Results in the sidebar.")
