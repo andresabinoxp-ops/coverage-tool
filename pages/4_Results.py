@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 
-st.set_page_config(page_title="Results — Coverage Tool", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Results - Coverage Tool", page_icon="📊", layout="wide")
 st.title("Results Dashboard")
 
 if not st.session_state.get("run_results"):
@@ -21,11 +21,11 @@ covered_n = sum(1 for s in all_stores if s.get("covered"))
 gap_high  = sum(1 for s in gap_stores if s.get("score", 0) >= 60)
 
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Total stores",              f"{total:,}")
-col2.metric("Currently covered",         f"{covered_n:,}")
-col3.metric("Coverage rate before",      f"{res['coverage_rate_before']}%")
-col4.metric("Coverage rate after",       f"{res['coverage_rate_after']}%")
-col5.metric("High priority gaps",        f"{gap_high:,}")
+col1.metric("Total stores in universe", f"{total:,}")
+col2.metric("Currently covered",        f"{covered_n:,}")
+col3.metric("Coverage rate before",     f"{res['coverage_rate_before']}%")
+col4.metric("Coverage rate after",      f"{res['coverage_rate_after']}%")
+col5.metric("High priority gaps",       f"{gap_high:,}")
 
 st.markdown("---")
 st.subheader("Visit frequency distribution")
@@ -35,8 +35,13 @@ for s in all_stores:
     freq_counts[f] = freq_counts.get(f, 0) + 1
 
 fc = st.columns(4)
-for i, freq in enumerate(["weekly", "fortnightly", "monthly", "bi-weekly"]):
-    fc[i].metric(freq.title(), f"{freq_counts.get(freq, 0):,} stores")
+for i, (freq, desc) in enumerate([
+    ("weekly",      "4 calls/month"),
+    ("fortnightly", "2 calls/month"),
+    ("monthly",     "1 call/month"),
+    ("bi-weekly",   "0.5 calls/month"),
+]):
+    fc[i].metric(freq.title(), f"{freq_counts.get(freq, 0):,} stores", desc)
 
 st.markdown("---")
 st.subheader("Store universe explorer")
@@ -64,7 +69,8 @@ st.caption(f"Showing {len(filtered):,} of {total:,} stores")
 
 if filtered:
     df = pd.DataFrame(filtered)
-    show = [c for c in ["store_name","category","score","visit_frequency","coverage_status","rating","review_count","annual_sales_usd","lines_per_store","rep_id"] if c in df.columns]
+    show = [c for c in ["store_name","category","score","visit_frequency","coverage_status",
+                         "rating","review_count","annual_sales_usd","lines_per_store","rep_id"] if c in df.columns]
     df_show = df[show].sort_values("score", ascending=False).reset_index(drop=True)
     df_show.columns = [c.replace("_"," ").title() for c in df_show.columns]
     st.dataframe(df_show, use_container_width=True, height=380,
@@ -75,7 +81,7 @@ if filtered:
         })
 
 st.markdown("---")
-st.subheader("Top gap opportunities")
+st.subheader("Top gap opportunities — uncovered stores score >= 40")
 high_gaps = [s for s in gap_stores if s.get("score",0) >= 40]
 if high_gaps:
     gdf = pd.DataFrame(high_gaps[:50])
@@ -104,7 +110,7 @@ if rep_data:
 
 st.markdown("---")
 st.subheader("Download results")
-mkt_safe = market.replace(" ","_")
+mkt_safe = market.replace(" ","_").replace("-","_")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.download_button("Full scored universe CSV",

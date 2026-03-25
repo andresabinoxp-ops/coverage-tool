@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Routes — Coverage Tool", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Routes - Coverage Tool", page_icon="🗺️", layout="wide")
 st.title("Rep Routes Map")
 
 if not st.session_state.get("run_results"):
@@ -16,7 +16,7 @@ st.subheader(f"Market: {market}")
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    colour_by = st.selectbox("Colour markers by", ["Rep route", "Visit frequency", "Coverage status", "Score"])
+    colour_by = st.selectbox("Colour markers by", ["Rep route","Visit frequency","Coverage status","Score"])
 with col2:
     show_gaps    = st.checkbox("Show gap stores",     value=True)
     show_covered = st.checkbox("Show covered stores", value=True)
@@ -72,19 +72,31 @@ map_data = [{
     "rep":s.get("rep_id",0),
     "category":s.get("category",""),
     "color":get_color(s),
-    "radius":max(30,s.get("score",0)*1.5),
+    "radius":max(30, s.get("score",0)*1.5),
 } for s in map_stores]
 
 try:
     import pydeck as pdk
     df_map = pd.DataFrame(map_data)
     if not df_map.empty:
-        layer = pdk.Layer("ScatterplotLayer", data=df_map,
-            get_position="[lng, lat]", get_color="color", get_radius="radius",
-            radius_min_pixels=4, radius_max_pixels=20, pickable=True)
-        view = pdk.ViewState(latitude=df_map["lat"].mean(), longitude=df_map["lng"].mean(), zoom=11, pitch=0)
-        tooltip = {"html":"<b>{name}</b><br/>Score: <b>{score}</b><br/>Frequency: {freq}<br/>Status: {status}<br/>Rep: {rep}",
-                   "style":{"backgroundColor":"#1a1a2e","color":"white","padding":"8px","borderRadius":"6px"}}
+        layer = pdk.Layer(
+            "ScatterplotLayer", data=df_map,
+            get_position="[lng, lat]",
+            get_color="color",
+            get_radius="radius",
+            radius_min_pixels=4,
+            radius_max_pixels=20,
+            pickable=True,
+        )
+        view = pdk.ViewState(
+            latitude=df_map["lat"].mean(),
+            longitude=df_map["lng"].mean(),
+            zoom=11, pitch=0,
+        )
+        tooltip = {
+            "html": "<b>{name}</b><br/>Score: <b>{score}</b><br/>Frequency: {freq}<br/>Status: {status}<br/>Rep: {rep}<br/>Category: {category}",
+            "style": {"backgroundColor":"#1a1a2e","color":"white","padding":"8px","borderRadius":"6px"}
+        }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
     else:
         st.info("No stores with valid coordinates to display.")
@@ -94,6 +106,44 @@ except ImportError:
         st.map(df_map.rename(columns={"lng":"lon"})[["lat","lon"]])
     else:
         st.info("No stores to display.")
+
+st.markdown("---")
+
+# Legend
+if colour_by == "Rep route":
+    st.subheader("Rep route legend")
+    reps = sorted(set(s.get("rep_id",0) for s in map_stores if s.get("rep_id")))
+    if reps:
+        cols = st.columns(min(len(reps), 5))
+        for i, rep in enumerate(reps):
+            rep_stores  = [s for s in map_stores if s.get("rep_id") == rep]
+            total_calls = sum(s.get("calls_per_month",0) for s in rep_stores)
+            c           = REP_COLORS[rep % len(REP_COLORS)]
+            hex_col     = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+            cols[i%5].markdown(
+                f'<div style="background:{hex_col};padding:8px;border-radius:6px;color:white;text-align:center">'
+                f'<b>Rep {rep}</b><br>{len(rep_stores)} stores<br>{total_calls:.0f} calls/mo</div>',
+                unsafe_allow_html=True)
+
+elif colour_by == "Visit frequency":
+    st.subheader("Frequency legend")
+    lc = st.columns(4)
+    for i, (label, desc, col) in enumerate([
+        ("Weekly",      "Score >= 80 | 4 calls/mo",  "#00e59f"),
+        ("Fortnightly", "Score 60-79 | 2 calls/mo",  "#6c8fff"),
+        ("Monthly",     "Score 40-59 | 1 call/mo",   "#ffb830"),
+        ("Bi-weekly",   "Score < 40 | 0.5 calls/mo", "#ff6b35"),
+    ]):
+        lc[i].markdown(
+            f'<div style="background:{col};padding:8px;border-radius:6px;color:white;text-align:center">'
+            f'<b>{label}</b><br><small>{desc}</small></div>',
+            unsafe_allow_html=True)
+
+elif colour_by == "Coverage status":
+    st.subheader("Status legend")
+    lc = st.columns(2)
+    lc[0].markdown('<div style="background:#00c882;padding:8px;border-radius:6px;color:white;text-align:center"><b>Covered</b><br>In your portfolio</div>', unsafe_allow_html=True)
+    lc[1].markdown('<div style="background:#ff5050;padding:8px;border-radius:6px;color:white;text-align:center"><b>Gap</b><br>Not yet covered</div>', unsafe_allow_html=True)
 
 st.markdown("---")
 st.subheader("Store list by rep")
