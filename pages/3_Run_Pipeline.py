@@ -559,70 +559,98 @@ if est["area_km2"] > 100000:
     """, unsafe_allow_html=True)
 else:
     # ── Normal pre-flight card ────────────────────────────────────────────────
-    # Build HTML using variables to avoid f-string quote conflicts
-    scrape_detail   = f"{est['scrape_calls']:,} calls x ${PRICE_NEARBY_PER_CALL} · {est['n_tiles']} tiles · {est['n_categories']} categories · tile radius {radius_label}"
-    geocode_detail  = f"{est['geocode_calls']} stores x ${PRICE_GEOCODE_PER_CALL}"
-    total_summary   = f"${est['total_cost']:.2f} · {est['total_calls']:,} API calls · {time_display}"
-    area_summary    = f"~{est['area_km2']:,} km² · ~{est['estimated_universe']:,} stores estimated · {est['n_portfolio']} portfolio stores"
-    scrape_cost_str = f"${est['scrape_cost']:.2f}"
-    geocode_cost_str= f"${est['geocode_cost']:.2f}"
-    total_cost_str  = f"${est['total_cost']:.2f}"
-    enrich_cost_str = f"${est['enrich_cost']:.2f}"
-    enrich_detail   = f"{est['enrich_calls']:,} stores x ${PRICE_DETAILS_PER_CALL}"
+    # Use st.container + individual st.markdown calls to avoid f-string HTML escaping
 
-    enrich_html = ""
-    if est["enrich_calls"] > 0:
-        enrich_html = f"""
-        <div class="cost-row">
-            <span class="cost-label">Place Details enrichment
-                <span class="cost-detail">{enrich_detail}</span>
-            </span>
-            <span class="cost-value">{enrich_cost_str}</span>
-        </div>"""
+    # Colour mapping
+    card_colors = {
+        "green": ("#F1F8F1", "#66BB6A", "#2E7D32"),
+        "amber": ("#FFFBF0", "#FFA726", "#E65100"),
+        "red":   ("#FFF5F5", "#EF5350", "#B71C1C"),
+    }
+    bg, border_col, text_col = card_colors.get(est["colour"], card_colors["green"])
 
-    suggestions_html = "".join(
-        f'<div class="suggestion-box">💡 {s}</div>' for s in est["suggestions"]
+    # Open card div
+    st.markdown(
+        '<div style="background:' + bg + ';border:1.5px solid ' + border_col +
+        ';border-radius:10px;padding:1.4rem 1.8rem;margin:1rem 0">',
+        unsafe_allow_html=True
     )
 
-    html = f"""
-    <div class="preflight-card {colour_class}">
-        <div class="preflight-title">{est['icon']} {est['label']}</div>
-        <div class="main-stats">
-            <div class="main-stat-box">
-                <div class="main-stat-val">{time_display}</div>
-                <div class="main-stat-label">Total estimated time</div>
-            </div>
-            <div class="main-stat-box">
-                <div class="main-stat-val">{total_cost_str}</div>
-                <div class="main-stat-label">Total estimated API cost</div>
-            </div>
-        </div>
-        <div class="cost-breakdown">
-            <div class="cost-row">
-                <span class="cost-label">Google Places scraping
-                    <span class="cost-detail">{scrape_detail}</span>
-                </span>
-                <span class="cost-value">{scrape_cost_str}</span>
-            </div>
-            <div class="cost-row">
-                <span class="cost-label">Geocoding portfolio
-                    <span class="cost-detail">{geocode_detail}</span>
-                </span>
-                <span class="cost-value">{geocode_cost_str}</span>
-            </div>
-            {enrich_html}
-            <div class="cost-row">
-                <span class="cost-label">Total</span>
-                <span class="cost-total">{total_summary}</span>
-            </div>
-        </div>
-        <div style="font-size:0.8rem;color:#6B7280;margin-bottom:0.6rem">
-            Coverage area: {area_summary}
-        </div>
-        {suggestions_html}
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
+    # Title
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:' + text_col +
+        ';margin-bottom:0.8rem">' + est["icon"] + " " + est["label"] + "</div>",
+        unsafe_allow_html=True
+    )
+
+    # Time + cost boxes using st.columns — no HTML needed
+    mc1, mc2 = st.columns(2)
+    mc1.metric("Total estimated time", time_display)
+    mc2.metric("Total estimated API cost", "$" + str(round(est["total_cost"], 2)))
+
+    # Cost breakdown table
+    breakdown_rows = [
+        ("Google Places scraping",
+         str(est["scrape_calls"]) + " calls x $" + str(PRICE_NEARBY_PER_CALL) +
+         " · " + str(est["n_tiles"]) + " tiles · " + str(est["n_categories"]) +
+         " categories · radius " + radius_label,
+         "$" + str(round(est["scrape_cost"], 2))),
+        ("Geocoding portfolio",
+         str(est["geocode_calls"]) + " stores x $" + str(PRICE_GEOCODE_PER_CALL),
+         "$" + str(round(est["geocode_cost"], 2))),
+    ]
+    if est["enrich_calls"] > 0:
+        breakdown_rows.append((
+            "Place Details enrichment",
+            str(est["enrich_calls"]) + " stores x $" + str(PRICE_DETAILS_PER_CALL),
+            "$" + str(round(est["enrich_cost"], 2))
+        ))
+    breakdown_rows.append((
+        "Total",
+        str(est["total_calls"]) + " API calls · " + time_display,
+        "$" + str(round(est["total_cost"], 2))
+    ))
+
+    for i, (label, detail, cost) in enumerate(breakdown_rows):
+        is_total  = (i == len(breakdown_rows) - 1)
+        row_bg    = "#F8F8F8" if i % 2 == 0 else "#FFFFFF"
+        fw        = "700" if is_total else "400"
+        col_color = text_col if is_total else "#1565C0"
+        row_html  = (
+            '<div style="display:flex;justify-content:space-between;align-items:center;'
+            'padding:6px 10px;background:' + row_bg + ';border-radius:4px;margin-bottom:3px">'
+            '<span style="font-size:0.85rem;color:#4A5568;font-weight:' + fw + '">' +
+            label +
+            '<span style="font-size:0.78rem;color:#9E9E9E;margin-left:8px">' + detail + '</span>'
+            '</span>'
+            '<span style="font-size:0.85rem;font-weight:' + fw + ';color:' + col_color + '">' +
+            cost + '</span>'
+            '</div>'
+        )
+        st.markdown(row_html, unsafe_allow_html=True)
+
+    # Area summary
+    area_line = (
+        "Coverage area: ~" + str(est["area_km2"]) + " km²" +
+        " · ~" + str(est["estimated_universe"]) + " stores estimated" +
+        " · " + str(est["n_portfolio"]) + " portfolio stores"
+    )
+    st.markdown(
+        '<div style="font-size:0.8rem;color:#6B7280;margin-top:0.6rem">' + area_line + "</div>",
+        unsafe_allow_html=True
+    )
+
+    # Suggestions
+    for sug in est["suggestions"]:
+        st.markdown(
+            '<div style="background:white;border-radius:6px;padding:0.7rem 1rem;'
+            'border-left:3px solid #FFA726;font-size:0.85rem;color:#4A4A4A;margin-top:0.5rem">'
+            "💡 " + sug + "</div>",
+            unsafe_allow_html=True
+        )
+
+    # Close card div
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.caption("💡 Google provides $200 free credit per month — most single-market runs are well within this limit.")
 
