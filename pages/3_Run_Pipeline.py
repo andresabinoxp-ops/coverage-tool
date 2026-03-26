@@ -713,12 +713,35 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         bar.progress(100)
         gap_stores = sorted([s for s in all_stores if s["coverage_status"]=="gap"],key=lambda x:x["score"],reverse=True)
         covered_n  = sum(1 for s in all_stores if s["covered"])
+
+        # Calculate rep recommendation for dry run too
+        dry_priority = [s for s in all_stores if s.get("score",0)>=cfg["thresholds"]["monthly"]]
+        total_calls  = sum(s.get("calls_per_month",0) for s in dry_priority)
+        dry_rep_mode = cfg.get("rep_mode","fixed")
+        if dry_rep_mode == "recommended":
+            cap          = cfg.get("rep_capacity_per_month", cfg.get("calls_per_day",10)*cfg.get("working_days",22))
+            rec_reps     = max(1, math.ceil(total_calls / cap))
+            dry_rec      = {
+                "mode":               "recommended",
+                "total_calls_needed": round(total_calls,1),
+                "cap_per_rep":        cap,
+                "calls_per_day":      cfg.get("calls_per_day",10),
+                "working_days":       cfg.get("working_days",22),
+                "recommended_reps":   rec_reps,
+                "current_reps":       cfg.get("rep_count",0),
+                "shortfall":          rec_reps - cfg.get("rep_count",0),
+                "zone_centres":       [],
+            }
+        else:
+            dry_rec = {"mode":"fixed","rep_count":cfg.get("rep_count",6)}
+
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
             "coverage_rate_before":round(len(base)/max(len(all_stores),1)*100,1),
             "coverage_rate_after":round(covered_n/max(len(all_stores),1)*100,1),
             "portfolio":[s for s in all_stores if s["source"]=="portfolio"],
             "universe":[s for s in all_stores if s["source"]=="scraped"],
+            "rep_recommendation": dry_rec,
         }
         st.session_state["last_market"] = cfg["market_name"]
         status.success(f"✅ Dry run complete — {len(all_stores)} stores generated. Open Results or Routes in the sidebar.")
@@ -822,13 +845,64 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             s["calls_per_month"] = cpm
         bar.progress(72)
 
-        # Stage 6: Routes
-        status.info(f"Stage 6/{total_steps} — Allocating rep routes...")
+        # Stage 6: Routes + Rep Planning
         priority = [s for s in all_stores if s.get("score",0)>=thresholds["monthly"] and s.get("lat") and s.get("lng")]
-        if priority:
-            pts    = [(s["lat"],s["lng"]) for s in priority]
-            labels = kmeans_simple(pts,cfg["rep_count"])
-            for s,lbl in zip(priority,labels): s["rep_id"] = int(lbl)+1
+        rep_recommendation = None
+
+        rep_mode = cfg.get("rep_mode","fixed")
+
+        if rep_mode == "recommended":
+            status.info(f"Stage 6/{total_steps} — Calculating recommended rep count...")
+            # Total calls per month across all priority stores
+            total_calls_needed = sum(s.get("calls_per_month",0) for s in priority)
+            cap_per_rep        = cfg.get("rep_capacity_per_month", cfg.get("calls_per_day",10) * cfg.get("working_days",22))
+            recommended_reps   = max(1, math.ceil(total_calls_needed / cap_per_rep))
+            current_reps       = cfg.get("rep_count", 0)
+
+            # Build zone analysis — cluster into recommended_reps zones
+            zone_labels = None
+            zone_centres = []
+            if priority:
+                pts         = [(s["lat"],s["lng"]) for s in priority]
+                zone_labels = kmeans_simple(pts, recommended_reps)
+                for s, lbl in zip(priority, zone_labels):
+                    s["rep_id"] = int(lbl) + 1
+                # Calculate zone centre coordinates
+                for zone in range(recommended_reps):
+                    zone_stores = [priority[i] for i in range(len(priority)) if zone_labels[i] == zone]
+                    if zone_stores:
+                        centre_lat = sum(s["lat"] for s in zone_stores) / len(zone_stores)
+                        centre_lng = sum(s["lng"] for s in zone_stores) / len(zone_stores)
+                        zone_calls = sum(s.get("calls_per_month",0) for s in zone_stores)
+                        zone_centres.append({
+                            "zone":          zone + 1,
+                            "centre_lat":    round(centre_lat, 4),
+                            "centre_lng":    round(centre_lng, 4),
+                            "store_count":   len(zone_stores),
+                            "calls_per_month": round(zone_calls, 1),
+                        })
+
+            rep_recommendation = {
+                "mode":               "recommended",
+                "total_calls_needed": round(total_calls_needed, 1),
+                "cap_per_rep":        cap_per_rep,
+                "calls_per_day":      cfg.get("calls_per_day", 10),
+                "working_days":       cfg.get("working_days", 22),
+                "recommended_reps":   recommended_reps,
+                "current_reps":       current_reps,
+                "shortfall":          recommended_reps - current_reps if current_reps > 0 else 0,
+                "zone_centres":       zone_centres,
+            }
+        else:
+            # Fixed mode — use configured rep count
+            status.info(f"Stage 6/{total_steps} — Allocating {cfg['rep_count']} rep routes...")
+            if priority:
+                pts    = [(s["lat"],s["lng"]) for s in priority]
+                labels = kmeans_simple(pts, cfg["rep_count"])
+                for s, lbl in zip(priority, labels):
+                    s["rep_id"] = int(lbl) + 1
+            rep_recommendation = {"mode": "fixed", "rep_count": cfg["rep_count"]}
+
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
         bar.progress(80)
@@ -893,6 +967,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             "coverage_rate_before":round(len(covered_p)/max(len(universe),1)*100,1),
             "coverage_rate_after":round(covered_n/max(len(all_stores),1)*100,1),
             "portfolio":portfolio,"universe":universe,
+            "rep_recommendation": rep_recommendation,
         }
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
