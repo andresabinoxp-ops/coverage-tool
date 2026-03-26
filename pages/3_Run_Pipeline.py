@@ -32,20 +32,44 @@ st.markdown("""
 .preflight-green .preflight-title { color: #2E7D32; }
 .preflight-amber .preflight-title { color: #E65100; }
 .preflight-red   .preflight-title { color: #B71C1C; }
-.stat-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    gap: 12px; margin-bottom: 1rem;
+
+/* Main stat grid - time and cost side by side */
+.main-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem;
 }
-.stat-box {
-    background: white; border-radius: 8px; padding: 0.8rem 1rem;
-    text-align: center; border: 1px solid #E0E0E0;
+.main-stat-box {
+    background: white; border-radius: 8px; padding: 1rem 1.2rem;
+    border: 1px solid #E0E0E0;
 }
-.stat-val   { font-size: 1.5rem; font-weight: 800; color: #1A2B4A; line-height: 1; }
-.stat-label { font-size: 0.72rem; color: #9E9E9E; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+.main-stat-val   { font-size: 1.8rem; font-weight: 800; color: #1A2B4A; line-height: 1; }
+.main-stat-label { font-size: 0.75rem; color: #9E9E9E; text-transform: uppercase;
+                   letter-spacing: 0.05em; margin-top: 4px; }
+
+/* Cost breakdown */
+.cost-breakdown {
+    background: white; border-radius: 8px; padding: 1rem 1.2rem;
+    border: 1px solid #E0E0E0; margin-bottom: 0.8rem;
+}
+.cost-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid #F5F5F5; font-size: 0.85rem;
+}
+.cost-row:last-child { border-bottom: none; font-weight: 700; color: #1A2B4A; }
+.cost-label  { color: #4A5568; }
+.cost-detail { color: #9E9E9E; font-size: 0.78rem; margin-left: 8px; }
+.cost-value  { font-weight: 600; color: #1565C0; }
+.cost-total  { font-weight: 800; color: #1A2B4A; font-size: 1rem; }
+
+/* Detail stats */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 0.8rem; }
+.stat-box { background: white; border-radius: 8px; padding: 0.7rem 1rem;
+            text-align: center; border: 1px solid #E0E0E0; }
+.stat-val   { font-size: 1.3rem; font-weight: 800; color: #1A2B4A; line-height: 1; }
+.stat-label { font-size: 0.7rem; color: #9E9E9E; text-transform: uppercase;
+              letter-spacing: 0.05em; margin-top: 4px; }
 .suggestion-box {
     background: white; border-radius: 6px; padding: 0.7rem 1rem;
-    border-left: 3px solid #FFA726; font-size: 0.85rem;
-    color: #4A4A4A; margin-top: 0.5rem;
+    border-left: 3px solid #FFA726; font-size: 0.85rem; color: #4A4A4A; margin-top: 0.5rem;
 }
 div.stButton > button[kind="primary"] {
     background: #1565C0; border-color: #1565C0; color: white;
@@ -58,7 +82,7 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 st.markdown("""
 <div class="page-header">
     <h2>📤 Run Pipeline</h2>
-    <p>Upload your current store portfolio and execute the full 7-stage coverage agent</p>
+    <p>Upload your portfolio, configure enrichment, review the full cost estimate — then run</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -76,10 +100,16 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── CONSTANTS ─────────────────────────────────────────────────────────────────
-GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
-PLACES_URL  = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-TIER_MULT   = {1:1.0, 2:0.8, 3:0.55, 4:0.30}
-MAX_TILES   = 400   # hard cap — never exceed this regardless of area size
+GEOCODE_URL      = "https://maps.googleapis.com/maps/api/geocode/json"
+PLACES_URL       = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+PLACE_DETAIL_URL = "https://maps.googleapis.com/maps/api/place/details/json"
+TIER_MULT        = {1:1.0, 2:0.8, 3:0.55, 4:0.30}
+MAX_TILES        = 400
+
+# Google API pricing (USD)
+PRICE_NEARBY_PER_CALL   = 0.032   # per call, returns up to 20 results
+PRICE_GEOCODE_PER_CALL  = 0.005   # per address geocoded
+PRICE_DETAILS_PER_CALL  = 0.017   # per place details call
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def get_api_key():
@@ -98,25 +128,16 @@ def get_api_key():
     st.stop()
 
 def smart_tile_radius(lat_min, lat_max, lng_min, lng_max, max_tiles=MAX_TILES):
-    """
-    Automatically choose the tile radius so the total tiles stay under max_tiles.
-    Returns (radius_m, n_tiles, warning_msg).
-    """
-    mid  = (lat_min + lat_max) / 2
+    mid        = (lat_min + lat_max) / 2
     lat_span_m = abs(lat_max - lat_min) * 111320
     lng_span_m = abs(lng_max - lng_min) * 111320 * math.cos(math.radians(mid))
     area_m2    = lat_span_m * lng_span_m
-
-    for radius_m in [1000, 2000, 3000, 5000, 8000, 10000, 15000, 20000, 30000, 50000]:
-        tile_area  = (radius_m * 2) ** 2
-        n_tiles    = math.ceil(area_m2 / tile_area)
+    for radius_m in [1000,2000,3000,5000,8000,10000,15000,20000,30000,50000]:
+        tile_area = (radius_m * 2) ** 2
+        n_tiles   = math.ceil(area_m2 / tile_area)
         if n_tiles <= max_tiles:
-            return radius_m, n_tiles, None
-
-    # Even 50km tiles won't fit — use 50km and warn
-    tile_area = (50000 * 2) ** 2
-    n_tiles   = math.ceil(area_m2 / tile_area)
-    return 50000, min(n_tiles, max_tiles), "The selected area is very large. For best results go to Configure and select specific cities rather than the full country."
+            return radius_m, n_tiles
+    return 50000, max_tiles
 
 def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m):
     dlat = (radius_m*2)/111320
@@ -130,72 +151,120 @@ def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m):
             centres.append((round(lat,5), round(lng,5)))
             lng += dlng
         lat += dlat
-    return centres[:MAX_TILES]   # hard cap safety
+    return centres[:MAX_TILES]
 
-def estimate_scraping(cfg):
+def fmt_time(seconds):
+    mins = seconds / 60
+    if mins < 1:      return f"~{round(seconds)} seconds"
+    elif mins < 60:
+        m = int(mins); s = int((mins-m)*60)
+        return f"~{m} min {s} sec" if s > 0 else f"~{m} minutes"
+    else:
+        h = int(mins//60); m = int(mins%60)
+        return f"~{h}h {m}min"
+
+def get_portfolio_count():
+    pf = st.session_state.get("portfolio_df")
+    return len(pf) if pf is not None else 0
+
+def calculate_estimate(enrich_count, enrich_scope):
     """
-    Calculate time estimate before scraping. Safe against pandas DataFrame bool check.
+    Full unified cost + time estimate.
+    Returns dict with all breakdown figures.
     """
-    radius_m, n_tiles, area_warning = smart_tile_radius(
+    radius_m, n_tiles = smart_tile_radius(
         cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
     )
-    n_categories = len(cfg["categories"])
+    n_categories  = len(cfg["categories"])
+    n_portfolio   = get_portfolio_count()
 
-    # Fix: safe portfolio count — avoids pandas bool ambiguity error
-    pf = st.session_state.get("portfolio_df")
-    n_portfolio = len(pf) if pf is not None and hasattr(pf, "__len__") else 0
+    # Scraping
+    avg_pages         = 1.8
+    scrape_calls      = round(n_tiles * n_categories * avg_pages)
+    scrape_cost       = scrape_calls * PRICE_NEARBY_PER_CALL
+    scrape_time       = scrape_calls * 0.35 + n_tiles * n_categories * (avg_pages-1) * 2
 
-    avg_pages       = 1.8
-    total_api_calls = round(n_tiles * n_categories * avg_pages)
-    pagination_time = round(n_tiles * n_categories * (avg_pages - 1) * 2)
-    call_time       = total_api_calls * 0.35
-    geocode_time    = n_portfolio * 0.15
-    total_seconds   = call_time + pagination_time + geocode_time + 15
-    total_minutes   = total_seconds / 60
+    # Geocoding
+    geocode_calls     = n_portfolio
+    geocode_cost      = geocode_calls * PRICE_GEOCODE_PER_CALL
+    geocode_time      = geocode_calls * 0.15
 
+    # Enrichment
+    # Estimate universe size for scope
+    estimated_universe = n_tiles * n_categories * 15  # ~15 stores per tile average
+    if enrich_scope == "none":
+        enrich_calls, enrich_cost = 0, 0.0
+    elif enrich_scope == "top_n":
+        enrich_calls = enrich_count
+        enrich_cost  = enrich_calls * PRICE_DETAILS_PER_CALL
+    elif enrich_scope == "gaps_only":
+        # estimate ~60% are gaps
+        enrich_calls = min(enrich_count, round(estimated_universe * 0.6))
+        enrich_cost  = enrich_calls * PRICE_DETAILS_PER_CALL
+    else:  # all
+        enrich_calls = min(enrich_count, estimated_universe)
+        enrich_cost  = enrich_calls * PRICE_DETAILS_PER_CALL
+
+    enrich_time = enrich_calls * 0.15
+
+    # Totals
+    total_calls   = scrape_calls + geocode_calls + enrich_calls
+    total_cost    = scrape_cost + geocode_cost + enrich_cost
+    total_seconds = scrape_time + geocode_time + enrich_time + 15
+
+    # Traffic light
+    total_minutes = total_seconds / 60
+    if total_minutes < 5:
+        colour, icon, label = "green", "✅", "Quick run — ready to go"
+    elif total_minutes < 15:
+        colour, icon, label = "amber", "⚠️", "Moderate run — consider narrowing if needed"
+    else:
+        colour, icon, label = "red", "🔴", "Long run — recommend selecting specific cities"
+
+    # Area
     lat_span = abs(cfg["lat_max"] - cfg["lat_min"])
     lng_span = abs(cfg["lng_max"] - cfg["lng_min"])
     mid      = (cfg["lat_min"] + cfg["lat_max"]) / 2
     area_km2 = round(lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid)))
 
-    if total_minutes < 5:
-        colour, icon, label = "green", "✅", "Quick run — ready to go"
-    elif total_minutes < 15:
-        colour, icon, label = "amber", "⚠️", "Moderate run — consider narrowing the area"
-    else:
-        colour, icon, label = "red",   "🔴", "Long run — recommend selecting specific cities in Configure"
-
     suggestions = []
-    if area_warning:
-        suggestions.append(area_warning)
-    if total_minutes > 5 and n_categories > 3:
-        suggestions.append(f"Reduce categories from {n_categories} to 2-3 most important to save ~{round(total_minutes*(1-2/n_categories))} minutes.")
-    if total_minutes > 10 and len(cfg.get("cities",[])) > 2:
-        suggestions.append(f"You have {len(cfg.get('cities',[]))} cities selected. Run one city at a time to keep each run under 5 minutes.")
-    if total_minutes > 15 and not area_warning:
-        suggestions.append("Go to Configure and select a specific neighbourhood or district instead of the full city.")
-    if not suggestions and total_minutes > 3:
-        suggestions.append("Tip: Use Dry Run mode first to test the full pipeline without using API credits.")
+    if total_minutes > 15:
+        suggestions.append("Go back to Configure and select specific cities or districts to reduce run time.")
+    if n_categories > 4 and total_minutes > 5:
+        suggestions.append(f"Reduce categories from {n_categories} to 2-3 most important to cut scraping time.")
+    if enrich_calls > 500:
+        suggestions.append(f"Enriching {enrich_calls:,} stores will take ~{fmt_time(enrich_time)} extra. Consider Top N mode to enrich only the highest-scoring stores.")
 
     return {
-        "radius_m":        radius_m,
-        "n_tiles":         n_tiles,
-        "n_categories":    n_categories,
-        "total_api_calls": total_api_calls,
-        "total_minutes":   total_minutes,
-        "total_seconds":   total_seconds,
-        "area_km2":        area_km2,
-        "n_portfolio":     n_portfolio,
-        "colour":          colour,
-        "icon":            icon,
-        "label":           label,
-        "suggestions":     suggestions,
-        "area_warning":    area_warning,
+        "radius_m":          radius_m,
+        "n_tiles":           n_tiles,
+        "n_categories":      n_categories,
+        "n_portfolio":       n_portfolio,
+        "area_km2":          area_km2,
+        "scrape_calls":      scrape_calls,
+        "scrape_cost":       scrape_cost,
+        "scrape_time":       scrape_time,
+        "geocode_calls":     geocode_calls,
+        "geocode_cost":      geocode_cost,
+        "geocode_time":      geocode_time,
+        "enrich_calls":      enrich_calls,
+        "enrich_cost":       enrich_cost,
+        "enrich_time":       enrich_time,
+        "total_calls":       total_calls,
+        "total_cost":        total_cost,
+        "total_seconds":     total_seconds,
+        "total_minutes":     total_minutes,
+        "colour":            colour,
+        "icon":              icon,
+        "label":             label,
+        "suggestions":       suggestions,
+        "estimated_universe": estimated_universe,
     }
 
 def geocode_store(address, city, api_key):
     try:
-        r = requests.get(GEOCODE_URL, params={"address":f"{address}, {city}","key":api_key}, timeout=10)
+        r = requests.get(GEOCODE_URL,
+            params={"address":f"{address}, {city}","key":api_key}, timeout=10)
         data = r.json()
         if data.get("status") == "OK":
             loc = data["results"][0]["geometry"]["location"]
@@ -216,6 +285,20 @@ def fetch_places(lat, lng, radius, place_type, api_key, token=None):
     except Exception:
         return {}
 
+def fetch_place_details(place_id, api_key):
+    try:
+        r = requests.get(PLACE_DETAIL_URL,
+            params={"place_id":place_id,
+                    "fields":"formatted_phone_number,opening_hours,website,formatted_address",
+                    "key":api_key},
+            timeout=10)
+        data = r.json()
+        if data.get("status") == "OK":
+            return data.get("result",{})
+    except Exception:
+        pass
+    return {}
+
 def haversine_m(lat1, lng1, lat2, lng2):
     R = 6371000
     p1,p2 = math.radians(lat1),math.radians(lat2)
@@ -234,7 +317,10 @@ def kmeans_simple(points, k, iterations=20):
         new_c = []
         for j in range(k):
             cluster = [points[i] for i in range(len(points)) if labels[i]==j]
-            new_c.append((sum(p[0] for p in cluster)/len(cluster),sum(p[1] for p in cluster)/len(cluster)) if cluster else centroids[j])
+            new_c.append((
+                sum(p[0] for p in cluster)/len(cluster),
+                sum(p[1] for p in cluster)/len(cluster)
+            ) if cluster else centroids[j])
         centroids = new_c
     return labels
 
@@ -243,17 +329,6 @@ def assign_freq(score, t):
     if score >= t["fortnightly"]: return "fortnightly", 2.0
     if score >= t["monthly"]:     return "monthly",     1.0
     return "bi-weekly", 0.5
-
-def fmt_time(seconds):
-    mins = seconds / 60
-    if mins < 1:
-        return f"~{round(seconds)} seconds"
-    elif mins < 60:
-        m = int(mins); s = int((mins-m)*60)
-        return f"~{m} min {s} sec" if s > 0 else f"~{m} minutes"
-    else:
-        h = int(mins//60); m = int(mins%60)
-        return f"~{h}h {m}min"
 
 # ── STEP 1: PORTFOLIO UPLOAD ──────────────────────────────────────────────────
 st.markdown('<div class="section-title">1. Portfolio CSV</div>', unsafe_allow_html=True)
@@ -277,10 +352,10 @@ if portfolio_df is None:
             if missing:
                 st.error(f"Missing columns: {missing}")
             else:
-                if "store_id" not in df.columns: df["store_id"] = [f"S{i+1:03d}" for i in range(len(df))]
-                if "annual_sales_usd" not in df.columns: df["annual_sales_usd"] = 0
-                if "lines_per_store" not in df.columns: df["lines_per_store"] = 0
-                if "category" not in df.columns: df["category"] = cfg["categories"][0] if cfg["categories"] else "supermarket"
+                if "store_id"          not in df.columns: df["store_id"]          = [f"S{i+1:03d}" for i in range(len(df))]
+                if "annual_sales_usd"  not in df.columns: df["annual_sales_usd"]  = 0
+                if "lines_per_store"   not in df.columns: df["lines_per_store"]   = 0
+                if "category"          not in df.columns: df["category"]          = cfg["categories"][0] if cfg["categories"] else "supermarket"
                 portfolio_df = df
                 st.session_state["portfolio_df"] = df
                 st.success(f"✅ Loaded {len(df)} stores")
@@ -294,63 +369,143 @@ sample = pd.DataFrame([
 ])
 st.download_button("⬇️ Download sample CSV", sample.to_csv(index=False), "sample_portfolio.csv", "text/csv")
 
-# ── STEP 2: PRE-FLIGHT CHECK ──────────────────────────────────────────────────
-st.markdown('<div class="section-title">2. Pre-flight estimate</div>', unsafe_allow_html=True)
-st.caption("Calculated before you run — shows time, API calls and recommendations.")
+st.markdown("---")
 
-est          = estimate_scraping(cfg)
+# ── STEP 2: ENRICHMENT CONFIG ─────────────────────────────────────────────────
+st.markdown('<div class="section-title">2. Phone & opening hours enrichment (optional)</div>', unsafe_allow_html=True)
+st.caption("Configure enrichment before running — cost is included in the pre-flight estimate below.")
+
+enrich_scope_label = st.radio(
+    "Which stores to enrich with phone and opening hours",
+    options=["None — skip enrichment",
+             "Top N stores by score",
+             "All gap stores (uncovered only)",
+             "All scraped stores (full universe)"],
+    index=0,
+    horizontal=True,
+)
+
+enrich_scope_map = {
+    "None — skip enrichment":           "none",
+    "Top N stores by score":            "top_n",
+    "All gap stores (uncovered only)":  "gaps_only",
+    "All scraped stores (full universe)": "all",
+}
+enrich_scope = enrich_scope_map[enrich_scope_label]
+
+# Estimated universe for slider max
+radius_m_est, n_tiles_est = smart_tile_radius(
+    cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
+)
+est_universe = max(50, n_tiles_est * len(cfg["categories"]) * 15)
+
+enrich_count = 0
+if enrich_scope in ("top_n", "gaps_only", "all"):
+    if enrich_scope == "top_n":
+        enrich_count = st.slider(
+            "Number of top stores to enrich",
+            min_value=10,
+            max_value=min(est_universe, 2000),
+            value=min(50, est_universe),
+            step=10,
+            help="Stores are ranked by score. Highest-scoring stores are enriched first."
+        )
+    elif enrich_scope == "gaps_only":
+        enrich_count = min(est_universe, 2000)
+        st.caption(f"Will enrich all gap stores found during scraping (estimated ~{round(enrich_count*0.6):,} stores — 60% of universe are typically gaps).")
+    else:  # all
+        enrich_count = min(est_universe, 2000)
+        st.caption(f"Will enrich all {enrich_count:,} estimated scraped stores. See cost below before proceeding.")
+
+st.markdown("---")
+
+# ── STEP 3: PRE-FLIGHT ESTIMATE ───────────────────────────────────────────────
+st.markdown('<div class="section-title">3. Pre-flight — full cost & time estimate</div>', unsafe_allow_html=True)
+st.caption("Calculated from your market area, categories, portfolio size and enrichment selection.")
+
+est          = calculate_estimate(enrich_count, enrich_scope)
 time_display = fmt_time(est["total_seconds"])
 colour_class = f"preflight-{est['colour']}"
-
-# Tile radius label
 radius_labels = {1000:"1 km",2000:"2 km",3000:"3 km",5000:"5 km",8000:"8 km",
                  10000:"10 km",15000:"15 km",20000:"20 km",30000:"30 km",50000:"50 km"}
 radius_label = radius_labels.get(est["radius_m"], f"{est['radius_m']//1000} km")
 
+# Build cost rows HTML
+enrich_row = ""
+if est["enrich_calls"] > 0:
+    enrich_row = f"""
+    <div class="cost-row">
+        <span class="cost-label">Place Details enrichment
+            <span class="cost-detail">{est['enrich_calls']:,} stores × ${PRICE_DETAILS_PER_CALL}</span>
+        </span>
+        <span class="cost-value">${est['enrich_cost']:.2f}</span>
+    </div>"""
+
 st.markdown(f"""
 <div class="preflight-card {colour_class}">
     <div class="preflight-title">{est['icon']} {est['label']}</div>
-    <div class="stat-grid">
-        <div class="stat-box">
-            <div class="stat-val">{time_display}</div>
-            <div class="stat-label">Estimated time</div>
+    <div class="main-stats">
+        <div class="main-stat-box">
+            <div class="main-stat-val">{time_display}</div>
+            <div class="main-stat-label">Total estimated time</div>
         </div>
-        <div class="stat-box">
-            <div class="stat-val">{est['total_api_calls']:,}</div>
-            <div class="stat-label">API calls</div>
+        <div class="main-stat-box">
+            <div class="main-stat-val">${est['total_cost']:.2f}</div>
+            <div class="main-stat-label">Total estimated API cost</div>
         </div>
-        <div class="stat-box">
-            <div class="stat-val">{est['n_tiles']:,}</div>
-            <div class="stat-label">Grid tiles</div>
+    </div>
+    <div class="cost-breakdown">
+        <div class="cost-row">
+            <span class="cost-label">Google Places scraping
+                <span class="cost-detail">{est['scrape_calls']:,} calls × ${PRICE_NEARBY_PER_CALL} &nbsp;·&nbsp; {est['n_tiles']} tiles · {est['n_categories']} categories · auto tile radius {radius_label}</span>
+            </span>
+            <span class="cost-value">${est['scrape_cost']:.2f}</span>
         </div>
-        <div class="stat-box">
-            <div class="stat-val">{est['n_categories']}</div>
-            <div class="stat-label">Categories</div>
+        <div class="cost-row">
+            <span class="cost-label">Geocoding portfolio
+                <span class="cost-detail">{est['geocode_calls']} stores × ${PRICE_GEOCODE_PER_CALL}</span>
+            </span>
+            <span class="cost-value">${est['geocode_cost']:.2f}</span>
+        </div>
+        {enrich_row}
+        <div class="cost-row">
+            <span class="cost-label">Total</span>
+            <span class="cost-total">${est['total_cost']:.2f} &nbsp;·&nbsp; {est['total_calls']:,} API calls &nbsp;·&nbsp; {time_display}</span>
         </div>
     </div>
     <div style="font-size:0.8rem;color:#6B7280;margin-bottom:0.6rem">
-        Coverage area: ~{est['area_km2']:,} km² &nbsp;·&nbsp;
-        Auto tile radius: {radius_label} &nbsp;·&nbsp;
-        Portfolio stores: {est['n_portfolio']}
+        Coverage area: ~{est['area_km2']:,} km²
+        &nbsp;·&nbsp; Estimated universe: ~{est['estimated_universe']:,} stores
+        &nbsp;·&nbsp; Portfolio: {est['n_portfolio']} stores
     </div>
     {''.join(f'<div class="suggestion-box">💡 {s}</div>' for s in est["suggestions"])}
 </div>
 """, unsafe_allow_html=True)
 
+st.caption("💡 Google provides $200 free credit per month — most single-market runs are well within this limit.")
+
 if est["colour"] != "green":
     st.markdown("""
-**To reduce run time — go back to Configure and:**
-- Select a specific city or neighbourhood instead of a full country or region
-- Reduce the number of scraping categories to 2-3 most important
-- Or use **Dry Run** below to test without using any API credits
+**To reduce time and cost — go back to Configure and:**
+- Select specific cities or districts instead of a full country or region
+- Reduce scraping categories to 2-3 most important
+- Or use **Dry Run** below to test without using any credits
     """)
 
-# ── STEP 3: RUN ───────────────────────────────────────────────────────────────
-st.markdown('<div class="section-title">3. Run the agent</div>', unsafe_allow_html=True)
+st.markdown("---")
 
-dry_run = st.checkbox("Dry run mode — no API calls, generates sample data for testing", value=True)
+# ── STEP 4: RUN ───────────────────────────────────────────────────────────────
+st.markdown('<div class="section-title">4. Run the agent</div>', unsafe_allow_html=True)
+
+dry_run = st.checkbox(
+    "Dry run mode — no API calls, generates sample data for testing",
+    value=True
+)
 if not dry_run:
-    st.warning(f"⚠️ Live mode will call Google APIs — estimated **{time_display}** and **{est['total_api_calls']:,} API calls**.")
+    st.warning(
+        f"⚠️ Live mode will call Google APIs — estimated **{time_display}** "
+        f"and **${est['total_cost']:.2f}** in API costs."
+    )
 
 if st.button("🚀 Run Coverage Agent", type="primary"):
     status = st.empty()
@@ -369,6 +524,14 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         ]
         all_stores = []
         prefixes = ["Metro","City","Quick","Fresh","Express","Central","Star","Royal","Golden","Prime","Al","New"]
+        phone_samples = ["+968 2234 5678","+968 9876 5432","+968 2456 7890","","","+968 2345 6789"]
+        hours_samples = [
+            "Mon-Sat: 8:00 AM - 10:00 PM | Sun: 9:00 AM - 9:00 PM",
+            "Daily: 7:00 AM - 11:00 PM",
+            "Mon-Fri: 9:00 AM - 9:00 PM | Sat-Sun: 10:00 AM - 8:00 PM",
+            "", "",
+        ]
+
         for row in base:
             sc = random.randint(50,100)
             freq, cpm = assign_freq(sc, thresholds)
@@ -382,6 +545,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "annual_sales_usd":float(row.get("annual_sales_usd",0)),"lines_per_store":int(row.get("lines_per_store",0)),
                 "covered":True,"source":"portfolio","score":sc,"visit_frequency":freq,
                 "calls_per_month":cpm,"rep_id":random.randint(1,cfg["rep_count"]),"coverage_status":"covered",
+                "phone":random.choice(phone_samples),"opening_hours":random.choice(hours_samples),
+                "website":"","place_id":f"dry_place_{row.get('store_id','S0')}",
             })
         for i in range(60):
             cat = random.choice(cfg["categories"])
@@ -399,6 +564,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "calls_per_month":cpm,
                 "rep_id":random.randint(1,cfg["rep_count"]) if sc>=thresholds["monthly"] else 0,
                 "coverage_status":"gap",
+                "phone":random.choice(phone_samples) if enrich_scope != "none" else "",
+                "opening_hours":random.choice(hours_samples) if enrich_scope != "none" else "",
+                "website":"","place_id":f"dry_gap_{i:03d}",
             })
         bar.progress(100)
         gap_stores = sorted([s for s in all_stores if s["coverage_status"]=="gap"],key=lambda x:x["score"],reverse=True)
@@ -419,21 +587,23 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         pf        = st.session_state.get("portfolio_df")
         portfolio = pf.to_dict("records") if pf is not None else []
         for s in portfolio:
-            s.update({"covered":True,"source":"portfolio","lat":None,"lng":None,"rating":0.0,"review_count":0})
+            s.update({"covered":True,"source":"portfolio","lat":None,"lng":None,
+                      "rating":0.0,"review_count":0,"phone":"","opening_hours":"","website":""})
             if "category" not in s: s["category"] = cfg["categories"][0] if cfg["categories"] else "supermarket"
 
-        # Use smart radius — same as pre-flight estimate
-        radius_m, _, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
-        centres = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
+        radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
+        centres     = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
+        total_steps = 7 if enrich_scope != "none" else 6
+        run_start   = time.time()
 
         # Stage 1: Geocode
-        status.info(f"Stage 1/7 — Geocoding {len(portfolio)} portfolio stores...")
-        bar.progress(8)
+        status.info(f"Stage 1/{total_steps} — Geocoding {len(portfolio)} portfolio stores...")
+        bar.progress(5)
         for s in portfolio:
             lat,lng = geocode_store(s.get("address",""),s.get("city",""),api_key)
             s["lat"],s["lng"] = lat,lng
             time.sleep(0.05)
-        bar.progress(20)
+        bar.progress(15)
 
         # Stage 2: Scrape
         seen_ids    = set()
@@ -453,29 +623,30 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         seen_ids.add(pid)
                         loc = place.get("geometry",{}).get("location",{})
                         universe.append({
-                            "store_id":pid,"place_id":pid,"store_name":place.get("name",""),
+                            "store_id":pid,"place_id":pid,
+                            "store_name":place.get("name",""),
                             "address":place.get("vicinity",""),"city":cfg.get("city",""),
                             "lat":loc.get("lat"),"lng":loc.get("lng"),
                             "rating":float(place.get("rating",0) or 0),
                             "review_count":int(place.get("user_ratings_total",0) or 0),
                             "category":cat,"annual_sales_usd":0.0,"lines_per_store":0,
                             "covered":False,"source":"scraped",
+                            "phone":"","opening_hours":"","website":"",
                         })
                     token = data.get("next_page_token")
                     if not token: break
                 done_tiles += 1
-                pct      = 20 + int(done_tiles/total_tiles*45)
-                elapsed  = time.time() - scrape_start
-                rem      = (elapsed/done_tiles)*(total_tiles-done_tiles) if done_tiles > 0 else 0
-                rem_str  = fmt_time(rem).replace("~","")
-                status.info(f"Stage 2/7 — Scraping {cat}... {done_tiles}/{total_tiles} tiles | {len(universe):,} stores found | ⏱ {rem_str} remaining")
+                pct = 15 + int(done_tiles/total_tiles*30)
+                elapsed = time.time()-scrape_start
+                rem     = (elapsed/done_tiles)*(total_tiles-done_tiles) if done_tiles>0 else 0
+                status.info(f"Stage 2/{total_steps} — Scraping {cat}... {done_tiles}/{total_tiles} tiles | {len(universe):,} stores | ⏱ {fmt_time(rem).replace('~','')} remaining")
                 bar.progress(pct)
 
-        bar.progress(65)
-        status.info(f"Stage 2/7 — Scraping complete: {len(universe):,} unique stores found")
+        status.info(f"Stage 2/{total_steps} — Found {len(universe):,} unique stores")
+        bar.progress(45)
 
         # Stage 3: Score
-        status.info("Stage 3/7 — Scoring all stores...")
+        status.info(f"Stage 3/{total_steps} — Scoring all stores...")
         all_stores = portfolio + universe
         max_rev    = max((s.get("review_count",0) for s in all_stores),default=1) or 1
         max_sales  = max((s.get("annual_sales_usd",0) for s in portfolio),default=1) or 1
@@ -488,10 +659,10 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             sal_n = (s.get("annual_sales_usd",0) or 0)/max_sales if s.get("covered") else 0.0
             lin_n = (s.get("lines_per_store",0) or 0)/max_lines if s.get("covered") else 0.0
             s["score"] = min(100,round((r_n*weights["rating"]+rv_n*weights["reviews"]+cat_n*weights["category"]+sal_n*weights["sales"]+lin_n*weights["lines"])*100))
-        bar.progress(72)
+        bar.progress(55)
 
         # Stage 4: Gap match
-        status.info("Stage 4/7 — Matching coverage gaps...")
+        status.info(f"Stage 4/{total_steps} — Matching coverage gaps...")
         covered_p = [s for s in portfolio if s.get("lat") and s.get("lng")]
         for u in universe:
             if not (u.get("lat") and u.get("lng")): u["coverage_status"]="no_coords"; continue
@@ -499,18 +670,18 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             u["covered"]         = matched
             u["coverage_status"] = "covered" if matched else "gap"
         for p in portfolio: p["coverage_status"] = "covered"
-        bar.progress(80)
+        bar.progress(65)
 
         # Stage 5: Frequency
-        status.info("Stage 5/7 — Assigning visit frequencies...")
+        status.info(f"Stage 5/{total_steps} — Assigning visit frequencies...")
         for s in all_stores:
             freq,cpm = assign_freq(s.get("score",0),thresholds)
             s["visit_frequency"] = freq
             s["calls_per_month"] = cpm
-        bar.progress(87)
+        bar.progress(72)
 
         # Stage 6: Routes
-        status.info("Stage 6/7 — Allocating rep routes...")
+        status.info(f"Stage 6/{total_steps} — Allocating rep routes...")
         priority = [s for s in all_stores if s.get("score",0)>=thresholds["monthly"] and s.get("lat") and s.get("lng")]
         if priority:
             pts    = [(s["lat"],s["lng"]) for s in priority]
@@ -518,13 +689,63 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             for s,lbl in zip(priority,labels): s["rep_id"] = int(lbl)+1
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
-        bar.progress(95)
+        bar.progress(80)
 
-        # Stage 7: Package
-        status.info("Stage 7/7 — Packaging results...")
+        # Stage 7: Enrichment (optional)
+        if enrich_scope != "none":
+            status.info(f"Stage 7/{total_steps} — Enriching stores with phone & opening hours...")
+
+            # Select candidates based on scope
+            if enrich_scope == "top_n":
+                candidates = sorted(
+                    [s for s in all_stores if s.get("place_id","")],
+                    key=lambda x: x.get("score",0), reverse=True
+                )[:enrich_count]
+            elif enrich_scope == "gaps_only":
+                candidates = sorted(
+                    [s for s in all_stores if s.get("coverage_status")=="gap" and s.get("place_id","")],
+                    key=lambda x: x.get("score",0), reverse=True
+                )[:enrich_count]
+            else:  # all
+                candidates = [s for s in all_stores if s.get("place_id","")][:enrich_count]
+
+            enriched = 0
+            failed   = 0
+            enrich_start = time.time()
+
+            for i, store in enumerate(candidates):
+                result = fetch_place_details(store.get("place_id",""), api_key)
+                if result:
+                    store["phone"]   = result.get("formatted_phone_number","")
+                    store["website"] = result.get("website","")
+                    oh = result.get("opening_hours",{})
+                    wt = oh.get("weekday_text",[])
+                    store["opening_hours"] = " | ".join(wt) if wt else ""
+                    if result.get("formatted_address"):
+                        store["full_address"] = result["formatted_address"]
+                    enriched += 1
+                else:
+                    failed += 1
+
+                pct = 80 + int((i+1)/max(len(candidates),1)*17)
+                rem = (time.time()-enrich_start)/(i+1)*(len(candidates)-i-1) if i>0 else 0
+                status.info(
+                    f"Stage 7/{total_steps} — Enriching... {i+1}/{len(candidates)} | "
+                    f"{enriched} updated | ⏱ {fmt_time(rem).replace('~','')} remaining"
+                )
+                bar.progress(min(pct,97))
+                time.sleep(0.1)
+
+        # Package results
         gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)
         covered_n   = sum(1 for s in all_stores if s.get("covered"))
-        actual_time = fmt_time(time.time()-scrape_start).replace("~","")
+        actual_time = fmt_time(time.time()-run_start).replace("~","")
+        actual_cost = (
+            round(len(portfolio)*PRICE_GEOCODE_PER_CALL +
+                  len(universe)/15*PRICE_NEARBY_PER_CALL +
+                  (enriched if enrich_scope != "none" else 0)*PRICE_DETAILS_PER_CALL, 2)
+        )
+
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
             "coverage_rate_before":round(len(covered_p)/max(len(universe),1)*100,1),
@@ -533,93 +754,10 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         }
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
-        status.success(f"✅ Pipeline complete in {actual_time} — {len(all_stores):,} stores scored, {len(gap_stores):,} gaps found. Open Results in the sidebar.")
 
-# ── PLACE DETAILS ENRICHMENT ─────────────────────────────────────────────────
-if st.session_state.get("run_results"):
-    st.markdown('<div class="section-title">Enrich stores with phone and opening hours (optional)</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="info-box">
-    This step calls the Google Places Details API to fetch <strong>phone numbers</strong> and
-    <strong>opening hours</strong> for your top stores. Each store requires one additional API call,
-    so you can choose how many stores to enrich to manage costs.
-    <br><br>
-    <strong>Estimated cost:</strong> ~$0.017 per store (Google Places Details API pricing).
-    </div>
-    """, unsafe_allow_html=True)
-
-    col1, col2 = st.columns([2,1])
-    with col1:
-        enrich_count = st.slider(
-            "Number of top stores to enrich (sorted by score)",
-            min_value=10, max_value=200, value=50, step=10
+        enrich_msg = f" · {enriched} stores enriched with phone & hours" if enrich_scope != "none" else ""
+        status.success(
+            f"✅ Pipeline complete in {actual_time} · actual cost ~${actual_cost:.2f} · "
+            f"{len(all_stores):,} stores scored · {len(gap_stores):,} gaps found{enrich_msg}. "
+            f"Open Results in the sidebar."
         )
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        estimated_cost = enrich_count * 0.017
-        st.metric("Estimated API cost", f"${estimated_cost:.2f}")
-
-    enrich_filter = st.multiselect(
-        "Enrich only these coverage types (optional)",
-        options=["covered","gap"],
-        default=["covered","gap"],
-        help="Select gap to only enrich gap stores — useful for prospecting calls."
-    )
-
-    if st.button("Fetch phone & opening hours", type="primary", key="btn_enrich"):
-        if dry_run:
-            st.warning("Switch off Dry Run mode to use enrichment with real API calls.")
-        else:
-            api_key = get_api_key()
-            all_stores = st.session_state["run_results"]["all_stores"]
-
-            # Get top stores by score matching filter
-            candidates = [s for s in all_stores
-                if s.get("coverage_status","") in enrich_filter
-                and s.get("place_id","")]
-            candidates = sorted(candidates, key=lambda x: x.get("score",0), reverse=True)[:enrich_count]
-
-            enrich_bar    = st.progress(0)
-            enrich_status = st.empty()
-            enriched      = 0
-            failed        = 0
-
-            for i, store in enumerate(candidates):
-                place_id = store.get("place_id","")
-                if not place_id:
-                    failed += 1
-                    continue
-                try:
-                    r = requests.get(
-                        "https://maps.googleapis.com/maps/api/place/details/json",
-                        params={
-                            "place_id": place_id,
-                            "fields": "formatted_phone_number,opening_hours,website,formatted_address",
-                            "key": api_key
-                        },
-                        timeout=10
-                    )
-                    data = r.json()
-                    if data.get("status") == "OK":
-                        result = data.get("result", {})
-                        store["phone"]   = result.get("formatted_phone_number","")
-                        store["website"] = result.get("website","")
-                        if result.get("formatted_address"):
-                            store["full_address"] = result["formatted_address"]
-                        # Opening hours — get weekday text
-                        oh = result.get("opening_hours",{})
-                        weekday_text = oh.get("weekday_text",[])
-                        store["opening_hours"] = " | ".join(weekday_text) if weekday_text else ""
-                        enriched += 1
-                    else:
-                        failed += 1
-                except Exception:
-                    failed += 1
-
-                enrich_bar.progress((i+1)/len(candidates))
-                enrich_status.info(f"Enriching... {i+1}/{len(candidates)} stores | {enriched} succeeded | {failed} failed")
-                time.sleep(0.1)
-
-            # Update session state
-            st.session_state["run_results"]["all_stores"] = all_stores
-            enrich_status.success(f"✅ Enrichment complete — {enriched} stores updated with phone and opening hours. View in Routes page.")
