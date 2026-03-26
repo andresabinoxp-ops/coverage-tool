@@ -534,3 +534,92 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
         status.success(f"✅ Pipeline complete in {actual_time} — {len(all_stores):,} stores scored, {len(gap_stores):,} gaps found. Open Results in the sidebar.")
+
+# ── PLACE DETAILS ENRICHMENT ─────────────────────────────────────────────────
+if st.session_state.get("run_results"):
+    st.markdown('<div class="section-title">Enrich stores with phone and opening hours (optional)</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="info-box">
+    This step calls the Google Places Details API to fetch <strong>phone numbers</strong> and
+    <strong>opening hours</strong> for your top stores. Each store requires one additional API call,
+    so you can choose how many stores to enrich to manage costs.
+    <br><br>
+    <strong>Estimated cost:</strong> ~$0.017 per store (Google Places Details API pricing).
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns([2,1])
+    with col1:
+        enrich_count = st.slider(
+            "Number of top stores to enrich (sorted by score)",
+            min_value=10, max_value=200, value=50, step=10
+        )
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        estimated_cost = enrich_count * 0.017
+        st.metric("Estimated API cost", f"${estimated_cost:.2f}")
+
+    enrich_filter = st.multiselect(
+        "Enrich only these coverage types (optional)",
+        options=["covered","gap"],
+        default=["covered","gap"],
+        help="Select gap to only enrich gap stores — useful for prospecting calls."
+    )
+
+    if st.button("Fetch phone & opening hours", type="primary", key="btn_enrich"):
+        if dry_run:
+            st.warning("Switch off Dry Run mode to use enrichment with real API calls.")
+        else:
+            api_key = get_api_key()
+            all_stores = st.session_state["run_results"]["all_stores"]
+
+            # Get top stores by score matching filter
+            candidates = [s for s in all_stores
+                if s.get("coverage_status","") in enrich_filter
+                and s.get("place_id","")]
+            candidates = sorted(candidates, key=lambda x: x.get("score",0), reverse=True)[:enrich_count]
+
+            enrich_bar    = st.progress(0)
+            enrich_status = st.empty()
+            enriched      = 0
+            failed        = 0
+
+            for i, store in enumerate(candidates):
+                place_id = store.get("place_id","")
+                if not place_id:
+                    failed += 1
+                    continue
+                try:
+                    r = requests.get(
+                        "https://maps.googleapis.com/maps/api/place/details/json",
+                        params={
+                            "place_id": place_id,
+                            "fields": "formatted_phone_number,opening_hours,website,formatted_address",
+                            "key": api_key
+                        },
+                        timeout=10
+                    )
+                    data = r.json()
+                    if data.get("status") == "OK":
+                        result = data.get("result", {})
+                        store["phone"]   = result.get("formatted_phone_number","")
+                        store["website"] = result.get("website","")
+                        if result.get("formatted_address"):
+                            store["full_address"] = result["formatted_address"]
+                        # Opening hours — get weekday text
+                        oh = result.get("opening_hours",{})
+                        weekday_text = oh.get("weekday_text",[])
+                        store["opening_hours"] = " | ".join(weekday_text) if weekday_text else ""
+                        enriched += 1
+                    else:
+                        failed += 1
+                except Exception:
+                    failed += 1
+
+                enrich_bar.progress((i+1)/len(candidates))
+                enrich_status.info(f"Enriching... {i+1}/{len(candidates)} stores | {enriched} succeeded | {failed} failed")
+                time.sleep(0.1)
+
+            # Update session state
+            st.session_state["run_results"]["all_stores"] = all_stores
+            enrich_status.success(f"✅ Enrichment complete — {enriched} stores updated with phone and opening hours. View in Routes page.")
