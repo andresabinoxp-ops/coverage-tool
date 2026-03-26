@@ -330,6 +330,104 @@ def assign_freq(score, t):
     if score >= t["monthly"]:     return "monthly",     1.0
     return "bi-weekly", 0.5
 
+# ── API HEALTH CHECK ─────────────────────────────────────────────────────────
+def run_api_health_check(api_key):
+    results = {}
+    apis = [
+        ("Geocoding API",
+         "https://maps.googleapis.com/maps/api/geocode/json",
+         {"address":"Dubai, UAE","key":api_key}),
+        ("Places API",
+         "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+         {"location":"25.2048,55.2708","radius":"500","type":"supermarket","key":api_key}),
+        ("Place Details API",
+         "https://maps.googleapis.com/maps/api/place/details/json",
+         {"place_id":"ChIJRcbZaklDXz4RYlEphFBu5r0","fields":"name","key":api_key}),
+    ]
+    for name, url, params in apis:
+        try:
+            r = requests.get(url, params=params, timeout=6)
+            s = r.json().get("status","UNKNOWN")
+            if s in ("OK","ZERO_RESULTS"):
+                results[name] = ("ok", "Active and working")
+            elif s == "REQUEST_DENIED":
+                msg = r.json().get("error_message","Not enabled or key invalid")
+                results[name] = ("error", msg)
+            else:
+                results[name] = ("warn", f"Unexpected status: {s}")
+        except Exception as e:
+            results[name] = ("error", str(e))
+    return results
+
+def api_check_html(name, status, message):
+    icons  = {"ok":"✅","error":"❌","warn":"⚠️"}
+    colors = {"ok":"#2E7D32","error":"#C62828","warn":"#E65100"}
+    bgs    = {"ok":"#E8F5E9","error":"#FFF5F5","warn":"#FFF8E1"}
+    bords  = {"ok":"#A5D6A7","error":"#FFCDD2","warn":"#FFE082"}
+    return (f'<div style="background:{bgs[status]};border:1px solid {bords[status]};'
+            f'border-left:4px solid {colors[status]};border-radius:6px;'
+            f'padding:8px 12px;margin-bottom:6px">'
+            f'<span style="font-weight:700;color:{colors[status]}">{icons[status]} {name}</span>'
+            f'<span style="font-size:0.82rem;color:{colors[status]};margin-left:8px">{message}</span>'
+            f'</div>')
+
+# Resolve key
+_check_key = (cfg.get("market_api_key")
+    or st.session_state.get("market_api_key_input")
+    or st.session_state.get("session_api_key"))
+if not _check_key:
+    try:
+        _check_key = st.secrets.get("GOOGLE_MAPS_API_KEY","") or None
+    except Exception:
+        _check_key = None
+
+st.markdown('<div class="section-title">API status</div>', unsafe_allow_html=True)
+
+if not _check_key:
+    st.markdown("""
+    <div style="background:#FFF5F5;border:1px solid #FFCDD2;border-left:4px solid #C62828;
+    border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem">
+        <div style="font-weight:700;color:#B71C1C;margin-bottom:6px">❌ No Google API key found</div>
+        <div style="font-size:0.85rem;color:#C62828;line-height:1.6">
+            The pipeline cannot run without a Google Maps API key.<br>
+            <strong>Option 1:</strong> Ask your admin to set GOOGLE_MAPS_API_KEY in Streamlit Secrets.<br>
+            <strong>Option 2:</strong> Go to Admin Settings and paste a key there.<br>
+            <strong>Option 3:</strong> Paste your own key in the Configure page under Step 2.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    col_a, col_b = st.columns([4, 1])
+    with col_a:
+        st.caption("All three APIs must be enabled in Google Cloud Console. Click Check APIs to verify before running.")
+    with col_b:
+        do_check = st.button("🔍 Check APIs", key="quick_check")
+
+    if do_check:
+        with st.spinner("Checking APIs..."):
+            st.session_state["api_health_cache"] = run_api_health_check(_check_key)
+
+    if "api_health_cache" in st.session_state:
+        check_res = st.session_state["api_health_cache"]
+        all_ok    = all(s == "ok" for s, _ in check_res.values())
+        html_out  = "".join(api_check_html(n, s, m) for n, (s, m) in check_res.items())
+        if not all_ok:
+            html_out += (
+                '<div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:6px;'
+                'padding:8px 12px;margin-top:6px;font-size:0.82rem;color:#0D47A1">'
+                '🔧 To fix: go to <a href="https://console.cloud.google.com/apis/library" target="_blank">'
+                'console.cloud.google.com → APIs &amp; Services → Library</a> → '
+                'search the API name → click Enable → come back and click Check APIs again.'
+                '</div>'
+            )
+        st.markdown(html_out, unsafe_allow_html=True)
+        if all_ok:
+            st.success("✅ All APIs active — pipeline ready to run")
+    else:
+        st.info("Click **Check APIs** above to verify everything is enabled before running.")
+
+st.markdown("---")
+
 # ── STEP 1: PORTFOLIO UPLOAD ──────────────────────────────────────────────────
 st.markdown('<div class="section-title">1. Portfolio CSV</div>', unsafe_allow_html=True)
 st.markdown("Required: `store_name`, `address`, `city` | Optional: `store_id`, `category`, `annual_sales_usd`, `lines_per_store`")
