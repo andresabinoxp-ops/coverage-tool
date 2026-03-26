@@ -558,99 +558,52 @@ if est["area_km2"] > 100000:
     </div>
     """, unsafe_allow_html=True)
 else:
-    # ── Normal pre-flight card ────────────────────────────────────────────────
-    # Use st.container + individual st.markdown calls to avoid f-string HTML escaping
+    # ── Normal pre-flight card — pure native Streamlit, no custom HTML ────────
+    colour_icons  = {"green": "✅", "amber": "⚠️", "red": "🔴"}
+    colour_fns    = {"green": st.success, "amber": st.warning, "red": st.error}
+    status_fn     = colour_fns.get(est["colour"], st.info)
+    status_fn(colour_icons.get(est["colour"],"") + "  " + est["label"])
 
-    # Colour mapping
-    card_colors = {
-        "green": ("#F1F8F1", "#66BB6A", "#2E7D32"),
-        "amber": ("#FFFBF0", "#FFA726", "#E65100"),
-        "red":   ("#FFF5F5", "#EF5350", "#B71C1C"),
-    }
-    bg, border_col, text_col = card_colors.get(est["colour"], card_colors["green"])
-
-    # Open card div
-    st.markdown(
-        '<div style="background:' + bg + ';border:1.5px solid ' + border_col +
-        ';border-radius:10px;padding:1.4rem 1.8rem;margin:1rem 0">',
-        unsafe_allow_html=True
-    )
-
-    # Title
-    st.markdown(
-        '<div style="font-size:1rem;font-weight:700;color:' + text_col +
-        ';margin-bottom:0.8rem">' + est["icon"] + " " + est["label"] + "</div>",
-        unsafe_allow_html=True
-    )
-
-    # Time + cost boxes using st.columns — no HTML needed
+    # Two headline metrics
     mc1, mc2 = st.columns(2)
-    mc1.metric("Total estimated time", time_display)
-    mc2.metric("Total estimated API cost", "$" + str(round(est["total_cost"], 2)))
+    mc1.metric("Total estimated time",       time_display)
+    mc2.metric("Total estimated API cost",   "$" + str(round(est["total_cost"], 2)))
 
-    # Cost breakdown table
-    breakdown_rows = [
-        ("Google Places scraping",
-         str(est["scrape_calls"]) + " calls x $" + str(PRICE_NEARBY_PER_CALL) +
-         " · " + str(est["n_tiles"]) + " tiles · " + str(est["n_categories"]) +
-         " categories · radius " + radius_label,
-         "$" + str(round(est["scrape_cost"], 2))),
-        ("Geocoding portfolio",
-         str(est["geocode_calls"]) + " stores x $" + str(PRICE_GEOCODE_PER_CALL),
-         "$" + str(round(est["geocode_cost"], 2))),
-    ]
+    # Cost breakdown as a dataframe — always renders correctly
+    breakdown = {
+        "Item":   ["Google Places scraping", "Geocoding portfolio"],
+        "Detail": [
+            str(est["scrape_calls"]) + " calls · " + str(est["n_tiles"]) + " tiles · " + str(est["n_categories"]) + " categories · radius " + radius_label,
+            str(est["geocode_calls"]) + " stores x $" + str(PRICE_GEOCODE_PER_CALL),
+        ],
+        "Cost ($)": [
+            round(est["scrape_cost"], 2),
+            round(est["geocode_cost"], 2),
+        ],
+    }
     if est["enrich_calls"] > 0:
-        breakdown_rows.append((
-            "Place Details enrichment",
-            str(est["enrich_calls"]) + " stores x $" + str(PRICE_DETAILS_PER_CALL),
-            "$" + str(round(est["enrich_cost"], 2))
-        ))
-    breakdown_rows.append((
-        "Total",
-        str(est["total_calls"]) + " API calls · " + time_display,
-        "$" + str(round(est["total_cost"], 2))
-    ))
+        breakdown["Item"].append("Place Details enrichment")
+        breakdown["Detail"].append(str(est["enrich_calls"]) + " stores x $" + str(PRICE_DETAILS_PER_CALL))
+        breakdown["Cost ($)"].append(round(est["enrich_cost"], 2))
 
-    for i, (label, detail, cost) in enumerate(breakdown_rows):
-        is_total  = (i == len(breakdown_rows) - 1)
-        row_bg    = "#F8F8F8" if i % 2 == 0 else "#FFFFFF"
-        fw        = "700" if is_total else "400"
-        col_color = text_col if is_total else "#1565C0"
-        row_html  = (
-            '<div style="display:flex;justify-content:space-between;align-items:center;'
-            'padding:6px 10px;background:' + row_bg + ';border-radius:4px;margin-bottom:3px">'
-            '<span style="font-size:0.85rem;color:#4A5568;font-weight:' + fw + '">' +
-            label +
-            '<span style="font-size:0.78rem;color:#9E9E9E;margin-left:8px">' + detail + '</span>'
-            '</span>'
-            '<span style="font-size:0.85rem;font-weight:' + fw + ';color:' + col_color + '">' +
-            cost + '</span>'
-            '</div>'
-        )
-        st.markdown(row_html, unsafe_allow_html=True)
+    breakdown["Item"].append("TOTAL")
+    breakdown["Detail"].append(str(est["total_calls"]) + " total API calls")
+    breakdown["Cost ($)"].append(round(est["total_cost"], 2))
 
-    # Area summary
-    area_line = (
-        "Coverage area: ~" + str(est["area_km2"]) + " km²" +
-        " · ~" + str(est["estimated_universe"]) + " stores estimated" +
+    import pandas as pd
+    bdf = pd.DataFrame(breakdown)
+    st.dataframe(bdf, use_container_width=True, hide_index=True,
+        column_config={"Cost ($)": st.column_config.NumberColumn("Cost ($)", format="$%.2f")})
+
+    st.caption(
+        "Coverage area: ~" + str(est["area_km2"]) + " km²"
+        " · ~" + str(est["estimated_universe"]) + " stores estimated"
         " · " + str(est["n_portfolio"]) + " portfolio stores"
-    )
-    st.markdown(
-        '<div style="font-size:0.8rem;color:#6B7280;margin-top:0.6rem">' + area_line + "</div>",
-        unsafe_allow_html=True
+        " · Tile radius: " + radius_label
     )
 
-    # Suggestions
     for sug in est["suggestions"]:
-        st.markdown(
-            '<div style="background:white;border-radius:6px;padding:0.7rem 1rem;'
-            'border-left:3px solid #FFA726;font-size:0.85rem;color:#4A4A4A;margin-top:0.5rem">'
-            "💡 " + sug + "</div>",
-            unsafe_allow_html=True
-        )
-
-    # Close card div
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.info("💡 " + sug)
 
 st.caption("💡 Google provides $200 free credit per month — most single-market runs are well within this limit.")
 
