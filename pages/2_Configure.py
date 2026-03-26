@@ -454,10 +454,10 @@ rep_mode = st.radio(
     horizontal=True,
 )
 
-rep_count          = 6
-rep_mode_key       = "fixed"
-calls_per_day      = 10
-working_days       = 22
+rep_count     = 6
+rep_mode_key  = "fixed"
+calls_per_day = 10
+working_days  = 22
 
 if rep_mode == "Fixed — I know how many reps I have":
     rep_mode_key = "fixed"
@@ -468,35 +468,49 @@ if rep_mode == "Fixed — I know how many reps I have":
     )
 else:
     rep_mode_key = "recommended"
-    st.markdown("""
-    <div style="background:#E3F2FD;border:1px solid #90CAF9;border-left:4px solid #1565C0;
-    border-radius:8px;padding:0.8rem 1.2rem;margin:0.5rem 0;font-size:0.88rem;color:#0D47A1">
-    The agent will calculate how many reps you need based on total store workload
-    and your rep capacity. It will also show you where to base each rep geographically.
-    </div>
-    """, unsafe_allow_html=True)
+    st.info(
+        "The agent will calculate how many reps you need based on total store workload "
+        "divided by your rep capacity. It will also show where to base each rep geographically."
+    )
 
+    st.markdown("**Rep capacity**")
     col1, col2, col3 = st.columns(3)
     with col1:
         calls_per_day = st.number_input(
             "Store visits per rep per day",
             min_value=3, max_value=25, value=10,
-            help="How many stores can one rep visit in a day? Typical range: 6 (rural) to 15 (dense city)."
+            help="Typical range: 6 (rural / large stores) to 15 (dense city / small outlets)."
         )
     with col2:
         working_days = st.number_input(
             "Working days per month",
             min_value=15, max_value=26, value=22,
-            help="Number of selling days per month after weekends and holidays."
+            help="Selling days per month after weekends and public holidays."
         )
     with col3:
-        st.markdown("<br>", unsafe_allow_html=True)
         cap_per_rep = calls_per_day * working_days
-        st.metric("Rep capacity", f"{cap_per_rep} calls/month",
-                  help="Total store visits one rep can make per month.")
+        st.metric(
+            "Rep capacity per month",
+            f"{cap_per_rep} calls",
+            help="How many store visits one rep can complete in a month."
+        )
+    st.caption(
+        f"Formula: {calls_per_day} visits/day × {working_days} days = "
+        f"{cap_per_rep} calls/month per rep. "
+        "After the run: Total calls needed ÷ " + str(cap_per_rep) + " = Recommended rep count."
+    )
 
-    # Preview estimate if we have universe estimate
-    st.caption(f"After the pipeline runs the agent will calculate: Total calls needed ÷ {cap_per_rep} calls/rep/month = Recommended rep count")
+    st.markdown("**Current headcount (optional)**")
+    st.caption("Only used to compare against the recommendation — does not affect the calculation. Leave at 0 if unknown.")
+    rep_count = st.number_input(
+        "How many reps do you currently have?",
+        min_value=0, max_value=200, value=0,
+        help="Enter 0 to skip comparison. If you enter a number the Results page will show whether you are over or under-resourced."
+    )
+    if rep_count == 0:
+        st.caption("No current headcount entered — the Results page will show the recommendation only, without a comparison.")
+    else:
+        st.caption(f"After the run the agent will compare its recommendation against your current {rep_count} reps and show the shortfall or surplus.")
 
 st.markdown("---")
 
