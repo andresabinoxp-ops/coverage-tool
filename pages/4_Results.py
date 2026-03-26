@@ -114,7 +114,70 @@ else:
     st.info("No gap stores with score above 40.")
 
 st.markdown("---")
-st.subheader("Rep workload summary")
+
+# ── REP RECOMMENDATION PANEL ─────────────────────────────────────────────────
+rep_rec = res.get("rep_recommendation")
+if rep_rec and rep_rec.get("mode") == "recommended":
+    st.markdown('<div class="section-title">Rep planning recommendation</div>', unsafe_allow_html=True)
+
+    rec_reps    = rep_rec.get("recommended_reps", 0)
+    cur_reps    = rep_rec.get("current_reps", 0)
+    shortfall   = rep_rec.get("shortfall", 0)
+    total_calls = rep_rec.get("total_calls_needed", 0)
+    cap         = rep_rec.get("cap_per_rep", 220)
+    cpd         = rep_rec.get("calls_per_day", 10)
+    wd          = rep_rec.get("working_days", 22)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Recommended reps",          rec_reps)
+    col2.metric("Total calls / month",       f"{total_calls:,.0f}")
+    col3.metric("Rep capacity / month",      f"{cap:,}",
+        help=f"{cpd} visits/day x {wd} working days")
+    col4.metric("vs Current headcount",
+        f"{'+' if shortfall > 0 else ''}{shortfall} reps" if cur_reps > 0 else "Not set")
+
+    if shortfall > 0:
+        st.markdown(f"""
+        <div style="background:#FFF5F5;border:1px solid #FFCDD2;border-left:4px solid #C62828;
+        border-radius:8px;padding:1rem 1.2rem;margin:0.8rem 0">
+            <div style="font-weight:700;color:#B71C1C;margin-bottom:4px">
+                ⚠️ Headcount shortfall — {shortfall} additional rep{'s' if shortfall != 1 else ''} recommended
+            </div>
+            <div style="font-size:0.87rem;color:#C62828;line-height:1.6">
+                With {cur_reps} reps and {total_calls:,.0f} calls needed per month,
+                each rep would need {total_calls/max(cur_reps,1):,.0f} calls/month
+                ({total_calls/max(cur_reps,1)/wd:.1f} visits/day) — above your target of {cpd}/day.
+                Adding {shortfall} rep{'s' if shortfall != 1 else ''} brings each to
+                {total_calls/max(rec_reps,1):,.0f} calls/month ({total_calls/max(rec_reps,1)/wd:.1f} visits/day).
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif shortfall < 0:
+        st.markdown(f"""
+        <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-left:4px solid #2E7D32;
+        border-radius:8px;padding:1rem 1.2rem;margin:0.8rem 0">
+            <div style="font-weight:700;color:#1B5E20;margin-bottom:4px">
+                ✅ Headcount sufficient — {abs(shortfall)} rep{'s' if abs(shortfall) != 1 else ''} to spare
+            </div>
+            <div style="font-size:0.87rem;color:#2E7D32;line-height:1.6">
+                Your {cur_reps} reps can handle this market comfortably at
+                {total_calls/max(cur_reps,1):,.0f} calls/month each ({total_calls/max(cur_reps,1)/wd:.1f} visits/day).
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.success(f"✅ Exactly {rec_reps} reps needed — your current headcount is a perfect match.")
+
+    zone_centres = rep_rec.get("zone_centres", [])
+    if zone_centres:
+        st.markdown("**Recommended rep base locations:**")
+        zdf = pd.DataFrame(zone_centres)
+        zdf.columns = ["Zone","Base Lat","Base Lng","Stores","Calls / Month"]
+        st.dataframe(zdf, use_container_width=True, hide_index=True)
+        st.caption("Base location is the geographic centre of each rep territory. Use this to decide where reps should be stationed.")
+else:
+    st.markdown('<div class="section-title">Rep workload summary</div>', unsafe_allow_html=True)
+
 rep_data = {}
 for s in all_stores:
     rid = s.get("rep_id", 0)
