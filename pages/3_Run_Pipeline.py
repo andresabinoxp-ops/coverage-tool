@@ -441,46 +441,90 @@ if est["enrich_calls"] > 0:
         <span class="cost-value">${est['enrich_cost']:.2f}</span>
     </div>"""
 
-st.markdown(f"""
-<div class="preflight-card {colour_class}">
-    <div class="preflight-title">{est['icon']} {est['label']}</div>
-    <div class="main-stats">
-        <div class="main-stat-box">
-            <div class="main-stat-val">{time_display}</div>
-            <div class="main-stat-label">Total estimated time</div>
+# ── Area too large — block the run ───────────────────────────────────────────
+if est["area_km2"] > 100000:
+    st.markdown(f"""
+    <div class="preflight-card preflight-red">
+        <div class="preflight-title">🔴 Area too large to scrape effectively</div>
+        <div style="color:#B71C1C;font-size:0.9rem;margin-bottom:0.8rem">
+            Your selected coverage area is <strong>~{est['area_km2']:,} km²</strong> —
+            this is a full country or large region. Scraping this area would take
+            <strong>{time_display}</strong> and cost approximately
+            <strong>${est['total_cost']:.2f}</strong> in API credits.
         </div>
-        <div class="main-stat-box">
-            <div class="main-stat-val">${est['total_cost']:.2f}</div>
-            <div class="main-stat-label">Total estimated API cost</div>
+        <div class="suggestion-box">
+            💡 Go back to <strong>Configure</strong> and add specific cities or districts
+            (e.g. Muscat, Salalah) instead of selecting the whole country.
+            Each city typically takes 2–5 minutes and costs under $2.
         </div>
     </div>
-    <div class="cost-breakdown">
+    """, unsafe_allow_html=True)
+else:
+    # ── Normal pre-flight card ────────────────────────────────────────────────
+    # Build HTML using variables to avoid f-string quote conflicts
+    scrape_detail   = f"{est['scrape_calls']:,} calls x ${PRICE_NEARBY_PER_CALL} · {est['n_tiles']} tiles · {est['n_categories']} categories · tile radius {radius_label}"
+    geocode_detail  = f"{est['geocode_calls']} stores x ${PRICE_GEOCODE_PER_CALL}"
+    total_summary   = f"${est['total_cost']:.2f} · {est['total_calls']:,} API calls · {time_display}"
+    area_summary    = f"~{est['area_km2']:,} km² · ~{est['estimated_universe']:,} stores estimated · {est['n_portfolio']} portfolio stores"
+    scrape_cost_str = f"${est['scrape_cost']:.2f}"
+    geocode_cost_str= f"${est['geocode_cost']:.2f}"
+    total_cost_str  = f"${est['total_cost']:.2f}"
+    enrich_cost_str = f"${est['enrich_cost']:.2f}"
+    enrich_detail   = f"{est['enrich_calls']:,} stores x ${PRICE_DETAILS_PER_CALL}"
+
+    enrich_html = ""
+    if est["enrich_calls"] > 0:
+        enrich_html = f"""
         <div class="cost-row">
-            <span class="cost-label">Google Places scraping
-                <span class="cost-detail">{est['scrape_calls']:,} calls × ${PRICE_NEARBY_PER_CALL} &nbsp;·&nbsp; {est['n_tiles']} tiles · {est['n_categories']} categories · auto tile radius {radius_label}</span>
+            <span class="cost-label">Place Details enrichment
+                <span class="cost-detail">{enrich_detail}</span>
             </span>
-            <span class="cost-value">${est['scrape_cost']:.2f}</span>
+            <span class="cost-value">{enrich_cost_str}</span>
+        </div>"""
+
+    suggestions_html = "".join(
+        f'<div class="suggestion-box">💡 {s}</div>' for s in est["suggestions"]
+    )
+
+    html = f"""
+    <div class="preflight-card {colour_class}">
+        <div class="preflight-title">{est['icon']} {est['label']}</div>
+        <div class="main-stats">
+            <div class="main-stat-box">
+                <div class="main-stat-val">{time_display}</div>
+                <div class="main-stat-label">Total estimated time</div>
+            </div>
+            <div class="main-stat-box">
+                <div class="main-stat-val">{total_cost_str}</div>
+                <div class="main-stat-label">Total estimated API cost</div>
+            </div>
         </div>
-        <div class="cost-row">
-            <span class="cost-label">Geocoding portfolio
-                <span class="cost-detail">{est['geocode_calls']} stores × ${PRICE_GEOCODE_PER_CALL}</span>
-            </span>
-            <span class="cost-value">${est['geocode_cost']:.2f}</span>
+        <div class="cost-breakdown">
+            <div class="cost-row">
+                <span class="cost-label">Google Places scraping
+                    <span class="cost-detail">{scrape_detail}</span>
+                </span>
+                <span class="cost-value">{scrape_cost_str}</span>
+            </div>
+            <div class="cost-row">
+                <span class="cost-label">Geocoding portfolio
+                    <span class="cost-detail">{geocode_detail}</span>
+                </span>
+                <span class="cost-value">{geocode_cost_str}</span>
+            </div>
+            {enrich_html}
+            <div class="cost-row">
+                <span class="cost-label">Total</span>
+                <span class="cost-total">{total_summary}</span>
+            </div>
         </div>
-        {enrich_row}
-        <div class="cost-row">
-            <span class="cost-label">Total</span>
-            <span class="cost-total">${est['total_cost']:.2f} &nbsp;·&nbsp; {est['total_calls']:,} API calls &nbsp;·&nbsp; {time_display}</span>
+        <div style="font-size:0.8rem;color:#6B7280;margin-bottom:0.6rem">
+            Coverage area: {area_summary}
         </div>
+        {suggestions_html}
     </div>
-    <div style="font-size:0.8rem;color:#6B7280;margin-bottom:0.6rem">
-        Coverage area: ~{est['area_km2']:,} km²
-        &nbsp;·&nbsp; Estimated universe: ~{est['estimated_universe']:,} stores
-        &nbsp;·&nbsp; Portfolio: {est['n_portfolio']} stores
-    </div>
-    {''.join(f'<div class="suggestion-box">💡 {s}</div>' for s in est["suggestions"])}
-</div>
-""", unsafe_allow_html=True)
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 st.caption("💡 Google provides $200 free credit per month — most single-market runs are well within this limit.")
 
