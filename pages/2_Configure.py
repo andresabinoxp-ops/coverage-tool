@@ -591,8 +591,18 @@ else:
                 "monthly":      f_monthly,
             },
         }
-        st.success(f"Configuration saved for **{market_name}**. Go to Run Pipeline in the sidebar.")
-        st.balloons()
+        st.markdown(f"""
+        <div style="background:#E8F5E9;border:1.5px solid #66BB6A;border-left:5px solid #2E7D32;
+        border-radius:8px;padding:1rem 1.4rem;margin:0.5rem 0">
+            <div style="font-weight:700;color:#1B5E20;font-size:1rem;margin-bottom:4px">
+                ✅ Configuration saved — {market_name}
+            </div>
+            <div style="color:#2E7D32;font-size:0.87rem">
+                Market area, scoring weights, categories and frequency thresholds have been saved.
+                Go to <strong>Run Pipeline</strong> in the sidebar to upload your portfolio and start the agent.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 if st.session_state.get("market_config"):
     with st.expander("View saved configuration"):
