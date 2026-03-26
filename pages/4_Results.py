@@ -129,12 +129,25 @@ if rep_rec and rep_rec.get("mode") == "recommended":
     wd          = rep_rec.get("working_days", 22)
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Recommended reps",          rec_reps)
-    col2.metric("Total calls / month",       f"{total_calls:,.0f}")
-    col3.metric("Rep capacity / month",      f"{cap:,}",
+    col1.metric("Recommended reps",        rec_reps)
+    col2.metric("Total calls / month",     f"{total_calls:,.0f}")
+    col3.metric("Rep capacity / month",    f"{cap:,}",
         help=f"{cpd} visits/day x {wd} working days")
-    col4.metric("vs Current headcount",
-        f"{'+' if shortfall > 0 else ''}{shortfall} reps" if cur_reps > 0 else "Not set")
+    if cur_reps > 0:
+        col4.metric("vs Current headcount",
+            f"{'+' if shortfall > 0 else ''}{shortfall} reps",
+            delta_color="inverse" if shortfall > 0 else "normal")
+    else:
+        col4.metric("Current headcount", "Not provided",
+            help="Enter your current rep count in Configure to see the comparison.")
+
+    if cur_reps == 0:
+        st.info(
+            f"The agent recommends **{rec_reps} reps** for this market "
+            f"based on {total_calls:,.0f} total calls/month at {cap} calls/rep/month "
+            f"({cpd} visits/day × {wd} working days). "
+            "To see a shortfall or surplus comparison go back to Configure and enter your current headcount."
+        )
 
     if shortfall > 0:
         st.markdown(f"""
