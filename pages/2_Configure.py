@@ -432,17 +432,71 @@ st.markdown("---")
 st.subheader("5. Market details")
 
 country_name = st.session_state.get("country_name", "")
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 with col1:
     market_name = st.text_input("Market name", value=f"{country_name} - {final_scope}" if final_scope else country_name)
 with col2:
-    rep_count = st.number_input("Number of field reps", min_value=1, max_value=100, value=6)
-with col3:
     market_api_key = st.text_input(
         "Market-specific Google API key (optional)",
         type="password",
         placeholder="Leave blank to use global admin key",
     )
+
+st.markdown("---")
+st.subheader("5b. Rep planning mode")
+st.caption("Choose how you want to handle rep allocation — fixed headcount or let the agent recommend.")
+
+rep_mode = st.radio(
+    "Rep planning approach",
+    options=["Fixed — I know how many reps I have",
+             "Recommended — tell me how many reps I need"],
+    index=0,
+    horizontal=True,
+)
+
+rep_count          = 6
+rep_mode_key       = "fixed"
+calls_per_day      = 10
+working_days       = 22
+
+if rep_mode == "Fixed — I know how many reps I have":
+    rep_mode_key = "fixed"
+    rep_count    = st.number_input(
+        "Number of field reps",
+        min_value=1, max_value=200, value=6,
+        help="The pipeline will assign stores to exactly this many reps."
+    )
+else:
+    rep_mode_key = "recommended"
+    st.markdown("""
+    <div style="background:#E3F2FD;border:1px solid #90CAF9;border-left:4px solid #1565C0;
+    border-radius:8px;padding:0.8rem 1.2rem;margin:0.5rem 0;font-size:0.88rem;color:#0D47A1">
+    The agent will calculate how many reps you need based on total store workload
+    and your rep capacity. It will also show you where to base each rep geographically.
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        calls_per_day = st.number_input(
+            "Store visits per rep per day",
+            min_value=3, max_value=25, value=10,
+            help="How many stores can one rep visit in a day? Typical range: 6 (rural) to 15 (dense city)."
+        )
+    with col2:
+        working_days = st.number_input(
+            "Working days per month",
+            min_value=15, max_value=26, value=22,
+            help="Number of selling days per month after weekends and holidays."
+        )
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        cap_per_rep = calls_per_day * working_days
+        st.metric("Rep capacity", f"{cap_per_rep} calls/month",
+                  help="Total store visits one rep can make per month.")
+
+    # Preview estimate if we have universe estimate
+    st.caption(f"After the pipeline runs the agent will calculate: Total calls needed ÷ {cap_per_rep} calls/rep/month = Recommended rep count")
 
 st.markdown("---")
 
@@ -574,6 +628,10 @@ else:
             "lng_min":                 lng_min,
             "lng_max":                 lng_max,
             "rep_count":               int(rep_count),
+            "rep_mode":                rep_mode_key,
+            "calls_per_day":           int(calls_per_day),
+            "working_days":            int(working_days),
+            "rep_capacity_per_month":  int(calls_per_day * working_days),
             "categories":              final_categories,
             "category_tiers":          cat_tiers,
             "market_api_key":          market_api_key,
