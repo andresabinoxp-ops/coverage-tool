@@ -96,7 +96,17 @@ def get_color(s, colour_by):
 
 # ── FILTERS ───────────────────────────────────────────────────────────────────
 all_reps  = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
-all_days  = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+# Build date list from actual visit dates in the selected month
+def get_dates_for_month(stores, month_key):
+    """Get all unique visit dates for a given month key (e.g. 'jan')."""
+    dates = set()
+    for s in stores:
+        for d in s.get(f"{month_key}_dates", []):
+            if d:
+                dates.add(d)
+    return ["All dates"] + sorted(dates)
+
+all_days = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
 
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
@@ -106,7 +116,12 @@ with col2:
 with col3:
     sel_month = st.selectbox("Month", ["Full year"] + MONTH_NAMES)
 with col4:
-    sel_day = st.selectbox("Day", all_days)
+    if sel_month != "Full year":
+        _mkey     = MONTH_SHORT[MONTH_NAMES.index(sel_month)]
+        _dates    = get_dates_for_month(all_stores, _mkey)
+        sel_day   = st.selectbox("Date", _dates)
+    else:
+        sel_day   = st.selectbox("Day", all_days)
 with col5:
     show_gaps    = st.checkbox("Show gap stores",    value=True)
     show_covered = st.checkbox("Show covered stores",value=True)
@@ -121,11 +136,15 @@ map_stores = [s for s in all_stores if s.get("lat") and s.get("lng")]
 if sel_rep != "All reps":
     rep_num    = int(sel_rep.split()[1])
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
-if sel_day != "Full month":
-    map_stores = [s for s in map_stores if s.get("assigned_day") == sel_day]
 # For month filter — only show stores that have visits in that month
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
+# For specific date filter
+if sel_day not in ("Full month", "All dates") and sel_month_key:
+    map_stores = [s for s in map_stores if sel_day in s.get(f"{sel_month_key}_dates", [])]
+elif sel_day not in ("Full month", "All dates") and not sel_month_key:
+    # weekday filter for full year view
+    map_stores = [s for s in map_stores if s.get("assigned_day") == sel_day]
 if not show_gaps:
     map_stores = [s for s in map_stores if s.get("coverage_status") != "gap"]
 if not show_covered:
@@ -208,10 +227,14 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
     filtered = [s for s in stores if s.get("rep_id",0) > 0]
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
-    if day and day != "Full month":
-        filtered = [s for s in filtered if s.get("assigned_day") == day]
-    if month_key:
+    if month_key and day and day not in ("Full month", "All dates"):
+        # Filter by specific date — store must have this date in its monthly dates
+        filtered = [s for s in filtered if day in s.get(f"{month_key}_dates", [])]
+    elif month_key:
         filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
+    elif day and day not in ("Full month", "All dates"):
+        # Full year — filter by weekday name
+        filtered = [s for s in filtered if s.get("assigned_day") == day]
     if not filtered:
         return pd.DataFrame()
     filtered = sorted(filtered, key=lambda x: (x.get("assigned_day",""), x.get("day_visit_order",99)))
@@ -283,13 +306,26 @@ with col_r:
 with col_m:
     tbl_month = st.selectbox("Month", ["Full year"] + MONTH_NAMES, key="tbl_month")
 with col_d:
-    tbl_day = st.selectbox("Day", all_days, key="tbl_day")
+    if tbl_month != "Full year":
+        _tbl_mkey  = MONTH_SHORT[MONTH_NAMES.index(tbl_month)]
+        _tbl_dates = get_dates_for_month(all_stores, _tbl_mkey)
+        tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
+    else:
+        tbl_day    = st.selectbox("Day", all_days, key="tbl_day")
 
-tbl_rep_id   = int(tbl_rep.split()[1]) if tbl_rep != "All reps" else None
+tbl_rep_id    = int(tbl_rep.split()[1]) if tbl_rep != "All reps" else None
 tbl_month_key = MONTH_SHORT[MONTH_NAMES.index(tbl_month)] if tbl_month != "Full year" else None
-display_df   = build_rep_df(all_stores, rep_id=tbl_rep_id,
+display_df    = build_rep_df(all_stores, rep_id=tbl_rep_id,
     day=tbl_day if tbl_day != "Full month" else None,
     month_key=tbl_month_key)
+
+# When a specific day is selected, trim table to stores that fit within daily budget
+cfg_tbl   = st.session_state.get("market_config", {})
+daily_cap = cfg_tbl.get("daily_minutes", 480)
+
+# When a specific date is selected, sort by visit order — already within budget
+if not display_df.empty and tbl_day not in ("Full month", "All dates", "") and "visit_duration_min" in display_df.columns:
+    display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
 if not display_df.empty:
     base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
@@ -334,7 +370,7 @@ if not display_df.empty:
     m1.metric("Stores in view", len(display_df))
 
     if "visit_duration_min" in display_df.columns:
-        if tbl_day != "Full month" and tbl_month != "Full year":
+        if tbl_day not in ("Full month", "All dates", "") and tbl_month != "Full year":
             # Specific day + month selected: show ONE day's time
             # These stores are all visited on this specific weekday
             # Each store appears once per occurrence — show single-day time
@@ -343,7 +379,7 @@ if not display_df.empty:
                 f"{day_visit_time} min",
                 delta=f"Daily budget: {daily_cap} min",
                 delta_color="inverse" if day_visit_time > daily_cap else "off",
-                help=f"Sum of visit durations for all stores on this {tbl_day}. Should be ≤ {daily_cap} min.")
+                help=f"Sum of visit durations for stores on {tbl_day}. Should be ≤ {daily_cap} min.")
             m3.metric("Budget status",
                 "✅ Within budget" if day_visit_time <= daily_cap else f"⚠️ Over by {day_visit_time - daily_cap} min",
                 help=f"Daily budget is {daily_cap} min ({daily_cap//60}h {daily_cap%60}min).")
