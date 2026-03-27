@@ -52,6 +52,10 @@ REP_COLORS = [
     [74,20,140],[183,28,28],[0,77,64],[62,39,35],[38,50,56]
 ]
 FREQ_COLORS = {
+    "Large":  [46,125,50,220],
+    "Medium": [21,101,192,220],
+    "Small":  [245,127,23,220],
+    # legacy support
     "weekly":      [46,125,50,220],
     "fortnightly": [21,101,192,220],
     "monthly":     [245,127,23,220],
@@ -67,7 +71,8 @@ def get_color(s, colour_by):
         c = REP_COLORS[(s.get("rep_id",0) or 0) % len(REP_COLORS)]
         return [c[0],c[1],c[2],200]
     elif colour_by == "Visit frequency":
-        return FREQ_COLORS.get(s.get("visit_frequency",""), [150,150,150,180])
+        tier = s.get("size_tier","") or s.get("visit_frequency","")
+        return FREQ_COLORS.get(tier, [150,150,150,180])
     elif colour_by == "Coverage status":
         return STATUS_COLORS.get(s.get("coverage_status","covered"), [150,150,150,180])
     else:
@@ -92,27 +97,32 @@ def build_rep_dataframe(stores, rep_id=None):
     monthly_count     = 0
 
     for i, s in enumerate(filtered):
-        freq = s.get("visit_frequency","bi-weekly")
+        tier   = s.get("size_tier","") or s.get("visit_frequency","")
+        visits = s.get("visits_per_month", s.get("calls_per_month",1))
 
-        if freq == "weekly":
+        # Recommended visit week based on visits per month
+        if visits >= 4:
             rec_week = "Every week (W1, W2, W3, W4)"
-        elif freq == "fortnightly":
+        elif visits >= 2:
             fortnightly_count += 1
             rec_week = "Week 1 & Week 3" if fortnightly_count % 2 == 1 else "Week 2 & Week 4"
-        elif freq == "monthly":
+        elif visits >= 1:
             monthly_count += 1
             rec_week = f"Week {(monthly_count % 4) + 1}"
         else:
-            rec_week = "Every other month — Week 1"
+            rec_week = "Every other month"
+        freq = tier
 
         rows.append({
             "visit_order":            i + 1,
             "store_name":             s.get("store_name",""),
             "category":               s.get("category","").replace("_"," ").title(),
             "score":                  s.get("score",0),
-            "visit_frequency":        freq,
+            "size_tier":              s.get("size_tier","") or s.get("visit_frequency",""),
+            "visits_per_month":       s.get("visits_per_month", s.get("calls_per_month",0)),
+            "visit_duration_min":     s.get("visit_duration_min",0),
             "recommended_visit_week": rec_week,
-            "calls_per_month":        s.get("calls_per_month",0),
+            "calls_per_month":        s.get("visits_per_month", s.get("calls_per_month",0)),
             "coverage_status":        s.get("coverage_status",""),
             "rating":                 s.get("rating",0),
             "review_count":           s.get("review_count",0),
