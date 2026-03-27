@@ -634,8 +634,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
     status = st.empty()
     bar    = st.progress(0)
     weights    = cfg["weights"]
-    thresholds = cfg["thresholds"]
-    cat_tiers  = cfg["category_tiers"]
+    thresholds = cfg.get("thresholds", {"weekly":80,"fortnightly":60,"monthly":40})
 
     # ── DRY RUN ───────────────────────────────────────────────────────────────
     if dry_run:
@@ -665,6 +664,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "lat":cfg["lat_min"]+random.uniform(0.01,max(cfg["lat_max"]-cfg["lat_min"]-0.01,0.02)),
                 "lng":cfg["lng_min"]+random.uniform(0.01,max(cfg["lng_max"]-cfg["lng_min"]-0.01,0.02)),
                 "rating":round(random.uniform(3.5,4.9),1),"review_count":random.randint(100,3000),
+                "price_level":random.choice([2,2,3,3,4]),
+                "business_status":"OPERATIONAL",
                 "annual_sales_usd":float(row.get("annual_sales_usd",0)),"lines_per_store":int(row.get("lines_per_store",0)),
                 "covered":True,"source":"portfolio","score":sc,"visit_frequency":freq,
                 "calls_per_month":cpm,"rep_id":random.randint(1,cfg["rep_count"]),"coverage_status":"covered",
@@ -682,6 +683,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "lat":cfg["lat_min"]+random.uniform(0.01,max(cfg["lat_max"]-cfg["lat_min"]-0.01,0.02)),
                 "lng":cfg["lng_min"]+random.uniform(0.01,max(cfg["lng_max"]-cfg["lng_min"]-0.01,0.02)),
                 "rating":round(random.uniform(2.8,4.9),1),"review_count":random.randint(10,5000),
+                "price_level":random.choice([0,1,1,2,2,3]),
+                "business_status":"OPERATIONAL",
                 "annual_sales_usd":0.0,"lines_per_store":0,
                 "covered":False,"source":"scraped","score":sc,"visit_frequency":freq,
                 "calls_per_month":cpm,
@@ -766,6 +769,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     for place in data.get("results",[]):
                         pid = place.get("place_id","")
                         if pid in seen_ids: continue
+                        # Filter out permanently closed stores
+                        if place.get("business_status") == "CLOSED_PERMANENTLY":
+                            continue
                         seen_ids.add(pid)
                         loc = place.get("geometry",{}).get("location",{})
                         universe.append({
@@ -775,6 +781,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             "lat":loc.get("lat"),"lng":loc.get("lng"),
                             "rating":float(place.get("rating",0) or 0),
                             "review_count":int(place.get("user_ratings_total",0) or 0),
+                            "price_level":int(place.get("price_level",0) or 0),
+                            "business_status":place.get("business_status","OPERATIONAL"),
                             "category":cat,"annual_sales_usd":0.0,"lines_per_store":0,
                             "covered":False,"source":"scraped",
                             "phone":"","opening_hours":"","website":"",
@@ -797,14 +805,24 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         max_rev    = max((s.get("review_count",0) for s in all_stores),default=1) or 1
         max_sales  = max((s.get("annual_sales_usd",0) for s in portfolio),default=1) or 1
         max_lines  = max((s.get("lines_per_store",0) for s in portfolio),default=1) or 1
+        max_poi = max((s.get("poi_count",0) or 0 for s in all_stores),default=1) or 1
         for s in all_stores:
-            tier  = cat_tiers.get(s.get("category",""),4)
-            cat_n = TIER_MULT.get(tier,0.30)
-            r_n   = (s.get("rating",0) or 0)/5
-            rv_n  = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
-            sal_n = (s.get("annual_sales_usd",0) or 0)/max_sales if s.get("covered") else 0.0
-            lin_n = (s.get("lines_per_store",0) or 0)/max_lines if s.get("covered") else 0.0
-            s["score"] = min(100,round((r_n*weights["rating"]+rv_n*weights["reviews"]+cat_n*weights["category"]+sal_n*weights["sales"]+lin_n*weights["lines"])*100))
+            r_n    = (s.get("rating",0) or 0)/5
+            rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
+            pl_raw = s.get("price_level",0) or 0
+            aff_n  = pl_raw / 4 if pl_raw > 0 else 0.5
+            poi_raw = s.get("poi_count",0) or 0
+            poi_n   = math.log1p(poi_raw)/math.log1p(max_poi) if max_poi > 1 else 0.0
+            sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if s.get("covered") else 0.0
+            lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if s.get("covered") else 0.0
+            s["score"] = min(100,round((
+                r_n   * weights.get("rating",    0.20) +
+                rv_n  * weights.get("reviews",   0.25) +
+                aff_n * weights.get("affluence", 0.10) +
+                poi_n * weights.get("poi",       0.15) +
+                sal_n * weights.get("sales",     0.15) +
+                lin_n * weights.get("lines",     0.15)
+            )*100))
         bar.progress(55)
 
         # Stage 4: Gap match
