@@ -97,8 +97,8 @@ st.caption(f"Showing {len(filtered):,} of {total:,} stores")
 if filtered:
     df = pd.DataFrame(filtered)
     show = [c for c in ["store_name","category","score","size_tier","visits_per_month",
-                         "visit_duration_min","coverage_status",
-                         "rating","review_count","price_level","business_status",
+                         "visit_duration_min","assigned_day","coverage_status",
+                         "rating","review_count","price_level","poi_count",
                          "annual_sales_usd","lines_per_store","rep_id"] if c in df.columns]
     df_show = df[show].sort_values("score", ascending=False).reset_index(drop=True)
     df_show.columns = [c.replace("_"," ").title() for c in df_show.columns]
