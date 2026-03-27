@@ -8,6 +8,12 @@ st.set_page_config(page_title="Dashboard - Coverage Tool", page_icon="📈", lay
 
 st.markdown("""
 <style>
+
+/* ── Sidebar navy blue ── */
+[data-testid="stSidebar"] { background: #1A2B4A !important; }
+[data-testid="stSidebar"] * { color: #FFFFFF !important; }
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; }
 .page-header {
     background: linear-gradient(135deg, #1A2B4A 0%, #1565C0 100%);
     padding: 1.5rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; color: white;
