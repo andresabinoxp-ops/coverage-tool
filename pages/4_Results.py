@@ -48,20 +48,27 @@ col4.metric("Coverage rate after",      f"{res['coverage_rate_after']}%")
 col5.metric("High priority gaps",       f"{gap_high:,}")
 
 st.markdown("---")
-st.subheader("Visit frequency distribution")
-freq_counts = {}
+st.subheader("Store size distribution")
+size_counts  = {}
+visit_totals = {}
 for s in all_stores:
-    f = s.get("visit_frequency", "unknown")
-    freq_counts[f] = freq_counts.get(f, 0) + 1
+    tier = s.get("size_tier","") or s.get("visit_frequency","")
+    size_counts[tier]  = size_counts.get(tier,0) + 1
+    visit_totals[tier] = visit_totals.get(tier,0) + s.get("visits_per_month", s.get("calls_per_month",0))
 
-fc = st.columns(4)
-for i, (freq, desc) in enumerate([
-    ("weekly",      "4 calls/month"),
-    ("fortnightly", "2 calls/month"),
-    ("monthly",     "1 call/month"),
-    ("bi-weekly",   "0.5 calls/month"),
-]):
-    fc[i].metric(freq.title(), f"{freq_counts.get(freq, 0):,} stores", desc)
+fc = st.columns(3)
+tier_colors = {"Large":"#2E7D32","Medium":"#1565C0","Small":"#F57F17"}
+for i, tier in enumerate(["Large","Medium","Small"]):
+    cnt = size_counts.get(tier,0)
+    vpm = visit_totals.get(tier,0)
+    col = tier_colors[tier]
+    fc[i].markdown(f"""
+    <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-top:4px solid {col};
+    border-radius:8px;padding:1rem;text-align:center">
+        <div style="font-size:1.6rem;font-weight:800;color:#1A2B4A">{cnt:,}</div>
+        <div style="font-size:0.78rem;color:#6B7280;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">{tier} stores</div>
+        <div style="font-size:0.75rem;color:#9E9E9E;margin-top:2px">{vpm:.0f} total visits/mo</div>
+    </div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 st.subheader("Store universe explorer")
@@ -89,15 +96,19 @@ st.caption(f"Showing {len(filtered):,} of {total:,} stores")
 
 if filtered:
     df = pd.DataFrame(filtered)
-    show = [c for c in ["store_name","category","score","visit_frequency","coverage_status",
-                         "rating","review_count","annual_sales_usd","lines_per_store","rep_id"] if c in df.columns]
+    show = [c for c in ["store_name","category","score","size_tier","visits_per_month",
+                         "visit_duration_min","coverage_status",
+                         "rating","review_count","price_level","business_status",
+                         "annual_sales_usd","lines_per_store","rep_id"] if c in df.columns]
     df_show = df[show].sort_values("score", ascending=False).reset_index(drop=True)
     df_show.columns = [c.replace("_"," ").title() for c in df_show.columns]
     st.dataframe(df_show, use_container_width=True, height=380,
         column_config={
-            "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-            "Rating": st.column_config.NumberColumn("Rating", format="%.1f"),
+            "Score":          st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+            "Rating":         st.column_config.NumberColumn("Rating",  format="%.1f"),
             "Annual Sales Usd": st.column_config.NumberColumn("Sales", format="$%,.0f"),
+            "Price Level":    st.column_config.NumberColumn("Price Level ★", format="%d / 4",
+                help="Google price level: 1=budget, 2=moderate, 3=premium, 4=luxury"),
         })
 
 st.markdown("---")
