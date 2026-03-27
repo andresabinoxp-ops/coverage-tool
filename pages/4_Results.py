@@ -86,7 +86,7 @@ with st.expander("Filters", expanded=True):
     with col2:
         freq_filter = st.multiselect("Frequency", ["weekly","fortnightly","monthly","bi-weekly"], default=["weekly","fortnightly","monthly","bi-weekly"])
     with col3:
-        cats = sorted(set(s.get("category","") for s in all_stores if s.get("category")))
+        cats = sorted(set(str(s.get("category","")) for s in all_stores if s.get("category")))
         cat_filter = st.multiselect("Category", cats, default=cats)
     with col4:
         score_min, score_max = st.slider("Score range", 0, 100, (0, 100))
