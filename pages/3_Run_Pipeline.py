@@ -1223,23 +1223,31 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         max_sales = max_sales if max_sales > 0 else 1
         max_lines = max_lines if max_lines > 0 else 1
         max_poi   = max_poi   if max_poi   > 0 else 1
+        def _score_store(s):
+            try:
+                r_n    = min(1.0, _safe_num(s.get("rating",0)) / 5)
+                rv_n   = math.log1p(_safe_num(s.get("review_count",0))) / math.log1p(max_rev) if max_rev > 1 else 0.0
+                pl_raw = _safe_num(s.get("price_level",0))
+                aff_n  = pl_raw / 4 if pl_raw > 0 else 0.5
+                poi_raw= _safe_num(s.get("poi_count",0))
+                poi_n  = math.log1p(poi_raw) / math.log1p(max_poi) if max_poi > 1 else 0.0
+                sal_n  = min(1.0, _safe_num(s.get("annual_sales_usd",0)) / max_sales) if (s.get("covered") and max_sales > 0) else 0.0
+                lin_n  = min(1.0, _safe_num(s.get("lines_per_store",0))  / max_lines) if (s.get("covered") and max_lines > 0) else 0.0
+                raw = (
+                    r_n   * _safe_num(weights.get("rating",    0.20)) +
+                    rv_n  * _safe_num(weights.get("reviews",   0.25)) +
+                    aff_n * _safe_num(weights.get("affluence", 0.10)) +
+                    poi_n * _safe_num(weights.get("poi",       0.15)) +
+                    sal_n * _safe_num(weights.get("sales",     0.15)) +
+                    lin_n * _safe_num(weights.get("lines",     0.15))
+                )
+                if not math.isfinite(raw): return 0
+                return min(100, max(0, round(raw * 100)))
+            except Exception:
+                return 0
+
         for s in all_stores:
-            r_n    = _safe_num(s.get("rating",0)) / 5
-            rv_n    = math.log1p(_safe_num(s.get("review_count",0)))/math.log1p(max_rev)
-            pl_raw  = _safe_num(s.get("price_level",0))
-            aff_n   = pl_raw / 4 if pl_raw > 0 else 0.5
-            poi_raw = _safe_num(s.get("poi_count",0))
-            poi_n   = math.log1p(poi_raw)/math.log1p(max_poi) if max_poi > 1 else 0.0
-            sal_n   = _safe_num(s.get("annual_sales_usd",0)) / max_sales if (s.get("covered") and max_sales > 0) else 0.0
-            lin_n   = _safe_num(s.get("lines_per_store",0))  / max_lines if (s.get("covered") and max_lines > 0) else 0.0
-            s["score"] = min(100,round((
-                r_n   * weights.get("rating",    0.20) +
-                rv_n  * weights.get("reviews",   0.25) +
-                aff_n * weights.get("affluence", 0.10) +
-                poi_n * weights.get("poi",       0.15) +
-                sal_n * weights.get("sales",     0.15) +
-                lin_n * weights.get("lines",     0.15)
-            )*100))
+            s["score"] = _score_store(s)
         bar.progress(55)
 
         # Stage 4: Gap match
