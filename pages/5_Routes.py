@@ -207,9 +207,10 @@ if colour_by == "Rep route":
             tc  = sum(s.get("calls_per_month",0) for s in rs)
             c   = REP_COLORS[rep % len(REP_COLORS)]
             hx  = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+            tv = sum(s.get("visits_per_month", s.get("calls_per_month",0)) for s in rs)
             cols[i%5].markdown(
                 f'<div class="rep-chip" style="background:{hx}">Rep {rep}<br>'
-                f'<small>{len(rs)} stores · {tc:.0f} calls/mo</small></div>',
+                f'<small>{len(rs)} stores · {tv:.0f} visits/mo</small></div>',
                 unsafe_allow_html=True)
 elif colour_by == "Visit frequency":
     lc = st.columns(4)
@@ -257,11 +258,12 @@ if all_reps:
         c  = REP_COLORS[rep % len(REP_COLORS)]
         hx = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
         with rep_cols[i % n_cols]:
+            tv_rep = rep_df["visits_per_month"].sum() if "visits_per_month" in rep_df.columns else sc
             st.markdown(f"""
             <div style="background:{hx}18;border:1.5px solid {hx};
             border-radius:8px;padding:10px 12px;margin-bottom:8px;text-align:center">
                 <div style="font-weight:700;color:#1A2B4A">Rep {rep}</div>
-                <div style="font-size:0.78rem;color:#6B7280">{len(rep_df)} stores · {sc:.0f} calls/mo</div>
+                <div style="font-size:0.78rem;color:#6B7280">{len(rep_df)} stores · {tv_rep:.0f} visits/mo</div>
             </div>""", unsafe_allow_html=True)
             st.download_button(
                 f"⬇️ Rep {rep} CSV",
@@ -318,10 +320,11 @@ if not display_df.empty:
     if sel != "All reps":
         st.markdown("---")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total stores",      len(display_df))
-        m2.metric("Calls per month",   f"{display_df['calls_per_month'].sum():.0f}")
-        m3.metric("Weekly stores",     len(display_df[display_df["visit_frequency"]=="weekly"]))
-        m4.metric("Gap opportunities", len(display_df[display_df["coverage_status"]=="gap"]))
+        vpm_col = "visits_per_month" if "visits_per_month" in display_df.columns else "calls_per_month"
+        m1.metric("Total stores",       len(display_df))
+        m2.metric("Visits per month",   f"{display_df[vpm_col].sum():.0f}")
+        m3.metric("Large stores",       len(display_df[display_df.get("size_tier","") == "Large"]) if "size_tier" in display_df.columns else 0)
+        m4.metric("Gap opportunities",  len(display_df[display_df["coverage_status"]=="gap"]))
 else:
     st.info("No stores found for this selection.")
 
