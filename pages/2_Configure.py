@@ -545,8 +545,90 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 7: SCORING WEIGHTS
 # ─────────────────────────────────────────────────────────────────────────────
+
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("7. Scoring weights — must sum to 100%")
+# STEP 7: VISIT BENCHMARKS PER CATEGORY
+# ─────────────────────────────────────────────────────────────────────────────
+st.subheader("7. Visit benchmarks per category")
+st.caption("""
+Set how many times per month a rep should visit each store size tier, and how long each visit takes.
+Store size is determined by score percentile within each category — e.g. top 20% of pharmacies = Large pharmacy.
+Defaults come from Admin Settings. You can adjust per category here.
+""")
+
+# Pull admin defaults from session state if available
+admin_defaults = st.session_state.get("admin_benchmarks", {
+    "large_pct": 20, "medium_pct": 60, "small_pct": 20,
+    "large_visits": 4, "medium_visits": 2, "small_visits": 1,
+    "large_duration": 40, "medium_duration": 25, "small_duration": 15,
+})
+
+# Percentile splits (shown as info, configurable in Admin)
+st.markdown("""
+<div style="background:#E3F2FD;border:1px solid #90CAF9;border-left:4px solid #1565C0;
+border-radius:8px;padding:0.8rem 1.2rem;margin:0.5rem 0;font-size:0.88rem;color:#0D47A1">
+Store size percentile splits are set in <strong>Admin Settings</strong>.
+Current splits: <strong>Large = top {large_pct}%</strong> &nbsp;·&nbsp;
+<strong>Medium = middle {medium_pct}%</strong> &nbsp;·&nbsp;
+<strong>Small = bottom {small_pct}%</strong> of each category by score.
+</div>
+""".format(
+    large_pct=admin_defaults["large_pct"],
+    medium_pct=admin_defaults["medium_pct"],
+    small_pct=admin_defaults["small_pct"],
+), unsafe_allow_html=True)
+
+# Per-category benchmark table
+visit_benchmarks = {}
+if final_categories:
+    st.markdown("**Set visits per month and visit duration (minutes) per category:**")
+    # Header row
+    hc0, hc1, hc2, hc3, hc4, hc5, hc6 = st.columns([2,1,1,1,1,1,1])
+    hc0.markdown("**Category**")
+    hc1.markdown("**Large visits/mo**")
+    hc2.markdown("**Large duration**")
+    hc3.markdown("**Medium visits/mo**")
+    hc4.markdown("**Medium duration**")
+    hc5.markdown("**Small visits/mo**")
+    hc6.markdown("**Small duration**")
+
+    for cat in final_categories:
+        cat_label = cat.replace("_"," ").title()
+        c0,c1,c2,c3,c4,c5,c6 = st.columns([2,1,1,1,1,1,1])
+        with c0:
+            st.markdown(f"<div style='padding-top:8px;font-weight:600'>{cat_label}</div>", unsafe_allow_html=True)
+        with c1:
+            lv = st.number_input("", min_value=1, max_value=20,
+                value=admin_defaults["large_visits"], key=f"lv_{cat}", label_visibility="collapsed")
+        with c2:
+            ld = st.number_input("", min_value=5, max_value=120,
+                value=admin_defaults["large_duration"], key=f"ld_{cat}", label_visibility="collapsed")
+        with c3:
+            mv = st.number_input("", min_value=1, max_value=20,
+                value=admin_defaults["medium_visits"], key=f"mv_{cat}", label_visibility="collapsed")
+        with c4:
+            md = st.number_input("", min_value=5, max_value=120,
+                value=admin_defaults["medium_duration"], key=f"md_{cat}", label_visibility="collapsed")
+        with c5:
+            sv = st.number_input("", min_value=1, max_value=20,
+                value=admin_defaults["small_visits"], key=f"sv_{cat}", label_visibility="collapsed")
+        with c6:
+            sd = st.number_input("", min_value=5, max_value=120,
+                value=admin_defaults["small_duration"], key=f"sd_{cat}", label_visibility="collapsed")
+        visit_benchmarks[cat] = {
+            "large_visits": int(lv), "large_duration": int(ld),
+            "medium_visits": int(mv), "medium_duration": int(md),
+            "small_visits": int(sv), "small_duration": int(sd),
+        }
+else:
+    st.info("Select scraping categories first (Step 6).")
+    visit_benchmarks = {}
+
+st.markdown("---")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+st.subheader("8. Scoring weights — must sum to 100%")
 st.caption("Each store receives a score 0-100 based on six signals. Gap stores score 0 on sales and lines. Affluence uses Google price level. POI requires optional enrichment after run.")
 
 col1, col2 = st.columns(2)
@@ -574,7 +656,7 @@ st.markdown("---")
 # STEP 8: SAVE
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("8. Save configuration")
+st.subheader("9. Save configuration")
 
 # Validation checks
 issues = []
@@ -611,6 +693,8 @@ else:
             "categories":              final_categories,
             "market_api_key":          market_api_key,
             "detected_from_portfolio": detected_categories,
+            "visit_benchmarks":          visit_benchmarks,
+            "size_percentiles":           admin_defaults,
             "weights": {
                 "rating":     w_rating    / 100,
                 "reviews":    w_reviews   / 100,
