@@ -122,7 +122,8 @@ CATEGORY_MAP = {
     "newsagent":              "convenience_store",
 }
 
-TIER_LABELS   = {1:"Tier 1 - 100% fit", 2:"Tier 2 - 80% fit", 3:"Tier 3 - 55% fit", 4:"Tier 4 - 30% fit"}
+# Hardcoded category tier multipliers — not editable by users
+TIER_MULT = {1:1.0, 2:0.80, 3:0.55, 4:0.30}
 TIER_DEFAULTS = {
     "supermarket":1, "hypermarket":1, "convenience_store":1,
     "grocery_or_supermarket":1, "pharmacy":2, "gas_station":2, "liquor_store":2,
@@ -541,45 +542,26 @@ else:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 7: CATEGORY TIERS
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("7. Category tier multipliers")
-st.caption("Tier 1 = highest FMCG relevance (1.0 multiplier). Tier 4 = lowest (0.30).")
-
-cat_tiers = {}
-if final_categories:
-    cols = st.columns(2)
-    for i, cat in enumerate(final_categories):
-        with cols[i % 2]:
-            cat_tiers[cat] = st.selectbox(
-                cat.replace("_"," ").title(),
-                options=[1, 2, 3, 4],
-                index=TIER_DEFAULTS.get(cat, 2) - 1,
-                format_func=lambda x: TIER_LABELS[x],
-                key=f"tier_{cat}"
-            )
-
-st.markdown("---")
-
+# STEP 7: SCORING WEIGHTS
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 8: SCORING WEIGHTS
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("8. Scoring weights — must sum to 100%")
-st.caption("""
-Each store gets a score 0-100 based on these five signals.
-Gap stores score 0 on sales and lines — their upside is what you are discovering.
-""")
+st.subheader("7. Scoring weights — must sum to 100%")
+st.caption("Each store receives a score 0-100 based on six signals. Gap stores score 0 on sales and lines. Affluence uses Google price level. POI requires optional enrichment after run.")
 
 col1, col2 = st.columns(2)
 with col1:
-    w_rating   = st.slider("Rating — Google star rating",           0, 50, 20)
-    w_reviews  = st.slider("Reviews / footfall — store traffic",    0, 50, 25)
-    w_category = st.slider("Category fit — store type relevance",   0, 50, 20)
+    w_rating    = st.slider("Rating — Google star rating (0-5)",       0, 50, 20)
+    w_reviews   = st.slider("Reviews — footfall proxy (log-normalised)",0, 50, 25)
+    w_affluence = st.slider("Affluence — Google price level (0-4)",    0, 50, 10,
+        help="Higher price level = more premium store. Google captures this automatically during scraping.")
 with col2:
-    w_sales    = st.slider("Current sales — your revenue there",    0, 50, 20)
-    w_lines    = st.slider("Lines per store — products you stock",   0, 50, 15)
+    w_poi   = st.slider("Nearby POI — location quality (optional enrichment)", 0, 50, 15,
+        help="Count of points of interest within radius. Requires POI enrichment step after pipeline run. Scores 0 if enrichment not run.")
+    w_sales = st.slider("Current sales — your revenue at this store",  0, 50, 15)
+    w_lines = st.slider("Lines per store — SKUs you sell there",       0, 50, 15)
 
-total = w_rating + w_reviews + w_category + w_sales + w_lines
+total = w_rating + w_reviews + w_affluence + w_poi + w_sales + w_lines
 if total == 100:
     st.success(f"Total: {total}% — valid")
 else:
@@ -588,31 +570,11 @@ else:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 9: FREQUENCY THRESHOLDS
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("9. Visit frequency thresholds")
-st.caption("The agent assigns a visit tier to every store based on its score.")
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    f_weekly      = st.number_input("Weekly (score >=)",      min_value=1, max_value=99, value=80)
-    st.caption("4 calls per month — anchor stores")
-with col2:
-    f_fortnightly = st.number_input("Fortnightly (score >=)", min_value=1, max_value=99, value=60)
-    st.caption("2 calls per month")
-with col3:
-    f_monthly     = st.number_input("Monthly (score >=)",     min_value=1, max_value=99, value=40)
-    st.caption("1 call per month")
-with col4:
-    st.markdown("**Bi-weekly**")
-    st.caption(f"Score below {f_monthly} — 0.5 calls per month")
-
-st.markdown("---")
-
+# STEP 8: SAVE
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 10: SAVE
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("10. Save configuration")
+st.subheader("8. Save configuration")
 
 # Validation checks
 issues = []
@@ -621,7 +583,7 @@ if not st.session_state.get("country_name"):
 if not final_bbox:
     issues.append("Add at least one city or region.")
 if total != 100:
-    issues.append("Fix scoring weights to equal 100%.")
+    issues.append("Fix scoring weights to equal 100% in Step 7.")
 if not final_categories:
     issues.append("Select at least one scraping category.")
 
@@ -647,20 +609,15 @@ else:
             "working_days":            int(working_days),
             "rep_capacity_per_month":  int(calls_per_day * working_days),
             "categories":              final_categories,
-            "category_tiers":          cat_tiers,
             "market_api_key":          market_api_key,
             "detected_from_portfolio": detected_categories,
             "weights": {
-                "rating":   w_rating   / 100,
-                "reviews":  w_reviews  / 100,
-                "category": w_category / 100,
-                "sales":    w_sales    / 100,
-                "lines":    w_lines    / 100,
-            },
-            "thresholds": {
-                "weekly":       f_weekly,
-                "fortnightly":  f_fortnightly,
-                "monthly":      f_monthly,
+                "rating":     w_rating    / 100,
+                "reviews":    w_reviews   / 100,
+                "affluence":  w_affluence / 100,
+                "poi":        w_poi       / 100,
+                "sales":      w_sales     / 100,
+                "lines":      w_lines     / 100,
             },
         }
         st.markdown(f"""
