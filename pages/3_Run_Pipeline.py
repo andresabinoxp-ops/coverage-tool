@@ -1224,14 +1224,14 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         max_lines = max_lines if max_lines > 0 else 1
         max_poi   = max_poi   if max_poi   > 0 else 1
         for s in all_stores:
-            r_n    = (s.get("rating",0) or 0)/5
-            rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
-            pl_raw = s.get("price_level",0) or 0
-            aff_n  = pl_raw / 4 if pl_raw > 0 else 0.5
-            poi_raw = s.get("poi_count",0) or 0
+            r_n    = _safe_num(s.get("rating",0)) / 5
+            rv_n    = math.log1p(_safe_num(s.get("review_count",0)))/math.log1p(max_rev)
+            pl_raw  = _safe_num(s.get("price_level",0))
+            aff_n   = pl_raw / 4 if pl_raw > 0 else 0.5
+            poi_raw = _safe_num(s.get("poi_count",0))
             poi_n   = math.log1p(poi_raw)/math.log1p(max_poi) if max_poi > 1 else 0.0
-            sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if (s.get("covered") and max_sales > 0) else 0.0
-            lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if (s.get("covered") and max_lines > 0) else 0.0
+            sal_n   = _safe_num(s.get("annual_sales_usd",0)) / max_sales if (s.get("covered") and max_sales > 0) else 0.0
+            lin_n   = _safe_num(s.get("lines_per_store",0))  / max_lines if (s.get("covered") and max_lines > 0) else 0.0
             s["score"] = min(100,round((
                 r_n   * weights.get("rating",    0.20) +
                 rv_n  * weights.get("reviews",   0.25) +
@@ -1571,10 +1571,10 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             for s in all_stores:
                 poi_n  = math.log1p(s.get("poi_count",0))/math.log1p(max_poi) if max_poi > 1 else 0.0
                 aff_n  = (s.get("price_level",0) or 0)/4 if (s.get("price_level",0) or 0) > 0 else 0.5
-                r_n    = (s.get("rating",0) or 0)/5
+                r_n    = _safe_num(s.get("rating",0)) / 5
                 rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
-                sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if (s.get("covered") and max_sales > 0) else 0.0
-                lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if (s.get("covered") and max_lines > 0) else 0.0
+                sal_n  = _safe_num(s.get("annual_sales_usd",0)) / max_sales if (s.get("covered") and max_sales > 0) else 0.0
+                lin_n  = _safe_num(s.get("lines_per_store",0))  / max_lines if (s.get("covered") and max_lines > 0) else 0.0
                 s["score"] = min(100,round((
                     r_n   * w.get("rating",    0.20) +
                     rv_n  * w.get("reviews",   0.25) +
