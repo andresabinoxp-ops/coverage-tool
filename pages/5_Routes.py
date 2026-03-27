@@ -41,16 +41,18 @@ all_stores = res["all_stores"]
 market     = st.session_state.get("last_market", "Market")
 cfg        = st.session_state.get("market_config", {})
 
-route_month = cfg.get("route_month", datetime.date.today().month)
-route_year  = cfg.get("route_year",  datetime.date.today().year)
-month_name  = datetime.date(route_year, route_month, 1).strftime("%B %Y")
+route_year  = cfg.get("route_year", datetime.date.today().year)
 
 st.markdown(f"""
 <div class="page-header">
-    <h2>🗺️ Rep Routes — {month_name}</h2>
+    <h2>🗺️ Rep Routes — {route_year}</h2>
     <p>Market: {market}</p>
 </div>
 """, unsafe_allow_html=True)
+
+MONTH_NAMES = ["January","February","March","April","May","June",
+               "July","August","September","October","November","December"]
+MONTH_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 
 REP_COLORS = [
     [21,101,192],[46,125,50],[230,81,0],[136,14,79],[0,96,100],
@@ -90,16 +92,23 @@ def get_color(s, colour_by):
 all_reps  = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 all_days  = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     colour_by = st.selectbox("Colour by", ["Rep route","Day of week","Size tier","Coverage status","Score"])
 with col2:
     sel_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps])
 with col3:
-    sel_day = st.selectbox("Day", all_days)
+    sel_month = st.selectbox("Month", ["Full year"] + MONTH_NAMES)
 with col4:
+    sel_day = st.selectbox("Day", all_days)
+with col5:
     show_gaps    = st.checkbox("Show gap stores",    value=True)
     show_covered = st.checkbox("Show covered stores",value=True)
+
+# Resolve selected month key
+sel_month_key = None
+if sel_month != "Full year":
+    sel_month_key = MONTH_SHORT[MONTH_NAMES.index(sel_month)]
 
 # Apply filters
 map_stores = [s for s in all_stores if s.get("lat") and s.get("lng")]
@@ -108,6 +117,9 @@ if sel_rep != "All reps":
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
 if sel_day != "Full month":
     map_stores = [s for s in map_stores if s.get("assigned_day") == sel_day]
+# For month filter — only show stores that have visits in that month
+if sel_month_key:
+    map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
 if not show_gaps:
     map_stores = [s for s in map_stores if s.get("coverage_status") != "gap"]
 if not show_covered:
@@ -121,12 +133,11 @@ map_data = [{
     "name":s.get("store_name",""),
     "score":s.get("score",0),
     "size_tier":s.get("size_tier",""),
-    "visits":s.get("visits_per_month",0),
+    "annual_visits":s.get("annual_visits",0),
     "status":s.get("coverage_status",""),
     "rep":s.get("rep_id",0),
     "day":s.get("assigned_day",""),
     "order":s.get("day_visit_order",0),
-    "dates":", ".join(s.get("visit_dates",[])),
     "color":get_color(s, colour_by),
     "radius":max(30,s.get("score",0)*1.5),
 } for s in map_stores]
@@ -141,8 +152,8 @@ try:
         view = pdk.ViewState(latitude=df_map["lat"].mean(), longitude=df_map["lng"].mean(), zoom=11, pitch=0)
         tooltip = {
             "html":"<b>{name}</b><br/>Score: <b>{score}</b><br/>Size: {size_tier}<br/>"
-                   "Visits/mo: {visits}<br/>Day: {day}<br/>Visit order: {order}<br/>"
-                   "Dates: {dates}<br/>Rep: {rep}",
+                   "Annual visits: {annual_visits}<br/>Day: {day}<br/>Visit order: {order}<br/>"
+                   "Rep: {rep}",
             "style":{"backgroundColor":"#1A2B4A","color":"white","padding":"10px","borderRadius":"8px","fontSize":"13px"}
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
@@ -187,39 +198,45 @@ st.caption("Each file includes store details, assigned day, visit dates, visit o
 
 mkt_safe = market.replace(" ","_").replace("-","_")
 
-def build_rep_df(stores, rep_id=None, day=None):
+def build_rep_df(stores, rep_id=None, day=None, month_key=None):
     filtered = [s for s in stores if s.get("rep_id",0) > 0]
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
     if day and day != "Full month":
         filtered = [s for s in filtered if s.get("assigned_day") == day]
+    if month_key:
+        filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
     if not filtered:
         return pd.DataFrame()
     filtered = sorted(filtered, key=lambda x: (x.get("assigned_day",""), x.get("day_visit_order",99)))
     rows = []
     for s in filtered:
-        rows.append({
-            "rep_id":              s.get("rep_id"),
-            "assigned_day":        s.get("assigned_day",""),
-            "day_visit_order":     s.get("day_visit_order",0),
-            "visit_dates":         ", ".join(s.get("visit_dates",[])),
-            "n_visits_this_month": s.get("n_visits_this_month",0),
-            "store_name":          s.get("store_name",""),
-            "category":            s.get("category",""),
-            "size_tier":           s.get("size_tier",""),
-            "score":               s.get("score",0),
-            "visits_per_month":    s.get("visits_per_month",0),
-            "visit_duration_min":  s.get("visit_duration_min",0),
-            "coverage_status":     s.get("coverage_status",""),
-            "rating":              s.get("rating",0),
-            "review_count":        s.get("review_count",0),
-            "phone":               s.get("phone",""),
-            "opening_hours":       s.get("opening_hours",""),
-            "address":             s.get("address",""),
-            "city":                s.get("city",""),
-            "lat":                 s.get("lat",""),
-            "lng":                 s.get("lng",""),
-        })
+        row = {
+            "rep_id":             s.get("rep_id"),
+            "assigned_day":       s.get("assigned_day",""),
+            "day_visit_order":    s.get("day_visit_order",0),
+            "store_name":         s.get("store_name",""),
+            "category":           s.get("category",""),
+            "size_tier":          s.get("size_tier",""),
+            "score":              s.get("score",0),
+            "visits_per_month":   s.get("visits_per_month",0),
+            "annual_visits":      s.get("annual_visits",0),
+            "visit_duration_min": s.get("visit_duration_min",0),
+            "coverage_status":    s.get("coverage_status",""),
+            "rating":             s.get("rating",0),
+            "review_count":       s.get("review_count",0),
+            "phone":              s.get("phone",""),
+            "opening_hours":      s.get("opening_hours",""),
+            "address":            s.get("address",""),
+            "city":               s.get("city",""),
+            "lat":                s.get("lat",""),
+            "lng":                s.get("lng",""),
+        }
+        # Add monthly visit dates
+        for m in MONTH_SHORT:
+            row[f"{m}_dates"]  = ", ".join(s.get(f"{m}_dates", []))
+            row[f"{m}_visits"] = s.get(f"{m}_visits", 0)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 if all_reps:
@@ -254,27 +271,45 @@ st.markdown("---")
 st.markdown('<div class="section-title">Route detail</div>', unsafe_allow_html=True)
 st.caption("Select a rep and day to see the exact stores and visit order for that day.")
 
-col_r, col_d = st.columns(2)
+col_r, col_m, col_d = st.columns(3)
 with col_r:
     tbl_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps], key="tbl_rep")
+with col_m:
+    tbl_month = st.selectbox("Month", ["Full year"] + MONTH_NAMES, key="tbl_month")
 with col_d:
     tbl_day = st.selectbox("Day", all_days, key="tbl_day")
 
-tbl_rep_id = int(tbl_rep.split()[1]) if tbl_rep != "All reps" else None
-display_df = build_rep_df(all_stores, rep_id=tbl_rep_id, day=tbl_day if tbl_day != "Full month" else None)
+tbl_rep_id   = int(tbl_rep.split()[1]) if tbl_rep != "All reps" else None
+tbl_month_key = MONTH_SHORT[MONTH_NAMES.index(tbl_month)] if tbl_month != "Full year" else None
+display_df   = build_rep_df(all_stores, rep_id=tbl_rep_id,
+    day=tbl_day if tbl_day != "Full month" else None,
+    month_key=tbl_month_key)
 
 if not display_df.empty:
+    base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
+                 "size_tier","score","visits_per_month","annual_visits","visit_duration_min",
+                 "coverage_status","rating","review_count","phone","opening_hours",
+                 "address","city","lat","lng"]
+    # Add month columns if viewing a specific month
+    if tbl_month_key:
+        month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
+        base_cols  = base_cols[:4] + month_cols + base_cols[4:]
+    else:
+        # Show all month visit counts
+        base_cols = base_cols + [f"{m}_visits" for m in MONTH_SHORT]
+    show_cols = [c for c in base_cols if c in display_df.columns]
     rename_map = {
         "rep_id":"Rep","assigned_day":"Day","day_visit_order":"Visit Order",
-        "visit_dates":"Visit Dates","n_visits_this_month":"Visits This Month",
         "store_name":"Store","category":"Category","size_tier":"Size",
-        "score":"Score","visits_per_month":"Visits/Mo","visit_duration_min":"Duration (min)",
-        "coverage_status":"Status","rating":"Rating","review_count":"Reviews",
-        "phone":"Phone","opening_hours":"Opening Hours",
-        "address":"Address","city":"City","lat":"Latitude","lng":"Longitude",
+        "score":"Score","visits_per_month":"Visits/Mo","annual_visits":"Annual Visits",
+        "visit_duration_min":"Duration (min)","coverage_status":"Status",
+        "rating":"Rating","review_count":"Reviews","phone":"Phone",
+        "opening_hours":"Opening Hours","address":"Address","city":"City",
+        "lat":"Latitude","lng":"Longitude",
+        **{f"{m}_dates": f"{n[:3]} Dates" for m,n in zip(MONTH_SHORT,MONTH_NAMES)},
+        **{f"{m}_visits": f"{n[:3]}" for m,n in zip(MONTH_SHORT,MONTH_NAMES)},
     }
-    show_cols = [c for c in rename_map.keys() if c in display_df.columns]
-    df_show   = display_df[show_cols].rename(columns=rename_map)
+    df_show = display_df[show_cols].rename(columns=rename_map)
     st.dataframe(df_show, use_container_width=True, height=460,
         column_config={
             "Score":    st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
