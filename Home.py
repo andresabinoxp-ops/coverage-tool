@@ -12,24 +12,24 @@ st.markdown("""
 <style>
 /* Main header bar */
 [data-testid="stHeader"] {
-    background-color: #1B4F9B;
+    background: #1A2B4A !important;
 }
 
 /* Sidebar styling */
 [data-testid="stSidebar"] {
-    background-color: #1B4F9B;
+    background: #1A2B4A !important;
 }
 [data-testid="stSidebar"] * {
     color: #FFFFFF !important;
 }
 [data-testid="stSidebar"] a:hover {
-    background-color: #2563C0 !important;
+    background-color: #1565C0 !important;
     border-radius: 6px;
 }
 
 /* Page title style */
 .page-header {
-    background: linear-gradient(135deg, #1B4F9B 0%, #2563C0 100%);
+    background: linear-gradient(135deg, #1A2B4A 0%, #1565C0 100%);
     padding: 32px 40px;
     border-radius: 12px;
     margin-bottom: 32px;
@@ -51,13 +51,13 @@ st.markdown("""
 .step-card {
     background: #FFFFFF;
     border: 1px solid #E2E8F0;
-    border-left: 4px solid #1B4F9B;
+    border-left: 4px solid #1A2B4A;
     border-radius: 8px;
     padding: 20px 24px;
     margin-bottom: 16px;
 }
 .step-card h4 {
-    color: #1B4F9B;
+    color: #1A2B4A;
     font-size: 0.95rem;
     font-weight: 700;
     margin: 0 0 6px 0;
@@ -87,9 +87,9 @@ div.stButton > button {
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 div.stButton > button:hover {
-    border-color: #1B4F9B;
-    background: #EBF2FF;
-    color: #1B4F9B;
+    border-color: #1A2B4A;
+    background: #E3F2FD;
+    color: #1A2B4A;
     box-shadow: 0 4px 12px rgba(27,79,155,0.15);
 }
 
