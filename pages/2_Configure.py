@@ -444,20 +444,13 @@ with col2:
     )
 
 import datetime as _dt
-col_m1, col_m2 = st.columns(2)
-with col_m1:
-    route_month = st.selectbox("Route month",
-        options=list(range(1,13)),
-        index=_dt.date.today().month - 1,
-        format_func=lambda m: _dt.date(2025,m,1).strftime("%B"),
-        help="The calendar month for which daily routes will be built."
-    )
-with col_m2:
-    route_year = st.number_input("Route year",
-        min_value=2024, max_value=2030,
-        value=_dt.date.today().year,
-        help="The year for the route month."
-    )
+route_year = st.number_input(
+    "Route planning year",
+    min_value=2024, max_value=2030,
+    value=_dt.date.today().year,
+    help="The agent will build daily routes for all 12 months of this year. Day-of-week assignments are fixed across the full year."
+)
+st.caption(f"Routes will be built for all 12 months of {int(route_year)}. Each rep has a fixed day-of-week per area that stays consistent all year.")
 
 st.markdown("---")
 st.subheader("5b. Rep planning mode")
@@ -708,7 +701,6 @@ else:
         st.session_state["market_config"] = {
             "market_name":             market_name,
             "country":                 st.session_state["country_name"],
-            "route_month":             int(route_month),
             "route_year":              int(route_year),
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
