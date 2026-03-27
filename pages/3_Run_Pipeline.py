@@ -557,27 +557,30 @@ def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, ci
             s["day_visit_order"] = i + 1
         day_groups[day] = ordered
 
-    # ── Step 3: Validate daily time budget ───────────────────────────────────
-    for day, stores in day_groups.items():
+    # ── Step 3: Validate daily time budget (safe — max iterations) ──────────
+    for day in list(day_groups.keys()):
+        stores = day_groups[day]
         if not stores:
             continue
-        total_time = sum(s.get("visit_duration_min",25) for s in stores)
-        # Add travel time
-        prev_lat, prev_lng = city_lat, city_lng
-        for s in stores:
-            if s.get("lat") and s.get("lng"):
-                total_time += travel_time_minutes(prev_lat, prev_lng, s["lat"], s["lng"], avg_speed_kmh)
-                prev_lat, prev_lng = s["lat"], s["lng"]
-        # If over budget, move lowest-score store to least loaded day
-        while total_time > daily_minutes and stores:
-            overflow_store = min(stores, key=lambda x: x.get("score",0))
+        # Simple check: if total visit duration alone exceeds budget, trim
+        # Cap iterations to prevent infinite loop
+        max_moves = len(stores) + 1
+        moves     = 0
+        while moves < max_moves:
+            visit_time = sum(s.get("visit_duration_min", 25) for s in stores)
+            if visit_time <= daily_minutes:
+                break
+            # Move lowest-score store to the least loaded day
+            overflow_store = min(stores, key=lambda x: x.get("score", 0))
             stores.remove(overflow_store)
-            # Find day with most capacity
-            best_day = min(WEEKDAYS, key=lambda d: sum(s.get("visit_duration_min",25) for s in day_groups[d]))
+            other_days = [d for d in WEEKDAYS if d != day]
+            best_day   = min(other_days, key=lambda d: sum(
+                s.get("visit_duration_min", 25) for s in day_groups[d]
+            ))
             day_groups[best_day].append(overflow_store)
             overflow_store["assigned_day"] = best_day
-            # Recalculate
-            total_time = sum(s.get("visit_duration_min",25) for s in stores)
+            moves += 1
+        day_groups[day] = stores
 
     # ── Step 4: Build visit_dates from calendar ───────────────────────────────
     for day, stores in day_groups.items():
