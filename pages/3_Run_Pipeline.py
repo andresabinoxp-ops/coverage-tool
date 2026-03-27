@@ -653,6 +653,47 @@ if enrich_scope in ("top_n", "gaps_only", "all"):
 st.markdown("---")
 
 # ── STEP 3: PRE-FLIGHT ESTIMATE ───────────────────────────────────────────────
+# ── STEP 2b: POI ENRICHMENT CONFIG ──────────────────────────────────────────
+st.markdown('<div class="section-title">2b. Nearby POI enrichment (optional)</div>', unsafe_allow_html=True)
+st.caption("Count points of interest within a radius of each store. Used as a location quality signal in scoring. Same pattern as phone/opening hours enrichment.")
+
+poi_scope_label = st.radio(
+    "Which stores to enrich with POI count",
+    options=["None — skip POI enrichment",
+             "Top N stores by score",
+             "All gap stores",
+             "All scraped stores"],
+    index=0, horizontal=True, key="poi_scope_radio"
+)
+poi_scope_map = {
+    "None — skip POI enrichment": "none",
+    "Top N stores by score":       "top_n",
+    "All gap stores":              "gaps_only",
+    "All scraped stores":          "all",
+}
+poi_scope = poi_scope_map[poi_scope_label]
+st.session_state["enrich_poi_scope"] = poi_scope
+
+poi_count_val = 100
+if poi_scope != "none":
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        poi_radius_val = st.number_input(
+            "POI search radius (metres)", min_value=100, max_value=2000, value=500, step=100,
+            help="How far from each store to count POIs. 500m is a 5-10 min walk."
+        )
+        st.session_state["enrich_poi_radius"] = poi_radius_val
+    with col_p2:
+        if poi_scope == "top_n":
+            poi_count_val = st.slider("Number of top stores to enrich", 10, 500, 100, step=10)
+            st.session_state["poi_count"] = poi_count_val
+        else:
+            st.info("Will enrich all stores matching the selected scope.")
+    poi_cost = poi_count_val * PRICE_NEARBY_PER_CALL if poi_scope == "top_n" else 0
+    st.caption(f"Estimated POI enrichment cost: ~${poi_cost:.2f} (included in pre-flight estimate below)")
+
+st.markdown("---")
+
 st.markdown('<div class="section-title">3. Pre-flight — full cost & time estimate</div>', unsafe_allow_html=True)
 st.caption("Calculated from your market area, categories, portfolio size and enrichment selection.")
 
@@ -908,7 +949,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
         centres     = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
-        total_steps = 7 if enrich_scope != "none" else 6
+        enrich_poi    = st.session_state.get("enrich_poi_scope","none")
+        poi_radius    = st.session_state.get("enrich_poi_radius", 500)
+        total_steps   = 6
+        if enrich_scope != "none": total_steps += 1
+        if enrich_poi  != "none": total_steps += 1
         run_start   = time.time()
 
         # Stage 1: Geocode
@@ -1162,6 +1207,61 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 )
                 bar.progress(min(pct,97))
                 time.sleep(0.1)
+
+        # Stage POI: Nearby POI enrichment (optional)
+        if enrich_poi != "none":
+            poi_stage = total_steps - (1 if enrich_scope == "none" else 0)
+            status.info(f"Stage {poi_stage}/{total_steps} — Enriching stores with nearby POI count...")
+
+            if enrich_poi == "top_n":
+                poi_candidates = sorted(
+                    [s for s in all_stores if s.get("lat") and s.get("lng")],
+                    key=lambda x: x.get("score",0), reverse=True
+                )[:st.session_state.get("poi_count", 100)]
+            elif enrich_poi == "gaps_only":
+                poi_candidates = [s for s in all_stores if s.get("coverage_status")=="gap" and s.get("lat") and s.get("lng")]
+            else:
+                poi_candidates = [s for s in all_stores if s.get("lat") and s.get("lng")]
+
+            poi_enriched = 0
+            poi_start    = time.time()
+            for i, store in enumerate(poi_candidates):
+                try:
+                    r = requests.get(PLACES_URL,
+                        params={"location":f"{store['lat']},{store['lng']}",
+                                "radius":poi_radius,"key":api_key},
+                        timeout=8)
+                    data = r.json()
+                    store["poi_count"] = len(data.get("results",[]))
+                    poi_enriched += 1
+                except Exception:
+                    store["poi_count"] = 0
+                rem = (time.time()-poi_start)/(i+1)*(len(poi_candidates)-i-1) if i>0 else 0
+                status.info(
+                    f"Stage {poi_stage}/{total_steps} — POI enrichment... "
+                    f"{i+1}/{len(poi_candidates)} stores | ⏱ {fmt_time(rem).replace('~','')} remaining"
+                )
+                time.sleep(0.05)
+
+            # Re-score with POI data
+            max_poi = max((s.get("poi_count",0) for s in all_stores), default=1) or 1
+            w       = cfg["weights"]
+            for s in all_stores:
+                poi_n  = math.log1p(s.get("poi_count",0))/math.log1p(max_poi) if max_poi > 1 else 0.0
+                aff_n  = (s.get("price_level",0) or 0)/4 if (s.get("price_level",0) or 0) > 0 else 0.5
+                r_n    = (s.get("rating",0) or 0)/5
+                rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
+                sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if s.get("covered") else 0.0
+                lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if s.get("covered") else 0.0
+                s["score"] = min(100,round((
+                    r_n   * w.get("rating",    0.20) +
+                    rv_n  * w.get("reviews",   0.25) +
+                    aff_n * w.get("affluence", 0.10) +
+                    poi_n * w.get("poi",       0.15) +
+                    sal_n * w.get("sales",     0.15) +
+                    lin_n * w.get("lines",     0.15)
+                )*100))
+            status.info(f"Stage {poi_stage}/{total_steps} — POI enrichment complete. Scores updated.")
 
         # Package results
         gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)
