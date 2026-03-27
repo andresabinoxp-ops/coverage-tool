@@ -10,6 +10,12 @@ st.set_page_config(page_title="Run Pipeline - Coverage Tool", page_icon="📤", 
 
 st.markdown("""
 <style>
+
+/* ── Sidebar navy blue ── */
+[data-testid="stSidebar"] { background: #1A2B4A !important; }
+[data-testid="stSidebar"] * { color: #FFFFFF !important; }
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; }
 .page-header {
     background: linear-gradient(135deg, #1A2B4A 0%, #1565C0 100%);
     padding: 1.5rem 2rem; border-radius: 10px; margin-bottom: 1.5rem; color: white;
@@ -1276,6 +1282,13 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
                         })
 
+            # Apply minimum utilisation threshold
+            min_util_pct = cfg.get("min_utilisation_pct",
+                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
+            min_util_mins = monthly_cap * min_util_pct / 100
+            zone_centres = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
+            actual_reps   = len(zone_centres)
+
             rep_recommendation = {
                 "mode":                "recommended",
                 "total_minutes_needed": total_mins,
@@ -1283,9 +1296,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "daily_minutes":        daily_minutes,
                 "working_days":         working_days,
                 "avg_speed_kmh":        avg_speed,
-                "recommended_reps":     rec_reps,
+                "recommended_reps":     actual_reps,
+                "requested_reps":       rec_reps,
                 "current_reps":         current_reps,
-                "shortfall":            rec_reps - current_reps if current_reps > 0 else 0,
+                "shortfall":            actual_reps - current_reps if current_reps > 0 else 0,
+                "min_utilisation_pct":  min_util_pct,
                 "zone_centres":         zone_centres,
             }
         else:
@@ -1319,6 +1334,12 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
                         })
 
+                # Apply minimum utilisation threshold in fixed mode too
+                min_util_pct  = cfg.get("min_utilisation_pct",
+                    st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct",60))
+                min_util_mins = daily_minutes * working_days * min_util_pct / 100
+                under_util    = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins]
+
                 rep_recommendation = {
                     "mode":                "fixed",
                     "rep_count":           rep_count,
@@ -1326,6 +1347,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
                     "monthly_cap_per_rep": daily_minutes * working_days,
+                    "min_utilisation_pct": min_util_pct,
+                    "under_utilised_zones": [z["zone"] for z in under_util],
                     "zone_centres":        zone_centres,
                 }
             else:
