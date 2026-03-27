@@ -475,12 +475,12 @@ else:
     )
 
     st.markdown("**Rep capacity**")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        calls_per_day = st.number_input(
-            "Store visits per rep per day",
-            min_value=3, max_value=25, value=10,
-            help="Typical range: 6 (rural / large stores) to 15 (dense city / small outlets)."
+        daily_minutes = st.number_input(
+            "Working minutes per day",
+            min_value=240, max_value=600, value=480,
+            help="Total selling time available per rep per day. Default 480 min = 8 hours. Set in Admin Settings."
         )
     with col2:
         working_days = st.number_input(
@@ -489,16 +489,22 @@ else:
             help="Selling days per month after weekends and public holidays."
         )
     with col3:
-        cap_per_rep = calls_per_day * working_days
+        avg_speed_kmh = st.number_input(
+            "Avg travel speed (km/h)",
+            min_value=10, max_value=80, value=30,
+            help="Average driving speed between stores. 30 km/h for city, 50-60 for suburban."
+        )
+    with col4:
+        monthly_cap = daily_minutes * working_days
         st.metric(
-            "Rep capacity per month",
-            f"{cap_per_rep} calls",
-            help="How many store visits one rep can complete in a month."
+            "Rep capacity / month",
+            f"{monthly_cap:,} min",
+            help=f"{daily_minutes} min/day × {working_days} days"
         )
     st.caption(
-        f"Formula: {calls_per_day} visits/day × {working_days} days = "
-        f"{cap_per_rep} calls/month per rep. "
-        "After the run: Total calls needed ÷ " + str(cap_per_rep) + " = Recommended rep count."
+        f"Formula: {daily_minutes} min/day × {working_days} days = "
+        f"{monthly_cap:,} min/month per rep. "
+        f"Travel time calculated using straight-line distance at {avg_speed_kmh} km/h."
     )
 
     st.markdown("**Current headcount (optional)**")
@@ -687,9 +693,9 @@ else:
             "lng_max":                 lng_max,
             "rep_count":               int(rep_count),
             "rep_mode":                rep_mode_key,
-            "calls_per_day":           int(calls_per_day),
-            "working_days":            int(working_days),
-            "rep_capacity_per_month":  int(calls_per_day * working_days),
+            "daily_minutes":           int(daily_minutes) if rep_mode_key == "recommended" else 480,
+            "working_days":            int(working_days)  if rep_mode_key == "recommended" else 22,
+            "avg_speed_kmh":           int(avg_speed_kmh) if rep_mode_key == "recommended" else 30,
             "categories":              final_categories,
             "market_api_key":          market_api_key,
             "detected_from_portfolio": detected_categories,
