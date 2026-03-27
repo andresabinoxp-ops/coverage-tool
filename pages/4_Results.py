@@ -239,25 +239,60 @@ if rep_data:
     rdf["Calls per Month"] = rdf["Calls per Month"].round(1)
     st.dataframe(rdf, use_container_width=True, hide_index=True)
 
+import datetime
 st.markdown("---")
 st.subheader("Download results")
 mkt_safe = market.replace(" ","_").replace("-","_")
+run_date = datetime.date.today().strftime("%Y-%m-%d")
+
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.download_button("Full scored universe CSV",
+    st.download_button("📄 Full scored universe CSV",
         pd.DataFrame(all_stores).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
-    st.download_button("Gap report CSV",
+    st.download_button("🎯 Gap report CSV",
         pd.DataFrame(gap_stores).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
         {"type":"Feature",
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
-         "properties":{k:s.get(k) for k in ["store_name","score","visit_frequency","rep_id","coverage_status","category"]}}
+         "properties":{k:s.get(k) for k in ["store_name","score","size_tier","visits_per_month","rep_id","coverage_status","category"]}}
         for s in all_stores if s.get("lat") and s.get("lng")
     ]
-    st.download_button("Routes GeoJSON",
+    st.download_button("🗺 Routes GeoJSON",
         json.dumps({"type":"FeatureCollection","features":features}, indent=2),
         f"rep_routes_{mkt_safe}.geojson", "application/json")
+
+st.markdown("---")
+st.markdown('<div class="section-title">Dashboard snapshot files</div>', unsafe_allow_html=True)
+st.caption("Download these two files and upload them to the Dashboard page to view results anytime without re-running the pipeline.")
+
+summary_data = {
+    "market_name":           [market],
+    "run_date":              [run_date],
+    "total_stores":          [len(all_stores)],
+    "covered_stores":        [sum(1 for s in all_stores if s.get("covered"))],
+    "gap_stores":            [len(gap_stores)],
+    "coverage_rate_before":  [res.get("coverage_rate_before","")],
+    "coverage_rate_after":   [res.get("coverage_rate_after","")],
+    "large_stores":          [sum(1 for s in all_stores if s.get("size_tier")=="Large")],
+    "medium_stores":         [sum(1 for s in all_stores if s.get("size_tier")=="Medium")],
+    "small_stores":          [sum(1 for s in all_stores if s.get("size_tier")=="Small")],
+    "total_visits_per_month":[sum(s.get("visits_per_month",0) for s in all_stores)],
+}
+summary_df = pd.DataFrame(summary_data)
+
+col_s1, col_s2 = st.columns(2)
+with col_s1:
+    st.download_button(
+        "⬇️ Stores snapshot  (upload to Dashboard)",
+        pd.DataFrame(all_stores).to_csv(index=False),
+        f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
+with col_s2:
+    st.download_button(
+        "⬇️ Summary snapshot  (upload to Dashboard)",
+        summary_df.to_csv(index=False),
+        f"{mkt_safe}_{run_date}_summary.csv", "text/csv")
+st.info("Upload both files to the Dashboard page. Admin can manage the market library from there.")
