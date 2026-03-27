@@ -1295,9 +1295,31 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             # Apply minimum utilisation threshold
             min_util_pct = cfg.get("min_utilisation_pct",
                 st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
-            min_util_mins = monthly_cap * min_util_pct / 100
-            zone_centres = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
-            actual_reps   = len(zone_centres)
+            min_util_mins  = monthly_cap * min_util_pct / 100
+            kept_zones     = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
+            removed_zones  = [z for z in zone_centres if z.get("time_needed_min",0) <  min_util_mins]
+            zone_centres   = kept_zones
+            actual_reps    = len(zone_centres)
+
+            # Reassign stores from removed zones to nearest kept zone
+            if removed_zones and kept_zones:
+                kept_ids = {z["zone"] for z in kept_zones}
+                # Build centroid lookup for kept zones
+                kept_centroids = {z["zone"]: (z["centre_lat"], z["centre_lng"]) for z in kept_zones}
+                removed_ids    = {z["zone"] for z in removed_zones}
+                for s in all_stores:
+                    if s.get("rep_id") in removed_ids and s.get("lat") and s.get("lng"):
+                        # Assign to nearest kept zone by distance
+                        nearest_zone = min(
+                            kept_centroids.keys(),
+                            key=lambda zid: haversine_m(
+                                s["lat"], s["lng"],
+                                kept_centroids[zid][0], kept_centroids[zid][1]
+                            )
+                        )
+                        s["rep_id"] = nearest_zone
+                    elif s.get("rep_id") in removed_ids:
+                        s["rep_id"] = list(kept_ids)[0] if kept_ids else 0
 
             rep_recommendation = {
                 "mode":                "recommended",
@@ -1347,19 +1369,38 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 # Apply minimum utilisation threshold in fixed mode too
                 min_util_pct  = cfg.get("min_utilisation_pct",
                     st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct",60))
-                min_util_mins = daily_minutes * working_days * min_util_pct / 100
-                under_util    = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins]
+                min_util_mins  = daily_minutes * working_days * min_util_pct / 100
+                kept_zones_f   = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
+                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) <  min_util_mins]
+
+                # Reassign stores from under-utilised zones to nearest kept zone
+                if under_util and kept_zones_f:
+                    kept_centroids_f = {z["zone"]: (z["centre_lat"], z["centre_lng"]) for z in kept_zones_f}
+                    under_ids        = {z["zone"] for z in under_util}
+                    kept_ids_f       = set(kept_centroids_f.keys())
+                    for s in all_stores:
+                        if s.get("rep_id") in under_ids and s.get("lat") and s.get("lng"):
+                            nearest_zone = min(
+                                kept_centroids_f.keys(),
+                                key=lambda zid: haversine_m(
+                                    s["lat"], s["lng"],
+                                    kept_centroids_f[zid][0], kept_centroids_f[zid][1]
+                                )
+                            )
+                            s["rep_id"] = nearest_zone
+                        elif s.get("rep_id") in under_ids:
+                            s["rep_id"] = list(kept_ids_f)[0] if kept_ids_f else 0
 
                 rep_recommendation = {
                     "mode":                "fixed",
-                    "rep_count":           rep_count,
+                    "rep_count":           len(kept_zones_f),
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
                     "monthly_cap_per_rep": daily_minutes * working_days,
                     "min_utilisation_pct": min_util_pct,
                     "under_utilised_zones": [z["zone"] for z in under_util],
-                    "zone_centres":        zone_centres,
+                    "zone_centres":        kept_zones_f,
                 }
             else:
                 rep_recommendation = {"mode":"fixed","rep_count":rep_count,"zone_centres":[]}
