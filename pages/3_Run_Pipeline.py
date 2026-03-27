@@ -324,11 +324,65 @@ def kmeans_simple(points, k, iterations=20):
         centroids = new_c
     return labels
 
-def assign_freq(score, t):
-    if score >= t["weekly"]:      return "weekly",      4.0
-    if score >= t["fortnightly"]: return "fortnightly", 2.0
-    if score >= t["monthly"]:     return "monthly",     1.0
-    return "bi-weekly", 0.5
+def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percentiles):
+    """
+    Assign size tier (Large/Medium/Small) based on score percentile within category.
+    Returns (size_tier, visits_per_month, visit_duration_min).
+    """
+    cat       = store.get("category","")
+    score     = store.get("score", 0)
+    cat_ranks = category_percentiles.get(cat, [])
+    n         = len(cat_ranks)
+
+    if n == 0:
+        pct = 50.0
+    else:
+        # percentile rank within this category (0=lowest, 100=highest)
+        rank = sum(1 for s in cat_ranks if s <= score)
+        pct  = (rank / n) * 100
+
+    large_pct  = size_percentiles.get("large_pct", 20)
+    medium_pct = size_percentiles.get("medium_pct", 60)
+    # top X% = Large, next Y% = Medium, bottom Z% = Small
+    if pct >= (100 - large_pct):
+        tier = "Large"
+    elif pct >= (100 - large_pct - medium_pct):
+        tier = "Medium"
+    else:
+        tier = "Small"
+
+    # Get visit benchmarks for this category
+    bench = visit_benchmarks.get(cat, visit_benchmarks.get("default", {
+        "large_visits":4,"large_duration":40,
+        "medium_visits":2,"medium_duration":25,
+        "small_visits":1,"small_duration":15,
+    }))
+
+    if tier == "Large":
+        visits   = bench.get("large_visits", 4)
+        duration = bench.get("large_duration", 40)
+    elif tier == "Medium":
+        visits   = bench.get("medium_visits", 2)
+        duration = bench.get("medium_duration", 25)
+    else:
+        visits   = bench.get("small_visits", 1)
+        duration = bench.get("small_duration", 15)
+
+    return tier, visits, duration
+
+
+def build_category_percentiles(stores):
+    """Build a dict of category -> sorted list of scores for percentile ranking."""
+    cat_scores = {}
+    for s in stores:
+        cat = s.get("category","")
+        if cat not in cat_scores:
+            cat_scores[cat] = []
+        cat_scores[cat].append(s.get("score",0))
+    # Sort each list
+    for cat in cat_scores:
+        cat_scores[cat].sort()
+    return cat_scores
 
 # ── API HEALTH CHECK ─────────────────────────────────────────────────────────
 def run_api_health_check(api_key):
@@ -654,9 +708,12 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             "", "",
         ]
 
+        # Dry run: assign scores first, then calculate tiers
+        dry_visit_benchmarks = cfg.get("visit_benchmarks", {})
+        dry_size_pct         = cfg.get("size_percentiles", {"large_pct":20,"medium_pct":60,"small_pct":20})
+
         for row in base:
             sc = random.randint(50,100)
-            freq, cpm = assign_freq(sc, thresholds)
             all_stores.append({
                 "store_id":row.get("store_id","S0"),"store_name":row.get("store_name","Store"),
                 "address":row.get("address",""),"city":row.get("city",""),
@@ -667,10 +724,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "price_level":random.choice([2,2,3,3,4]),
                 "business_status":"OPERATIONAL",
                 "annual_sales_usd":float(row.get("annual_sales_usd",0)),"lines_per_store":int(row.get("lines_per_store",0)),
-                "covered":True,"source":"portfolio","score":sc,"visit_frequency":freq,
-                "calls_per_month":cpm,"rep_id":random.randint(1,cfg["rep_count"]),"coverage_status":"covered",
+                "covered":True,"source":"portfolio","score":sc,
+                "size_tier":"","visits_per_month":0,"visit_duration_min":0,"visit_frequency":"","calls_per_month":0,
+                "rep_id":random.randint(1,cfg["rep_count"]),"coverage_status":"covered",
                 "phone":random.choice(phone_samples),"opening_hours":random.choice(hours_samples),
-                "website":"","place_id":f"dry_place_{row.get('store_id','S0')}",
+                "website":"","place_id":f"dry_place_{row.get('store_id','S0')}","poi_count":0,
             })
         for i in range(60):
             cat = random.choice(cfg["categories"])
@@ -686,14 +744,29 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "price_level":random.choice([0,1,1,2,2,3]),
                 "business_status":"OPERATIONAL",
                 "annual_sales_usd":0.0,"lines_per_store":0,
-                "covered":False,"source":"scraped","score":sc,"visit_frequency":freq,
-                "calls_per_month":cpm,
-                "rep_id":random.randint(1,cfg["rep_count"]) if sc>=thresholds["monthly"] else 0,
-                "coverage_status":"gap",
+                "covered":False,"source":"scraped","score":sc,
+                "size_tier":"","visits_per_month":0,"visit_duration_min":0,"visit_frequency":"","calls_per_month":0,
+                "rep_id":0,"coverage_status":"gap",
                 "phone":random.choice(phone_samples) if enrich_scope != "none" else "",
                 "opening_hours":random.choice(hours_samples) if enrich_scope != "none" else "",
-                "website":"","place_id":f"dry_gap_{i:03d}",
+                "website":"","place_id":f"dry_gap_{i:03d}","poi_count":0,
             })
+        # Apply size tier assignment to dry run stores
+        dry_cat_pct = build_category_percentiles(all_stores)
+        for s in all_stores:
+            tier, visits, duration = assign_size_tier(s, dry_cat_pct, dry_visit_benchmarks, dry_size_pct)
+            s["size_tier"]          = tier
+            s["visits_per_month"]   = visits
+            s["visit_duration_min"] = duration
+            s["calls_per_month"]    = visits
+            s["visit_frequency"]    = tier
+            if tier == "Large":
+                s["rep_id"] = random.randint(1, cfg["rep_count"])
+            elif tier == "Medium":
+                s["rep_id"] = random.randint(1, cfg["rep_count"])
+            else:
+                s["rep_id"] = random.randint(1, cfg["rep_count"]) if random.random() > 0.3 else 0
+
         bar.progress(100)
         gap_stores = sorted([s for s in all_stores if s["coverage_status"]=="gap"],key=lambda x:x["score"],reverse=True)
         covered_n  = sum(1 for s in all_stores if s["covered"])
@@ -836,12 +909,18 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for p in portfolio: p["coverage_status"] = "covered"
         bar.progress(65)
 
-        # Stage 5: Frequency
-        status.info(f"Stage 5/{total_steps} — Assigning visit frequencies...")
+        # Stage 5: Size tier + visit frequency assignment
+        status.info(f"Stage 5/{total_steps} — Assigning store size tiers and visit frequencies...")
+        visit_benchmarks  = cfg.get("visit_benchmarks", {})
+        size_percentiles  = cfg.get("size_percentiles", {"large_pct":20,"medium_pct":60,"small_pct":20})
+        cat_percentiles   = build_category_percentiles(all_stores)
         for s in all_stores:
-            freq,cpm = assign_freq(s.get("score",0),thresholds)
-            s["visit_frequency"] = freq
-            s["calls_per_month"] = cpm
+            tier, visits, duration = assign_size_tier(s, cat_percentiles, visit_benchmarks, size_percentiles)
+            s["size_tier"]          = tier
+            s["visits_per_month"]   = visits
+            s["visit_duration_min"] = duration
+            s["calls_per_month"]    = visits   # keep for backward compatibility
+            s["visit_frequency"]    = tier     # keep for backward compatibility
         bar.progress(72)
 
         # Stage 6: Routes + Rep Planning
