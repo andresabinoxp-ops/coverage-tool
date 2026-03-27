@@ -324,6 +324,87 @@ def kmeans_simple(points, k, iterations=20):
         centroids = new_c
     return labels
 
+def travel_time_minutes(lat1, lng1, lat2, lng2, avg_speed_kmh=30):
+    """Straight-line travel time in minutes between two GPS points."""
+    dist_km = haversine_m(lat1, lng1, lat2, lng2) / 1000
+    return (dist_km / avg_speed_kmh) * 60
+
+
+def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
+    """
+    Calculate total time needed per month for a rep covering a set of stores.
+    Returns total_minutes_per_month.
+    Time = sum(visit_duration × visits_per_month) + sum(travel_time × visits_per_month)
+    Stores are visited in score order (highest first = most efficient routing proxy).
+    """
+    if not stores_in_route:
+        return 0.0
+
+    # Sort by score descending for visit order
+    ordered = sorted(stores_in_route, key=lambda x: x.get("score",0), reverse=True)
+
+    visit_time = sum(
+        s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
+        for s in ordered
+    )
+
+    # Travel time — cumulative between consecutive stores each visit
+    travel_time = 0.0
+    for i in range(1, len(ordered)):
+        s_prev = ordered[i-1]
+        s_curr = ordered[i]
+        if all(k in s_prev and k in s_curr for k in ["lat","lng"]):
+            t = travel_time_minutes(
+                s_prev["lat"], s_prev["lng"],
+                s_curr["lat"], s_curr["lng"],
+                avg_speed_kmh
+            )
+            # multiply by average visits (use min of the two stores' visits)
+            avg_visits = (s_prev.get("visits_per_month",1) + s_curr.get("visits_per_month",1)) / 2
+            travel_time += t * avg_visits
+
+    return visit_time + travel_time
+
+
+def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
+    """
+    Calculate recommended rep count using time-based model.
+    Returns (recommended_reps, total_minutes_needed, minutes_per_rep_per_month).
+    """
+    if not priority_stores:
+        return 1, 0.0, 0.0
+
+    monthly_capacity = daily_minutes * working_days
+
+    # Quick estimate: total visit time + average travel estimate
+    total_visit_time = sum(
+        s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
+        for s in priority_stores
+    )
+
+    # Estimate average travel time per visit using average inter-store distance
+    geo_stores = [s for s in priority_stores if s.get("lat") and s.get("lng")]
+    if len(geo_stores) > 1:
+        # Sample distances between nearby stores
+        sample_distances = []
+        for i in range(min(len(geo_stores)-1, 50)):
+            d = haversine_m(
+                geo_stores[i]["lat"], geo_stores[i]["lng"],
+                geo_stores[i+1]["lat"], geo_stores[i+1]["lng"]
+            ) / 1000
+            sample_distances.append(d)
+        avg_dist_km   = sum(sample_distances) / len(sample_distances)
+        avg_travel_t  = (avg_dist_km / avg_speed_kmh) * 60
+        total_travel  = avg_travel_t * sum(s.get("visits_per_month",1) for s in priority_stores)
+    else:
+        total_travel = total_visit_time * 0.3  # assume 30% overhead if no geo
+
+    total_minutes = total_visit_time + total_travel
+    rec_reps      = max(1, math.ceil(total_minutes / monthly_capacity))
+
+    return rec_reps, round(total_minutes), round(monthly_capacity)
+
+
 def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percentiles):
     """
     Assign size tier (Large/Medium/Small) based on score percentile within category.
@@ -771,26 +852,38 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         gap_stores = sorted([s for s in all_stores if s["coverage_status"]=="gap"],key=lambda x:x["score"],reverse=True)
         covered_n  = sum(1 for s in all_stores if s["covered"])
 
-        # Calculate rep recommendation for dry run too
-        dry_priority = [s for s in all_stores if s.get("score",0)>=cfg["thresholds"]["monthly"]]
-        total_calls  = sum(s.get("calls_per_month",0) for s in dry_priority)
-        dry_rep_mode = cfg.get("rep_mode","fixed")
+        # Calculate rep recommendation for dry run — time-based model
+        dry_priority  = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
+        daily_mins    = cfg.get("daily_minutes", 480)
+        work_days     = cfg.get("working_days", 22)
+        speed_kmh     = cfg.get("avg_speed_kmh", 30)
+        dry_rep_mode  = cfg.get("rep_mode","fixed")
+
         if dry_rep_mode == "recommended":
-            cap          = cfg.get("rep_capacity_per_month", cfg.get("calls_per_day",10)*cfg.get("working_days",22))
-            rec_reps     = max(1, math.ceil(total_calls / cap))
-            dry_rec      = {
-                "mode":               "recommended",
-                "total_calls_needed": round(total_calls,1),
-                "cap_per_rep":        cap,
-                "calls_per_day":      cfg.get("calls_per_day",10),
-                "working_days":       cfg.get("working_days",22),
-                "recommended_reps":   rec_reps,
-                "current_reps":       cfg.get("rep_count",0),
-                "shortfall":          rec_reps - cfg.get("rep_count",0),
-                "zone_centres":       [],
+            rec_reps, total_mins, monthly_cap = recommended_reps_time_based(dry_priority, daily_mins, work_days, speed_kmh)
+            dry_rec = {
+                "mode":                 "recommended",
+                "total_minutes_needed": total_mins,
+                "monthly_cap_per_rep":  monthly_cap,
+                "daily_minutes":        daily_mins,
+                "working_days":         work_days,
+                "avg_speed_kmh":        speed_kmh,
+                "recommended_reps":     rec_reps,
+                "current_reps":         cfg.get("rep_count",0),
+                "shortfall":            rec_reps - cfg.get("rep_count",0),
+                "zone_centres":         [],
             }
         else:
-            dry_rec = {"mode":"fixed","rep_count":cfg.get("rep_count",6)}
+            monthly_cap = daily_mins * work_days
+            dry_rec = {
+                "mode":                "fixed",
+                "rep_count":           cfg.get("rep_count",6),
+                "daily_minutes":       daily_mins,
+                "working_days":        work_days,
+                "avg_speed_kmh":       speed_kmh,
+                "monthly_cap_per_rep": monthly_cap,
+                "zone_centres":        [],
+            }
 
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
@@ -923,63 +1016,103 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             s["visit_frequency"]    = tier     # keep for backward compatibility
         bar.progress(72)
 
-        # Stage 6: Routes + Rep Planning
-        priority = [s for s in all_stores if s.get("score",0)>=thresholds["monthly"] and s.get("lat") and s.get("lng")]
+        # Stage 6: Routes + Time-Based Rep Planning
+        priority = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
         rep_recommendation = None
 
-        rep_mode = cfg.get("rep_mode","fixed")
+        rep_mode      = cfg.get("rep_mode","fixed")
+        daily_minutes = cfg.get("daily_minutes", 480)
+        working_days  = cfg.get("working_days", 22)
+        avg_speed     = cfg.get("avg_speed_kmh", 30)
+        current_reps  = cfg.get("rep_count", 0)
 
         if rep_mode == "recommended":
-            status.info(f"Stage 6/{total_steps} — Calculating recommended rep count...")
-            # Total calls per month across all priority stores
-            total_calls_needed = sum(s.get("calls_per_month",0) for s in priority)
-            cap_per_rep        = cfg.get("rep_capacity_per_month", cfg.get("calls_per_day",10) * cfg.get("working_days",22))
-            recommended_reps   = max(1, math.ceil(total_calls_needed / cap_per_rep))
-            current_reps       = cfg.get("rep_count", 0)
+            status.info(f"Stage 6/{total_steps} — Calculating recommended rep count (time-based)...")
 
-            # Build zone analysis — cluster into recommended_reps zones
-            zone_labels = None
+            rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
+                priority, daily_minutes, working_days, avg_speed
+            )
+
+            # Cluster into recommended rep zones
             zone_centres = []
             if priority:
                 pts         = [(s["lat"],s["lng"]) for s in priority]
-                zone_labels = kmeans_simple(pts, recommended_reps)
+                zone_labels = kmeans_simple(pts, rec_reps)
                 for s, lbl in zip(priority, zone_labels):
                     s["rep_id"] = int(lbl) + 1
-                # Calculate zone centre coordinates
-                for zone in range(recommended_reps):
+
+                for zone in range(rec_reps):
                     zone_stores = [priority[i] for i in range(len(priority)) if zone_labels[i] == zone]
                     if zone_stores:
-                        centre_lat = sum(s["lat"] for s in zone_stores) / len(zone_stores)
-                        centre_lng = sum(s["lng"] for s in zone_stores) / len(zone_stores)
-                        zone_calls = sum(s.get("calls_per_month",0) for s in zone_stores)
+                        centre_lat    = sum(s["lat"] for s in zone_stores) / len(zone_stores)
+                        centre_lng    = sum(s["lng"] for s in zone_stores) / len(zone_stores)
+                        zone_mins     = calculate_rep_time_budget(zone_stores, avg_speed)
+                        zone_visits   = sum(s.get("visits_per_month",1) for s in zone_stores)
                         zone_centres.append({
-                            "zone":          zone + 1,
-                            "centre_lat":    round(centre_lat, 4),
-                            "centre_lng":    round(centre_lng, 4),
-                            "store_count":   len(zone_stores),
-                            "calls_per_month": round(zone_calls, 1),
+                            "zone":                 zone + 1,
+                            "centre_lat":           round(centre_lat, 4),
+                            "centre_lng":           round(centre_lng, 4),
+                            "store_count":          len(zone_stores),
+                            "visits_per_month":     zone_visits,
+                            "time_needed_min":      round(zone_mins),
+                            "capacity_min":         monthly_cap,
+                            "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
                         })
 
             rep_recommendation = {
-                "mode":               "recommended",
-                "total_calls_needed": round(total_calls_needed, 1),
-                "cap_per_rep":        cap_per_rep,
-                "calls_per_day":      cfg.get("calls_per_day", 10),
-                "working_days":       cfg.get("working_days", 22),
-                "recommended_reps":   recommended_reps,
-                "current_reps":       current_reps,
-                "shortfall":          recommended_reps - current_reps if current_reps > 0 else 0,
-                "zone_centres":       zone_centres,
+                "mode":                "recommended",
+                "total_minutes_needed": total_mins,
+                "monthly_cap_per_rep":  monthly_cap,
+                "daily_minutes":        daily_minutes,
+                "working_days":         working_days,
+                "avg_speed_kmh":        avg_speed,
+                "recommended_reps":     rec_reps,
+                "current_reps":         current_reps,
+                "shortfall":            rec_reps - current_reps if current_reps > 0 else 0,
+                "zone_centres":         zone_centres,
             }
         else:
-            # Fixed mode — use configured rep count
-            status.info(f"Stage 6/{total_steps} — Allocating {cfg['rep_count']} rep routes...")
+            # Fixed mode — cluster into configured rep count
+            rep_count = max(1, cfg.get("rep_count", 1))
+            status.info(f"Stage 6/{total_steps} — Allocating {rep_count} rep routes (time-based workload)...")
             if priority:
                 pts    = [(s["lat"],s["lng"]) for s in priority]
-                labels = kmeans_simple(pts, cfg["rep_count"])
+                labels = kmeans_simple(pts, rep_count)
                 for s, lbl in zip(priority, labels):
                     s["rep_id"] = int(lbl) + 1
-            rep_recommendation = {"mode": "fixed", "rep_count": cfg["rep_count"]}
+
+                # Calculate time utilisation per rep
+                zone_centres = []
+                for zone in range(rep_count):
+                    zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == zone]
+                    if zone_stores:
+                        centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
+                        centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
+                        zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
+                        monthly_cap = daily_minutes * working_days
+                        zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
+                        zone_centres.append({
+                            "zone":                 zone + 1,
+                            "centre_lat":           round(centre_lat, 4),
+                            "centre_lng":           round(centre_lng, 4),
+                            "store_count":          len(zone_stores),
+                            "visits_per_month":     zone_visits,
+                            "time_needed_min":      round(zone_mins),
+                            "capacity_min":         monthly_cap,
+                            "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
+                        })
+
+                rep_recommendation = {
+                    "mode":                "fixed",
+                    "rep_count":           rep_count,
+                    "daily_minutes":       daily_minutes,
+                    "working_days":        working_days,
+                    "avg_speed_kmh":       avg_speed,
+                    "monthly_cap_per_rep": daily_minutes * working_days,
+                    "zone_centres":        zone_centres,
+                }
+            else:
+                rep_recommendation = {"mode":"fixed","rep_count":rep_count,"zone_centres":[]}
 
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
