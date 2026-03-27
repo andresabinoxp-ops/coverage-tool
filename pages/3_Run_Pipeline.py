@@ -1212,10 +1212,17 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Stage 3: Score
         status.info(f"Stage 3/{total_steps} — Scoring all stores...")
         all_stores = portfolio + universe
-        max_rev    = max((s.get("review_count",0) for s in all_stores),default=1) or 1
-        max_sales  = max((s.get("annual_sales_usd",0) for s in portfolio),default=1) or 1
-        max_lines  = max((s.get("lines_per_store",0) for s in portfolio),default=1) or 1
-        max_poi = max((s.get("poi_count",0) or 0 for s in all_stores),default=1) or 1
+        def _safe_num(v, default=0):
+            try:    return float(v) if v is not None else default
+            except: return default
+        max_rev   = max((_safe_num(s.get("review_count",0))    for s in all_stores), default=0) or 1
+        max_sales = max((_safe_num(s.get("annual_sales_usd",0)) for s in portfolio), default=0) or 1
+        max_lines = max((_safe_num(s.get("lines_per_store",0))  for s in portfolio), default=0) or 1
+        max_poi   = max((_safe_num(s.get("poi_count",0))         for s in all_stores), default=0) or 1
+        max_rev   = max_rev   if max_rev   > 0 else 1
+        max_sales = max_sales if max_sales > 0 else 1
+        max_lines = max_lines if max_lines > 0 else 1
+        max_poi   = max_poi   if max_poi   > 0 else 1
         for s in all_stores:
             r_n    = (s.get("rating",0) or 0)/5
             rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
@@ -1223,8 +1230,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             aff_n  = pl_raw / 4 if pl_raw > 0 else 0.5
             poi_raw = s.get("poi_count",0) or 0
             poi_n   = math.log1p(poi_raw)/math.log1p(max_poi) if max_poi > 1 else 0.0
-            sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if s.get("covered") else 0.0
-            lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if s.get("covered") else 0.0
+            sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if (s.get("covered") and max_sales > 0) else 0.0
+            lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if (s.get("covered") and max_lines > 0) else 0.0
             s["score"] = min(100,round((
                 r_n   * weights.get("rating",    0.20) +
                 rv_n  * weights.get("reviews",   0.25) +
@@ -1566,8 +1573,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 aff_n  = (s.get("price_level",0) or 0)/4 if (s.get("price_level",0) or 0) > 0 else 0.5
                 r_n    = (s.get("rating",0) or 0)/5
                 rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
-                sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if s.get("covered") else 0.0
-                lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if s.get("covered") else 0.0
+                sal_n  = (s.get("annual_sales_usd",0) or 0)/max_sales if (s.get("covered") and max_sales > 0) else 0.0
+                lin_n  = (s.get("lines_per_store",0) or 0)/max_lines if (s.get("covered") and max_lines > 0) else 0.0
                 s["score"] = min(100,round((
                     r_n   * w.get("rating",    0.20) +
                     rv_n  * w.get("reviews",   0.25) +
