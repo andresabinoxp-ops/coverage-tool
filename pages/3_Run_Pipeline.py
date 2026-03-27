@@ -1067,6 +1067,37 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "zone_centres":        [],
             }
 
+        # Build annual routes for dry run too
+        dry_year    = cfg.get("route_year", datetime.date.today().year)
+        dry_city_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
+        dry_city_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
+        dry_rep_ids  = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
+        dry_speed    = cfg.get("avg_speed_kmh", 30)
+        dry_daily    = cfg.get("daily_minutes", 480)
+        month_names  = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+
+        for rep_id in dry_rep_ids:
+            rep_s = [s for s in all_stores if s.get("rep_id")==rep_id and s.get("size_tier") in ("Large","Medium","Small")]
+            build_daily_routes(rep_s, dry_year, 1, dry_daily, dry_speed, dry_city_lat, dry_city_lng)
+
+        for month_idx in range(1, 13):
+            month_days = get_month_weekdays(dry_year, month_idx)
+            mname = month_names[month_idx-1]
+            for s in all_stores:
+                if not s.get("assigned_day"): continue
+                occ = month_days.get(s["assigned_day"], [])
+                vpm = s.get("visits_per_month",1)
+                if vpm >= len(occ):    dates = occ
+                elif vpm == 2:         dates = occ[0:1] + (occ[2:3] if len(occ)>2 else occ[-1:])
+                else:                  dates = [occ[len(occ)//2]] if occ else []
+                s[f"{mname}_dates"]  = [d.strftime("%b %d") for d in dates]
+                s[f"{mname}_visits"] = len(dates)
+        for s in all_stores:
+            s["annual_visits"] = sum(s.get(f"{m}_visits",0) for m in month_names)
+            if "assigned_day" not in s:
+                s["assigned_day"] = ""; s["day_visit_order"] = 0; s["annual_visits"] = 0
+                for m in month_names: s[f"{m}_dates"]=[]; s[f"{m}_visits"]=0
+
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
             "coverage_rate_before":round(len(base)/max(len(all_stores),1)*100,1),
@@ -1303,26 +1334,55 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
 
-        # ── Build daily routes per rep ────────────────────────────────────────
-        route_year  = cfg.get("route_year",  datetime.date.today().year)
-        route_month = cfg.get("route_month", datetime.date.today().month)
+        # ── Build daily routes for all 12 months ─────────────────────────────
+        route_year  = cfg.get("route_year", datetime.date.today().year)
         city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
-
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
-        status.info(f"Stage 6b — Building calendar daily routes for {len(all_rep_ids)} reps...")
 
+        status.info(f"Stage 6b — Building annual calendar routes for {len(all_rep_ids)} reps across 12 months of {route_year}...")
+
+        # First pass — build routes for January to establish fixed day-of-week assignments
         for rep_id in all_rep_ids:
             rep_stores = [s for s in all_stores if s.get("rep_id") == rep_id and s.get("size_tier") in ("Large","Medium","Small")]
-            build_daily_routes(rep_stores, route_year, route_month, daily_minutes, avg_speed, city_lat, city_lng)
+            build_daily_routes(rep_stores, route_year, 1, daily_minutes, avg_speed, city_lat, city_lng)
+
+        # Second pass — for months 2-12 keep the same day assignment, just recalculate dates
+        import calendar as cal_mod
+        month_names = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+        for month_idx in range(1, 13):
+            month_days = get_month_weekdays(route_year, month_idx)
+            mname      = month_names[month_idx - 1]
+            for s in all_stores:
+                if not s.get("assigned_day"):
+                    continue
+                day        = s["assigned_day"]
+                occurrences = month_days.get(day, [])
+                vpm        = s.get("visits_per_month", 1)
+                if vpm >= len(occurrences):
+                    dates = occurrences
+                elif vpm == 2:
+                    dates = occurrences[0:1] + (occurrences[2:3] if len(occurrences) > 2 else occurrences[-1:])
+                else:
+                    mid   = len(occurrences) // 2
+                    dates = [occurrences[mid]] if occurrences else []
+                s[f"{mname}_dates"]  = [d.strftime("%b %d") for d in dates]
+                s[f"{mname}_visits"] = len(dates)
+
+        # Calculate annual visits
+        for s in all_stores:
+            s["annual_visits"] = sum(s.get(f"{m}_visits", 0) for m in month_names)
 
         # Stores not in a rep route get no day assignment
         for s in all_stores:
             if "assigned_day" not in s:
-                s["assigned_day"]       = ""
-                s["day_visit_order"]    = 0
-                s["visit_dates"]        = []
-                s["n_visits_this_month"]= 0
+                s["assigned_day"]    = ""
+                s["day_visit_order"] = 0
+                s["visit_dates"]     = []
+                s["annual_visits"]   = 0
+                for m in month_names:
+                    s[f"{m}_dates"]  = []
+                    s[f"{m}_visits"] = 0
 
         bar.progress(80)
 
