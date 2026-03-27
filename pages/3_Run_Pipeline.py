@@ -483,7 +483,6 @@ def get_month_weekdays(year, month):
     """
     result = {d: [] for d in WEEKDAYS}
     num_days = cal_module.monthrange(year, month)[1]
-    import datetime
     for day in range(1, num_days + 1):
         d = datetime.date(year, month, day)
         name = WEEKDAYS[d.weekday()] if d.weekday() < 5 else None
@@ -524,15 +523,20 @@ def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, ci
             s["assigned_day"] = WEEKDAYS[i % 5]
         geo_stores = rep_stores
 
-    n_days = min(5, len(geo_stores))
+    n_days = min(5, max(1, len(geo_stores)))
     if n_days < 2:
         for s in geo_stores:
             s["assigned_day"] = WEEKDAYS[0]
     else:
-        pts    = [(s["lat"], s["lng"]) for s in geo_stores]
-        labels = kmeans_simple(pts, n_days)
-        for s, lbl in zip(geo_stores, labels):
-            s["assigned_day"] = WEEKDAYS[int(lbl) % 5]
+        try:
+            pts    = [(s["lat"], s["lng"]) for s in geo_stores]
+            labels = kmeans_simple(pts, n_days)
+            for s, lbl in zip(geo_stores, labels):
+                s["assigned_day"] = WEEKDAYS[int(lbl) % 5]
+        except Exception:
+            # Fallback to round-robin if clustering fails
+            for i, s in enumerate(geo_stores):
+                s["assigned_day"] = WEEKDAYS[i % 5]
 
     # ── Step 2: Within each day, sort by nearest neighbour from city ─────────
     day_groups = {d: [] for d in WEEKDAYS}
@@ -1083,8 +1087,14 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         month_names  = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 
         for rep_id in dry_rep_ids:
-            rep_s = [s for s in all_stores if s.get("rep_id")==rep_id and s.get("size_tier") in ("Large","Medium","Small")]
-            build_daily_routes(rep_s, dry_year, 1, dry_daily, dry_speed, dry_city_lat, dry_city_lng)
+            try:
+                rep_s = [s for s in all_stores if s.get("rep_id")==rep_id and s.get("size_tier") in ("Large","Medium","Small")]
+                if rep_s:
+                    build_daily_routes(rep_s, dry_year, 1, dry_daily, dry_speed, dry_city_lat, dry_city_lng)
+            except Exception:
+                for i, s in enumerate([s for s in all_stores if s.get("rep_id")==rep_id]):
+                    s["assigned_day"]    = WEEKDAYS[i % 5]
+                    s["day_visit_order"] = (i // 5) + 1
 
         for month_idx in range(1, 13):
             month_days = get_month_weekdays(dry_year, month_idx)
@@ -1367,8 +1377,16 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         # First pass — build routes for January to establish fixed day-of-week assignments
         for rep_id in all_rep_ids:
-            rep_stores = [s for s in all_stores if s.get("rep_id") == rep_id and s.get("size_tier") in ("Large","Medium","Small")]
-            build_daily_routes(rep_stores, route_year, 1, daily_minutes, avg_speed, city_lat, city_lng)
+            try:
+                rep_stores = [s for s in all_stores if s.get("rep_id") == rep_id and s.get("size_tier") in ("Large","Medium","Small")]
+                if rep_stores:
+                    build_daily_routes(rep_stores, route_year, 1, daily_minutes, avg_speed, city_lat, city_lng)
+            except Exception as e:
+                status.warning(f"Route building warning for Rep {rep_id}: {e} — continuing...")
+                # Assign default day round-robin
+                for i, s in enumerate([s for s in all_stores if s.get("rep_id")==rep_id]):
+                    s["assigned_day"]    = WEEKDAYS[i % 5]
+                    s["day_visit_order"] = (i // 5) + 1
 
         # Second pass — for months 2-12 keep the same day assignment, just recalculate dates
         import calendar as cal_mod
