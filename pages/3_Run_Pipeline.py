@@ -508,8 +508,6 @@ def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, ci
     4. Validate daily time budget — if exceeded move lowest-score store to next day
     5. Build visit_dates from actual calendar occurrences
     """
-    import datetime
-
     if not rep_stores:
         return []
 
@@ -1006,7 +1004,6 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for i in range(60):
             cat = random.choice(cfg["categories"])
             sc  = random.randint(10,95)
-            freq, cpm = assign_freq(sc, thresholds)
             all_stores.append({
                 "store_id":f"G{i:03d}","store_name":f"{random.choice(prefixes)} {cat.replace('_',' ').title()} {i+1}",
                 "address":f"{random.randint(1,200)} Sample Street","city":cfg.get("city",""),
@@ -1389,7 +1386,6 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     s["day_visit_order"] = (i // 5) + 1
 
         # Second pass — for months 2-12 keep the same day assignment, just recalculate dates
-        import calendar as cal_mod
         month_names = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
         for month_idx in range(1, 13):
             month_days = get_month_weekdays(route_year, month_idx)
