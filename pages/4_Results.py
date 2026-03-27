@@ -7,8 +7,14 @@ st.set_page_config(page_title="Results - Coverage Tool", page_icon="📊", layou
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { background-color: #1B4F9B; }
+/* ── Sidebar navy blue ── */
+/* ── Sidebar navy blue ── */
+[data-testid="stSidebar"] { background: #1A2B4A !important; }
 [data-testid="stSidebar"] * { color: #FFFFFF !important; }
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; }
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; }
 .page-header { background: linear-gradient(135deg, #1B4F9B 0%, #2563C0 100%); padding: 28px 36px; border-radius: 12px; margin-bottom: 28px; }
 .page-header h1 { color: white !important; font-size: 1.8rem !important; font-weight: 700 !important; margin: 0 0 4px 0 !important; }
 .page-header p  { color: rgba(255,255,255,0.85) !important; font-size: 0.95rem !important; margin: 0 !important; }
