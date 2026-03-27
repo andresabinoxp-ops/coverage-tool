@@ -139,11 +139,17 @@ if rep_rec and rep_rec.get("mode") == "recommended":
     cpd         = rep_rec.get("calls_per_day", 10)
     wd          = rep_rec.get("working_days", 22)
 
+    total_mins  = rep_rec.get("total_minutes_needed", rep_rec.get("total_calls_needed",0))
+    monthly_cap = rep_rec.get("monthly_cap_per_rep",  rep_rec.get("cap_per_rep",480*22))
+    daily_mins  = rep_rec.get("daily_minutes", 480)
+    speed       = rep_rec.get("avg_speed_kmh", 30)
+
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Recommended reps",        rec_reps)
-    col2.metric("Total calls / month",     f"{total_calls:,.0f}")
-    col3.metric("Rep capacity / month",    f"{cap:,}",
-        help=f"{cpd} visits/day x {wd} working days")
+    col1.metric("Recommended reps",          rec_reps)
+    col2.metric("Total time needed / month", f"{total_mins:,.0f} min",
+        help="Sum of visit time + estimated travel time for all priority stores")
+    col3.metric("Rep capacity / month",      f"{monthly_cap:,} min",
+        help=f"{daily_mins} min/day × {wd} working days")
     if cur_reps > 0:
         col4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
@@ -152,12 +158,20 @@ if rep_rec and rep_rec.get("mode") == "recommended":
         col4.metric("Current headcount", "Not provided",
             help="Enter your current rep count in Configure to see the comparison.")
 
+    # Utilisation info
+    if monthly_cap > 0 and total_mins > 0:
+        util = round(total_mins / (rec_reps * monthly_cap) * 100)
+        st.caption(
+            f"Each rep uses ~{util}% of their monthly capacity "
+            f"({daily_mins} min/day · {wd} working days · {speed} km/h avg travel speed)"
+        )
+
     if cur_reps == 0:
         st.info(
             f"The agent recommends **{rec_reps} reps** for this market "
-            f"based on {total_calls:,.0f} total calls/month at {cap} calls/rep/month "
-            f"({cpd} visits/day × {wd} working days). "
-            "To see a shortfall or surplus comparison go back to Configure and enter your current headcount."
+            f"based on {total_mins:,.0f} total minutes needed per month "
+            f"at {monthly_cap:,} min/rep/month. "
+            "Go back to Configure and enter your current headcount to see the shortfall or surplus."
         )
 
     if shortfall > 0:
@@ -169,10 +183,10 @@ if rep_rec and rep_rec.get("mode") == "recommended":
             </div>
             <div style="font-size:0.87rem;color:#C62828;line-height:1.6">
                 With {cur_reps} reps and {total_calls:,.0f} calls needed per month,
-                each rep would need {total_calls/max(cur_reps,1):,.0f} calls/month
-                ({total_calls/max(cur_reps,1)/wd:.1f} visits/day) — above your target of {cpd}/day.
+                each rep would need {total_mins/max(cur_reps,1):,.0f} min/month
+                ({total_mins/max(cur_reps,1)/wd/daily_mins*100:.0f}% utilisation) — above the {monthly_cap:,} min/month capacity.
                 Adding {shortfall} rep{'s' if shortfall != 1 else ''} brings each to
-                {total_calls/max(rec_reps,1):,.0f} calls/month ({total_calls/max(rec_reps,1)/wd:.1f} visits/day).
+                {total_mins/max(rec_reps,1):,.0f} min/month ({total_mins/max(rec_reps,1)/wd/daily_mins*100:.0f}% utilisation).
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -185,7 +199,7 @@ if rep_rec and rep_rec.get("mode") == "recommended":
             </div>
             <div style="font-size:0.87rem;color:#2E7D32;line-height:1.6">
                 Your {cur_reps} reps can handle this market comfortably at
-                {total_calls/max(cur_reps,1):,.0f} calls/month each ({total_calls/max(cur_reps,1)/wd:.1f} visits/day).
+                {total_mins/max(cur_reps,1):,.0f} min/month each ({total_mins/max(cur_reps,1)/monthly_cap*100:.0f}% utilisation).
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -194,11 +208,21 @@ if rep_rec and rep_rec.get("mode") == "recommended":
 
     zone_centres = rep_rec.get("zone_centres", [])
     if zone_centres:
-        st.markdown("**Recommended rep base locations:**")
+        st.markdown("**Rep zone summary — base locations and workload:**")
         zdf = pd.DataFrame(zone_centres)
-        zdf.columns = ["Zone","Base Lat","Base Lng","Stores","Calls / Month"]
-        st.dataframe(zdf, use_container_width=True, hide_index=True)
-        st.caption("Base location is the geographic centre of each rep territory. Use this to decide where reps should be stationed.")
+        # rename columns depending on what fields are present
+        col_map = {
+            "zone":"Zone","centre_lat":"Base Lat","centre_lng":"Base Lng",
+            "store_count":"Stores","visits_per_month":"Visits/Month",
+            "time_needed_min":"Time Needed (min)","capacity_min":"Capacity (min)",
+            "utilisation_pct":"Utilisation %","calls_per_month":"Visits/Month",
+        }
+        zdf = zdf.rename(columns={k:v for k,v in col_map.items() if k in zdf.columns})
+        st.dataframe(zdf, use_container_width=True, hide_index=True,
+            column_config={
+                "Utilisation %": st.column_config.ProgressColumn("Utilisation %", min_value=0, max_value=100),
+            })
+        st.caption("Base location = geographic centre of each rep territory. Utilisation = time needed vs available capacity.")
 else:
     st.markdown('<div class="section-title">Rep workload summary</div>', unsafe_allow_html=True)
 
