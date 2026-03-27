@@ -443,6 +443,22 @@ with col2:
         placeholder="Leave blank to use global admin key",
     )
 
+import datetime as _dt
+col_m1, col_m2 = st.columns(2)
+with col_m1:
+    route_month = st.selectbox("Route month",
+        options=list(range(1,13)),
+        index=_dt.date.today().month - 1,
+        format_func=lambda m: _dt.date(2025,m,1).strftime("%B"),
+        help="The calendar month for which daily routes will be built."
+    )
+with col_m2:
+    route_year = st.number_input("Route year",
+        min_value=2024, max_value=2030,
+        value=_dt.date.today().year,
+        help="The year for the route month."
+    )
+
 st.markdown("---")
 st.subheader("5b. Rep planning mode")
 st.caption("Choose how you want to handle rep allocation — fixed headcount or let the agent recommend.")
@@ -467,6 +483,14 @@ if rep_mode == "Fixed — I know how many reps I have":
         min_value=1, max_value=200, value=6,
         help="The pipeline will assign stores to exactly this many reps."
     )
+    st.markdown("**Time parameters** — required for daily route building and utilisation calculation")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        daily_minutes = st.number_input("Working minutes per day", min_value=240, max_value=600, value=480)
+    with col2:
+        working_days  = st.number_input("Working days per month",  min_value=15,  max_value=26,  value=22)
+    with col3:
+        avg_speed_kmh = st.number_input("Avg travel speed (km/h)", min_value=10,  max_value=80,  value=30)
 else:
     rep_mode_key = "recommended"
     st.info(
@@ -684,6 +708,8 @@ else:
         st.session_state["market_config"] = {
             "market_name":             market_name,
             "country":                 st.session_state["country_name"],
+            "route_month":             int(route_month),
+            "route_year":              int(route_year),
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
             "city":                    final_scope,
