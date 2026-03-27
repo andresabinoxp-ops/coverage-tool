@@ -557,30 +557,41 @@ def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, ci
             s["day_visit_order"] = i + 1
         day_groups[day] = ordered
 
-    # ── Step 3: Validate daily time budget (safe — max iterations) ──────────
+    # ── Step 3: Enforce daily time budget — trim each day to fit 480 min ────
+    # Stores are already sorted by nearest-neighbour visit order (Step 2).
+    # Walk through each store, accumulate visit + travel time.
+    # Stop adding stores once we hit the daily budget.
+    # Stores that don't fit are marked as "overflow" — they still exist in the
+    # data but get no visit_dates for this day (they are simply not visited).
     for day in list(day_groups.keys()):
         stores = day_groups[day]
         if not stores:
             continue
-        # Simple check: if total visit duration alone exceeds budget, trim
-        # Cap iterations to prevent infinite loop
-        max_moves = len(stores) + 1
-        moves     = 0
-        while moves < max_moves:
-            visit_time = sum(s.get("visit_duration_min", 25) for s in stores)
-            if visit_time <= daily_minutes:
-                break
-            # Move lowest-score store to the least loaded day
-            overflow_store = min(stores, key=lambda x: x.get("score", 0))
-            stores.remove(overflow_store)
-            other_days = [d for d in WEEKDAYS if d != day]
-            best_day   = min(other_days, key=lambda d: sum(
-                s.get("visit_duration_min", 25) for s in day_groups[d]
-            ))
-            day_groups[best_day].append(overflow_store)
-            overflow_store["assigned_day"] = best_day
-            moves += 1
-        day_groups[day] = stores
+
+        kept        = []
+        cumulative  = 0.0
+        prev_lat, prev_lng = city_lat, city_lng
+
+        for s in stores:
+            visit_t  = s.get("visit_duration_min", 25)
+            travel_t = 0.0
+            if s.get("lat") and s.get("lng"):
+                travel_t = travel_time_minutes(
+                    prev_lat, prev_lng, s["lat"], s["lng"], avg_speed_kmh
+                )
+            total_t = visit_t + travel_t
+
+            if cumulative + total_t <= daily_minutes:
+                kept.append(s)
+                cumulative += total_t
+                if s.get("lat") and s.get("lng"):
+                    prev_lat, prev_lng = s["lat"], s["lng"]
+            else:
+                # Store doesn't fit — clear its day assignment so it won't appear on this day
+                s["assigned_day"]    = ""
+                s["day_visit_order"] = 0
+
+        day_groups[day] = kept
 
     # ── Step 4: Build visit_dates from calendar ───────────────────────────────
     for day, stores in day_groups.items():
