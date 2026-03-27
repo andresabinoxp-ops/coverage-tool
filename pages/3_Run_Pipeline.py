@@ -4,6 +4,7 @@ import time
 import math
 import requests
 import random
+import datetime
 
 st.set_page_config(page_title="Run Pipeline - Coverage Tool", page_icon="📤", layout="wide")
 
@@ -464,6 +465,146 @@ def build_category_percentiles(stores):
     for cat in cat_scores:
         cat_scores[cat].sort()
     return cat_scores
+
+import calendar as cal_module
+
+WEEKDAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+
+def get_month_weekdays(year, month):
+    """
+    Returns dict: {weekday_name: [date, date, ...]} for all occurrences in the month.
+    e.g. {"Monday": [date(2025,6,2), date(2025,6,9), ...], ...}
+    """
+    result = {d: [] for d in WEEKDAYS}
+    num_days = cal_module.monthrange(year, month)[1]
+    import datetime
+    for day in range(1, num_days + 1):
+        d = datetime.date(year, month, day)
+        name = WEEKDAYS[d.weekday()] if d.weekday() < 5 else None
+        if name:
+            result[name].append(d)
+    return result
+
+
+def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, city_lat, city_lng):
+    """
+    Assign each store to a fixed day of the week and build daily visit sequences.
+
+    Returns list of store dicts enriched with:
+        assigned_day        — "Monday" etc
+        visit_dates         — list of actual date strings for this month
+        day_visit_order     — position within that day's route
+        day_travel_time_min — cumulative travel time for this day
+
+    Logic:
+    1. Sort stores by visits_per_month desc, then score desc
+    2. Assign stores to weekdays geographically using k-means into 5 day-clusters
+    3. Within each day sort by nearest-neighbour from city centre
+    4. Validate daily time budget — if exceeded move lowest-score store to next day
+    5. Build visit_dates from actual calendar occurrences
+    """
+    import datetime
+
+    if not rep_stores:
+        return []
+
+    month_days = get_month_weekdays(year, month)
+
+    # ── Step 1: Cluster rep stores into 5 geographic day-groups ──────────────
+    geo_stores = [s for s in rep_stores if s.get("lat") and s.get("lng")]
+    if not geo_stores:
+        # No geo data — assign round-robin
+        for i, s in enumerate(rep_stores):
+            s["assigned_day"] = WEEKDAYS[i % 5]
+        geo_stores = rep_stores
+
+    n_days = min(5, len(geo_stores))
+    if n_days < 2:
+        for s in geo_stores:
+            s["assigned_day"] = WEEKDAYS[0]
+    else:
+        pts    = [(s["lat"], s["lng"]) for s in geo_stores]
+        labels = kmeans_simple(pts, n_days)
+        for s, lbl in zip(geo_stores, labels):
+            s["assigned_day"] = WEEKDAYS[int(lbl) % 5]
+
+    # ── Step 2: Within each day, sort by nearest neighbour from city ─────────
+    day_groups = {d: [] for d in WEEKDAYS}
+    for s in geo_stores:
+        day_groups[s["assigned_day"]].append(s)
+
+    for day, stores in day_groups.items():
+        if not stores:
+            continue
+        # Nearest neighbour from city centre
+        ordered  = []
+        remaining = stores[:]
+        cur_lat, cur_lng = city_lat, city_lng
+        while remaining:
+            nearest = min(remaining, key=lambda s: haversine_m(cur_lat, cur_lng, s.get("lat",cur_lat), s.get("lng",cur_lng)))
+            ordered.append(nearest)
+            cur_lat, cur_lng = nearest.get("lat",cur_lat), nearest.get("lng",cur_lng)
+            remaining.remove(nearest)
+        for i, s in enumerate(ordered):
+            s["day_visit_order"] = i + 1
+        day_groups[day] = ordered
+
+    # ── Step 3: Validate daily time budget ───────────────────────────────────
+    for day, stores in day_groups.items():
+        if not stores:
+            continue
+        total_time = sum(s.get("visit_duration_min",25) for s in stores)
+        # Add travel time
+        prev_lat, prev_lng = city_lat, city_lng
+        for s in stores:
+            if s.get("lat") and s.get("lng"):
+                total_time += travel_time_minutes(prev_lat, prev_lng, s["lat"], s["lng"], avg_speed_kmh)
+                prev_lat, prev_lng = s["lat"], s["lng"]
+        # If over budget, move lowest-score store to least loaded day
+        while total_time > daily_minutes and stores:
+            overflow_store = min(stores, key=lambda x: x.get("score",0))
+            stores.remove(overflow_store)
+            # Find day with most capacity
+            best_day = min(WEEKDAYS, key=lambda d: sum(s.get("visit_duration_min",25) for s in day_groups[d]))
+            day_groups[best_day].append(overflow_store)
+            overflow_store["assigned_day"] = best_day
+            # Recalculate
+            total_time = sum(s.get("visit_duration_min",25) for s in stores)
+
+    # ── Step 4: Build visit_dates from calendar ───────────────────────────────
+    for day, stores in day_groups.items():
+        occurrences = month_days.get(day, [])  # list of actual dates
+        for s in stores:
+            vpm = s.get("visits_per_month", 1)
+            if vpm >= len(occurrences):
+                # Visit on every occurrence of this day
+                dates = occurrences
+            elif vpm == 2:
+                # Week 1 and Week 3 occurrences
+                dates = occurrences[0:1] + (occurrences[2:3] if len(occurrences) > 2 else occurrences[-1:])
+            else:
+                # Week 2 occurrence (middle of month)
+                mid = len(occurrences) // 2
+                dates = [occurrences[mid]]
+            s["visit_dates"] = [d.strftime("%b %d") for d in dates]
+            s["visit_dates_full"] = [d.strftime("%Y-%m-%d") for d in dates]
+            s["n_visits_this_month"] = len(dates)
+
+    # ── Flatten back ──────────────────────────────────────────────────────────
+    all_assigned = []
+    for stores in day_groups.values():
+        all_assigned.extend(stores)
+
+    # Any store without assigned_day (no geo) — assign to Friday
+    for s in rep_stores:
+        if "assigned_day" not in s:
+            s["assigned_day"]      = "Friday"
+            s["day_visit_order"]   = 99
+            s["visit_dates"]       = []
+            s["n_visits_this_month"] = s.get("visits_per_month",1)
+
+    return rep_stores
+
 
 # ── API HEALTH CHECK ─────────────────────────────────────────────────────────
 def run_api_health_check(api_key):
@@ -1161,6 +1302,28 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
+
+        # ── Build daily routes per rep ────────────────────────────────────────
+        route_year  = cfg.get("route_year",  datetime.date.today().year)
+        route_month = cfg.get("route_month", datetime.date.today().month)
+        city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
+        city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
+
+        all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
+        status.info(f"Stage 6b — Building calendar daily routes for {len(all_rep_ids)} reps...")
+
+        for rep_id in all_rep_ids:
+            rep_stores = [s for s in all_stores if s.get("rep_id") == rep_id and s.get("size_tier") in ("Large","Medium","Small")]
+            build_daily_routes(rep_stores, route_year, route_month, daily_minutes, avg_speed, city_lat, city_lng)
+
+        # Stores not in a rep route get no day assignment
+        for s in all_stores:
+            if "assigned_day" not in s:
+                s["assigned_day"]       = ""
+                s["day_visit_order"]    = 0
+                s["visit_dates"]        = []
+                s["n_visits_this_month"]= 0
+
         bar.progress(80)
 
         # Stage 7: Enrichment (optional)
