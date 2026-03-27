@@ -326,10 +326,47 @@ if not display_df.empty:
 
     # Summary metrics
     st.markdown("---")
+    cfg_ref   = st.session_state.get("market_config", {})
+    daily_cap = cfg_ref.get("daily_minutes", 480)
+    work_days = cfg_ref.get("working_days", 22)
+
     m1,m2,m3,m4 = st.columns(4)
-    m1.metric("Stores",        len(display_df))
-    m2.metric("Visits/month",  f"{display_df['visits_per_month'].sum():.0f}" if "visits_per_month" in display_df.columns else "—")
-    m3.metric("Large stores",  len(display_df[display_df["size_tier"]=="Large"]) if "size_tier" in display_df.columns else 0)
+    m1.metric("Stores in view", len(display_df))
+
+    if "visit_duration_min" in display_df.columns:
+        if tbl_day != "Full month" and tbl_month != "Full year":
+            # Specific day + month selected: show ONE day's time
+            # These stores are all visited on this specific weekday
+            # Each store appears once per occurrence — show single-day time
+            day_visit_time = int(display_df["visit_duration_min"].sum())
+            m2.metric("Time for this day",
+                f"{day_visit_time} min",
+                delta=f"Daily budget: {daily_cap} min",
+                delta_color="inverse" if day_visit_time > daily_cap else "off",
+                help=f"Sum of visit durations for all stores on this {tbl_day}. Should be ≤ {daily_cap} min.")
+            m3.metric("Budget status",
+                "✅ Within budget" if day_visit_time <= daily_cap else f"⚠️ Over by {day_visit_time - daily_cap} min",
+                help=f"Daily budget is {daily_cap} min ({daily_cap//60}h {daily_cap%60}min).")
+        else:
+            # Full month or full year view — show monthly total
+            if "visits_per_month" in display_df.columns:
+                total_time_month = int((display_df["visits_per_month"] * display_df["visit_duration_min"]).sum())
+                monthly_cap      = daily_cap * work_days
+                util_pct         = round(total_time_month / monthly_cap * 100) if monthly_cap > 0 else 0
+                m2.metric("Time needed / month",
+                    f"{total_time_month:,} min",
+                    help=f"visits × duration per store. Capacity = {monthly_cap:,} min/month.")
+                m3.metric("Utilisation",
+                    f"{util_pct}%",
+                    delta=f"Capacity: {monthly_cap:,} min",
+                    delta_color="off")
+            else:
+                m2.metric("Visit duration total", f"{int(display_df['visit_duration_min'].sum())} min")
+                m3.metric("Large stores", len(display_df[display_df.get("size_tier","")=="Large"]) if "size_tier" in display_df.columns else 0)
+    else:
+        m2.metric("—","—")
+        m3.metric("—","—")
+
     m4.metric("Gap opportunities", len(display_df[display_df["coverage_status"]=="gap"]) if "coverage_status" in display_df.columns else 0)
 else:
     st.info("No stores for this selection.")
