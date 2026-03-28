@@ -218,7 +218,18 @@ if rep_rec:
             "Capacity (min)",
             "Utilisation %",
         ] if c in rdf.columns]
-        st.dataframe(rdf[col_order], use_container_width=True, hide_index=True,
+        # Add total row
+        total_row = {
+            "Rep":                    "TOTAL",
+            "Stores visited / month": rdf["Stores visited / month"].sum(),
+            "Current stores":         rdf["Current stores"].sum(),
+            "New stores (gap)":       rdf["New stores (gap)"].sum(),
+            "Time needed (min)":      rdf["Time needed (min)"].sum(),
+            "Capacity (min)":         rdf["Capacity (min)"].sum(),
+            "Utilisation %":          round(rdf["Time needed (min)"].sum() / max(rdf["Capacity (min)"].sum(), 1) * 100),
+        }
+        rdf_with_total = pd.concat([rdf[col_order], pd.DataFrame([total_row])[col_order]], ignore_index=True)
+        st.dataframe(rdf_with_total, use_container_width=True, hide_index=True,
             column_config={
                 "Utilisation %": st.column_config.ProgressColumn(
                     "Utilisation %", min_value=0, max_value=100, format="%d%%"),
