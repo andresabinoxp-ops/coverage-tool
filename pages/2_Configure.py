@@ -483,12 +483,16 @@ if rep_mode == "Fixed — I know how many reps I have":
         help="The pipeline will assign stores to exactly this many reps."
     )
     st.markdown("**Time parameters** — required for daily route building and utilisation calculation")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        daily_minutes = st.number_input("Working minutes per day", min_value=240, max_value=600, value=480)
+        daily_minutes = st.number_input("Total working day (min)", min_value=240, max_value=600, value=480,
+            help="Full working day including travel and breaks.")
     with col2:
-        working_days  = st.number_input("Working days per month",  min_value=15,  max_value=26,  value=22)
+        break_minutes = st.number_input("Break time (min/day)",    min_value=0,   max_value=120, value=30,
+            help="Lunch and rest breaks deducted from selling time.")
     with col3:
+        working_days  = st.number_input("Working days per month",  min_value=15,  max_value=26,  value=22)
+    with col4:
         avg_speed_kmh = st.number_input("Avg travel speed (km/h)", min_value=10,  max_value=80,  value=30)
 else:
     rep_mode_key = "recommended"
@@ -498,36 +502,35 @@ else:
     )
 
     st.markdown("**Rep capacity**")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         daily_minutes = st.number_input(
-            "Working minutes per day",
-            min_value=240, max_value=600, value=480,
-            help="Total selling time available per rep per day. Default 480 min = 8 hours. Set in Admin Settings."
+            "Total working day (min)", min_value=240, max_value=600, value=480,
+            help="Full working day including travel and breaks. Default 480 = 8 hours."
         )
     with col2:
-        working_days = st.number_input(
-            "Working days per month",
-            min_value=15, max_value=26, value=22,
-            help="Selling days per month after weekends and public holidays."
+        break_minutes = st.number_input(
+            "Break time (min/day)", min_value=0, max_value=120, value=30,
+            help="Lunch and rest breaks. Deducted from daily capacity."
         )
     with col3:
-        avg_speed_kmh = st.number_input(
-            "Avg travel speed (km/h)",
-            min_value=10, max_value=80, value=30,
-            help="Average driving speed between stores. 30 km/h for city, 50-60 for suburban."
+        working_days = st.number_input(
+            "Working days per month", min_value=15, max_value=26, value=22,
+            help="Selling days per month after weekends and holidays."
         )
     with col4:
-        monthly_cap = daily_minutes * working_days
-        st.metric(
-            "Rep capacity / month",
-            f"{monthly_cap:,} min",
-            help=f"{daily_minutes} min/day × {working_days} days"
+        avg_speed_kmh = st.number_input(
+            "Avg travel speed (km/h)", min_value=10, max_value=80, value=30,
+            help="30 km/h for city · 50 for suburban."
         )
+    with col5:
+        effective_daily = daily_minutes - break_minutes
+        monthly_cap     = effective_daily * working_days
+        st.metric("Effective capacity / month", f"{monthly_cap:,} min",
+            help=f"({daily_minutes} - {break_minutes} break) × {working_days} days")
     st.caption(
-        f"Formula: {daily_minutes} min/day × {working_days} days = "
-        f"{monthly_cap:,} min/month per rep. "
-        f"Travel time calculated using straight-line distance at {avg_speed_kmh} km/h."
+        f"({daily_minutes} min/day − {break_minutes} min break) × {working_days} days = "
+        f"{monthly_cap:,} min/month per rep available for visits and travel."
     )
 
     st.markdown("**Current headcount (optional)**")
@@ -718,6 +721,7 @@ else:
             "rep_count":               int(rep_count),
             "rep_mode":                rep_mode_key,
             "daily_minutes":           int(daily_minutes) if rep_mode_key == "recommended" else 480,
+            "break_minutes":           int(break_minutes) if rep_mode_key == "recommended" else 30,
             "working_days":            int(working_days)  if rep_mode_key == "recommended" else 22,
             "avg_speed_kmh":           int(avg_speed_kmh) if rep_mode_key == "recommended" else 30,
             "categories":              final_categories,
