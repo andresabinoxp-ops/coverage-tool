@@ -191,16 +191,10 @@ if rep_rec:
     plan_label = f"{m1_name} + {m2_name}" if m1_key else "2-month plan"
 
     st.markdown("**Rep workload breakdown:**")
-    st.caption(f"Stores recommended = unique stores in the {plan_label} route plan.")
+    st.caption(f"Stores recommended = unique stores in the {plan_label} route plan. Time needed = visits × visit duration (excludes travel time). Top panel total includes travel.")
 
-    # Build time_needed per rep from zone_centres (includes travel time)
-    zone_time_map = {}
-    if rep_rec:
-        for z in rep_rec.get("zone_centres", []):
-            zid = z.get("zone", 0)
-            # zone time_needed_min is monthly — double for 2-month plan
-            zone_time_map[zid] = z.get("time_needed_min", 0) * 2
-
+    # Time needed = plan_visits × visit_duration_min for each store assigned to rep
+    # plan_visits = actual visits across the 2-month window from route builder
     rep_rows = {}
     for s in all_stores:
         rid = s.get("rep_id", 0)
@@ -208,12 +202,16 @@ if rep_rec:
         if s.get("plan_visits", 0) == 0: continue  # only stores in the 2-month plan
         if rid not in rep_rows:
             rep_rows[rid] = {
-                "Rep":               rid,
-                "Stores recommended":0,
-                "Current":           0,
-                "Gap (new)":         0,
+                "Rep":                       rid,
+                "Stores recommended":        0,
+                "Current":                   0,
+                "Gap (new)":                 0,
+                "Time needed — 2mo (min)":   0,
             }
-        rep_rows[rid]["Stores recommended"] += 1
+        rep_rows[rid]["Stores recommended"]      += 1
+        rep_rows[rid]["Time needed — 2mo (min)"] += (
+            s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
+        )
         if s.get("covered"):
             rep_rows[rid]["Current"]   += 1
         else:
@@ -221,19 +219,7 @@ if rep_rec:
 
     if rep_rows:
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        plan_cap = monthly_cap * 2  # 2-month capacity
-        # Use pre-calculated time from zone_centres (includes travel time)
-        rdf["Time needed — 2mo (min)"] = rdf["Rep"].apply(
-            lambda rid: zone_time_map.get(rid, 0)
-        )
-        # Fallback: if zone_time_map empty (dry run or fixed mode), use visit × duration
-        if rdf["Time needed — 2mo (min)"].sum() == 0:
-            visit_time = {}
-            for s in all_stores:
-                rid = s.get("rep_id", 0)
-                if rid and s.get("plan_visits", 0) > 0:
-                    visit_time[rid] = visit_time.get(rid, 0) + s.get("plan_visits",0) * s.get("visit_duration_min",25)
-            rdf["Time needed — 2mo (min)"] = rdf["Rep"].apply(lambda r: round(visit_time.get(r, 0)))
+        plan_cap = monthly_cap * 2
         rdf["Time needed — 2mo (min)"] = rdf["Time needed — 2mo (min)"].round(0).astype(int)
         rdf["Capacity — 2mo (min)"]    = plan_cap
         rdf["Utilisation %"]           = (rdf["Time needed — 2mo (min)"] / max(plan_cap,1) * 100).round(0).astype(int)
