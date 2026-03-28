@@ -1076,7 +1076,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             rec_reps, total_mins, monthly_cap = recommended_reps_time_based(dry_priority, daily_mins, work_days, speed_kmh)
             dry_rec = {
                 "mode":                 "recommended",
-                "total_minutes_needed": total_mins,
+                "total_minutes_needed": total_mins * 2,
                 "monthly_cap_per_rep":  monthly_cap,
                 "daily_minutes":        daily_mins,
                 "working_days":         work_days,
@@ -1395,7 +1395,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
             rep_recommendation = {
                 "mode":                "recommended",
-                "total_minutes_needed": total_mins,
+                "total_minutes_needed": total_mins * 2,
                 "monthly_cap_per_rep":  monthly_cap,
                 "daily_minutes":        daily_minutes,
                 "working_days":         working_days,
