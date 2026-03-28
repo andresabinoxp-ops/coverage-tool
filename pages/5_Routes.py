@@ -291,10 +291,11 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "lat":                s.get("lat",""),
             "lng":                s.get("lng",""),
         }
-        # Add monthly visit dates
-        for m in MONTH_SHORT:
-            row[f"{m}_dates"]  = ", ".join(s.get(f"{m}_dates", []))
-            row[f"{m}_visits"] = s.get(f"{m}_visits", 0)
+        # Add only plan month columns
+        for mk in PLAN_MONTH_KEYS:
+            row[f"{mk}_dates"]  = ", ".join(s.get(f"{mk}_dates", []))
+            row[f"{mk}_visits"] = s.get(f"{mk}_visits", 0)
+        row["plan_visits"] = s.get("plan_visits", 0)
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -336,8 +337,8 @@ with col_r:
 with col_m:
     tbl_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS, key="tbl_month")
 with col_d:
-    if tbl_month != "Full year":
-        _tbl_mkey  = MONTH_SHORT[MONTH_NAMES.index(tbl_month)]
+    if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
+        _tbl_mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
         _tbl_dates = get_dates_for_month(all_stores, _tbl_mkey)
         tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
     else:
@@ -370,8 +371,8 @@ if not display_df.empty:
         month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
-        # Full plan — show both month visit columns
-        base_cols = base_cols + [f"{m}_visits" for m in PLAN_MONTH_KEYS]
+        # Full plan — show both month date and visit columns
+        base_cols = base_cols + [f"{mk}_dates" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
     show_cols = [c for c in base_cols if c in display_df.columns]
     rename_map = {
         "rep_id":"Rep","assigned_day":"Day","day_visit_order":"Visit Order",
@@ -381,8 +382,9 @@ if not display_df.empty:
         "rating":"Rating","review_count":"Reviews","phone":"Phone",
         "opening_hours":"Opening Hours","address":"Address","city":"City",
         "lat":"Latitude","lng":"Longitude",
-        **{f"{m}_dates": f"{n[:3]} Dates" for m,n in zip(MONTH_SHORT,MONTH_NAMES)},
-        **{f"{m}_visits": f"{n[:3]}" for m,n in zip(MONTH_SHORT,MONTH_NAMES)},
+        **{f"{mk}_dates": f"{PLAN_MONTHS[i][:3]} Dates" for i,mk in enumerate(PLAN_MONTH_KEYS)},
+        **{f"{mk}_visits": f"{PLAN_MONTHS[i][:3]} Visits" for i,mk in enumerate(PLAN_MONTH_KEYS)},
+        "plan_visits": "Plan Visits (total)",
     }
     df_show = display_df[show_cols].rename(columns=rename_map)
     st.dataframe(df_show, use_container_width=True, height=460,
