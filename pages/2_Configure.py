@@ -450,13 +450,24 @@ with col2:
     )
 
 import datetime as _dt
-route_year = st.number_input(
-    "Route planning year",
-    min_value=2024, max_value=2030,
-    value=_dt.date.today().year,
-    help="The agent will build daily routes for all 12 months of this year. Day-of-week assignments are fixed across the full year."
-)
-st.caption(f"Routes will be built for all 12 months of {int(route_year)}. Each rep has a fixed day-of-week per area that stays consistent all year.")
+_today = _dt.date.today()
+col_rm1, col_rm2, col_rm3 = st.columns(3)
+with col_rm1:
+    route_month1 = st.selectbox("Route start month",
+        options=list(range(1,13)),
+        index=_today.month - 1,
+        format_func=lambda m: _dt.date(2025,m,1).strftime("%B"),
+        help="The agent builds routes for this month and the following month."
+    )
+with col_rm2:
+    route_year = st.number_input("Year", min_value=2024, max_value=2030, value=_today.year)
+with col_rm3:
+    _m2 = route_month1 % 12 + 1
+    _y2 = int(route_year) + (1 if _m2 == 1 else 0)
+    m1_label = _dt.date(int(route_year), route_month1, 1).strftime("%B %Y")
+    m2_label = _dt.date(_y2, _m2, 1).strftime("%B %Y")
+    st.metric("2-month plan", f"{m1_label} + {m2_label}")
+st.caption("Day-of-week assignments are fixed across both months. Occasional stores (0.5 visits/month) get 1 visit in this 2-month window.")
 
 st.markdown("---")
 st.subheader("5b. Rep planning mode")
@@ -711,6 +722,7 @@ else:
             "market_name":             market_name,
             "country":                 st.session_state["country_name"],
             "route_year":              int(route_year),
+            "route_month1":            int(route_month1),
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
             "city":                    final_scope,
