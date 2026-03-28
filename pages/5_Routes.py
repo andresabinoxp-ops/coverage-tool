@@ -217,14 +217,13 @@ if colour_by == "Rep route":
         # Universe = all stores for this rep regardless of map filter
         all_rep_stores = {rep: [s for s in all_stores if s.get("rep_id")==rep] for rep in reps}
         for i,rep in enumerate(reps[:6]):
-            universe_n = len(all_rep_stores[rep])
-            rs         = [s for s in map_stores if s.get("rep_id")==rep]
-            stores_mo  = len(rs)
-            visits_mo  = sum(s.get("visits_per_month",0) for s in rs)
-            c          = REP_COLORS[rep % len(REP_COLORS)]
-            hx         = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+            rs        = [s for s in all_stores if s.get("rep_id")==rep and s.get("plan_visits",0)>0]
+            plan_n    = len(rs)
+            visits_mo = sum(s.get("visits_per_month",0) for s in rs)
+            c         = REP_COLORS[rep % len(REP_COLORS)]
+            hx        = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
             cols[i].markdown(
-                f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                f'Universe: {universe_n} &nbsp;·&nbsp; Stores/mo: {stores_mo} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                f'</div></div>',
+                f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                f'Plan stores: {plan_n} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                f'</div></div>',
                 unsafe_allow_html=True)
 elif colour_by == "Day of week":
     lc = st.columns(5)
@@ -331,7 +330,7 @@ st.markdown("---")
 st.markdown('<div class="section-title">Route detail</div>', unsafe_allow_html=True)
 st.caption("Select a rep and day to see the exact stores and visit order for that day.")
 
-col_r, col_m, col_d = st.columns(3)
+col_r, col_m, col_d, col_f = st.columns(4)
 with col_r:
     tbl_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps], key="tbl_rep")
 with col_m:
@@ -343,13 +342,25 @@ with col_d:
         tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
     else:
         tbl_day    = st.selectbox("Day", all_days, key="tbl_day")
+with col_f:
+    route_filter = st.selectbox("Route status",
+        ["Recommended stores", "Not in route", "All stores"], key="tbl_route_filter")
 
 tbl_rep_id    = int(tbl_rep.split()[1]) if tbl_rep != "All reps" else None
 if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
     tbl_month_key = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
 else:
     tbl_month_key = None
-display_df    = build_rep_df(all_stores, rep_id=tbl_rep_id,
+
+# Apply route status filter
+if route_filter == "Recommended stores":
+    _tbl_src = [s for s in all_stores if s.get("plan_visits",0) > 0]
+elif route_filter == "Not in route":
+    _tbl_src = [s for s in all_stores if s.get("plan_visits",0) == 0]
+else:
+    _tbl_src = all_stores
+
+display_df    = build_rep_df(_tbl_src, rep_id=tbl_rep_id,
     day=tbl_day if tbl_day != "Full month" else None,
     month_key=tbl_month_key)
 
@@ -404,41 +415,43 @@ if not display_df.empty:
     m1,m2,m3,m4 = st.columns(4)
     m1.metric("Stores in view", len(display_df))
 
+    # Always calculate time from RECOMMENDED stores only (plan_visits > 0)
+    # regardless of which filter is selected — avoids inflated utilisation
+    if tbl_rep_id:
+        _routed = display_df[display_df.get("plan_visits", pd.Series(0, index=display_df.index)).fillna(0) > 0] if "plan_visits" in display_df.columns else display_df
+    else:
+        _routed = display_df[display_df["plan_visits"] > 0] if "plan_visits" in display_df.columns else display_df
+
     if "visit_duration_min" in display_df.columns:
         if tbl_day not in ("Full month", "All dates", "") and tbl_month != "Full plan":
-            # Specific day + month selected: show ONE day's time
-            # These stores are all visited on this specific weekday
-            # Each store appears once per occurrence — show single-day time
-            day_visit_time = int(display_df["visit_duration_min"].sum())
+            # Specific date selected — show time for that day's routed stores
+            day_visit_time = int(_routed["visit_duration_min"].sum()) if not _routed.empty else 0
             m2.metric("Time for this day",
                 f"{day_visit_time} min",
                 delta=f"Daily budget: {daily_cap} min",
                 delta_color="inverse" if day_visit_time > daily_cap else "off",
-                help=f"Sum of visit durations for stores on {tbl_day}. Should be ≤ {daily_cap} min.")
+                help=f"Routed stores only. Should be ≤ {daily_cap} min.")
             m3.metric("Budget status",
-                "✅ Within budget" if day_visit_time <= daily_cap else f"⚠️ Over by {day_visit_time - daily_cap} min",
-                help=f"Daily budget is {daily_cap} min ({daily_cap//60}h {daily_cap%60}min).")
+                "✅ Within budget" if day_visit_time <= daily_cap else f"⚠️ Over by {day_visit_time - daily_cap} min")
         else:
-            # Full month or full year view — show monthly total
-            if "visits_per_month" in display_df.columns:
-                total_time_month = int((display_df["visits_per_month"] * display_df["visit_duration_min"]).sum())
+            # Full plan/month view — show monthly from routed stores only
+            if "visits_per_month" in _routed.columns and not _routed.empty:
+                total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
                 monthly_cap      = daily_cap * work_days
                 util_pct         = round(total_time_month / monthly_cap * 100) if monthly_cap > 0 else 0
                 m2.metric("Time needed / month",
                     f"{total_time_month:,} min",
-                    help=f"visits × duration per store. Capacity = {monthly_cap:,} min/month.")
+                    help="Recommended stores only: visits × duration. Capacity = " + f"{monthly_cap:,} min/month.")
                 m3.metric("Utilisation",
                     f"{util_pct}%",
                     delta=f"Capacity: {monthly_cap:,} min",
                     delta_color="off")
             else:
-                m2.metric("Visit duration total", f"{int(display_df['visit_duration_min'].sum())} min")
-                m3.metric("Large stores", len(display_df[display_df.get("size_tier","")=="Large"]) if "size_tier" in display_df.columns else 0)
+                m2.metric("—","—"); m3.metric("—","—")
     else:
-        m2.metric("—","—")
-        m3.metric("—","—")
+        m2.metric("—","—"); m3.metric("—","—")
 
-    m4.metric("Gap opportunities", len(display_df[display_df["coverage_status"]=="gap"]) if "coverage_status" in display_df.columns else 0)
+    m4.metric("Gap stores in view", len(display_df[display_df["coverage_status"]=="gap"]) if "coverage_status" in display_df.columns else 0)
 else:
     st.info("No stores for this selection.")
 
