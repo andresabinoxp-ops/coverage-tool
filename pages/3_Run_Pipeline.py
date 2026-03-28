@@ -375,20 +375,29 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 
 def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
     """
-    Calculate recommended rep count using visit time only.
-    Travel time is handled separately by build_daily_routes budget enforcement.
-    Returns (recommended_reps, total_minutes_needed, minutes_per_rep_per_month).
+    Calculate recommended rep count.
+    Uses plan_visits if available (post route-builder), else visits_per_month.
+    Returns (recommended_reps, total_minutes_needed_per_month, minutes_per_rep_per_month).
     """
     if not priority_stores:
         return 1, 0.0, 0.0
 
     monthly_capacity = daily_minutes * working_days
 
-    # Total visit time per month = visits_per_month × visit_duration_min
-    total_visit_time = sum(
-        s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
-        for s in priority_stores
-    )
+    # Use plan_visits if route builder has already run, else visits_per_month
+    has_plan = any(s.get("plan_visits") is not None for s in priority_stores)
+    if has_plan:
+        # plan_visits is 2-month total — divide by 2 for monthly equivalent
+        total_visit_time = sum(
+            s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
+            for s in priority_stores
+            if s.get("plan_visits", 0) > 0
+        )
+    else:
+        total_visit_time = sum(
+            s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
+            for s in priority_stores
+        )
 
     rec_reps = max(1, math.ceil(total_visit_time / monthly_capacity))
     return rec_reps, round(total_visit_time), round(monthly_capacity)
@@ -1562,6 +1571,26 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             "month1": m1_name, "month2": m2_name,
             "m1_key": m1_key,  "m2_key": m2_key,
         }
+
+        # ── Recalculate rep recommendation using plan_visits (post route-builder) ──
+        # Now plan_visits is set — use it as single source of truth
+        routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
+        if routed_stores:
+            _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
+                routed_stores, effective_daily, working_days, avg_speed
+            )
+            # Update rep_recommendation with plan_visits-based numbers
+            if rep_recommendation:
+                rep_recommendation["total_minutes_needed"] = round(final_total_mins)
+                rep_recommendation["monthly_cap_per_rep"]  = round(final_monthly_cap)
+                # Update utilisation in zone_centres too
+                for z in rep_recommendation.get("zone_centres", []):
+                    zid = z.get("zone", 0)
+                    zs  = [s for s in routed_stores if s.get("rep_id") == zid]
+                    if zs:
+                        z_mins = sum(s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2 for s in zs)
+                        z["time_needed_min"]  = round(z_mins)
+                        z["utilisation_pct"]  = round(z_mins / max(final_monthly_cap,1) * 100)
 
         bar.progress(80)
 
