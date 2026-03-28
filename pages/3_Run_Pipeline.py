@@ -1162,6 +1162,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             lat,lng = geocode_store(s.get("address",""),s.get("city",""),api_key)
             s["lat"],s["lng"] = lat,lng
             time.sleep(0.05)
+        geocode_ok   = sum(1 for s in portfolio if s.get("lat") and s.get("lng"))
+        geocode_fail = len(portfolio) - geocode_ok
+        status.info(f"Stage 1/{total_steps} — Geocoding complete: {geocode_ok} located, {geocode_fail} failed")
         bar.progress(15)
 
         # Stage 2: Scrape
@@ -1276,6 +1279,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         bar.progress(72)
 
         # Stage 6: Routes + Time-Based Rep Planning
+        # Route universe = ALL scored stores (covered + gap) with a size tier and valid coordinates
+        # Gap stores in the route = new distribution points for the rep to develop
         priority = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
         rep_recommendation = None
 
@@ -1283,13 +1288,17 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         daily_minutes = cfg.get("daily_minutes", 480)
         working_days  = cfg.get("working_days", 22)
         avg_speed     = cfg.get("avg_speed_kmh", 30)
+        break_minutes = cfg.get("break_minutes",
+            st.session_state.get("admin_rep_defaults",{}).get("break_minutes", 30))
+        # Effective daily capacity = total day minus break time
+        effective_daily = daily_minutes - break_minutes
         current_reps  = cfg.get("rep_count", 0)
 
         if rep_mode == "recommended":
             status.info(f"Stage 6/{total_steps} — Calculating recommended rep count (time-based)...")
 
             rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
-                priority, daily_minutes, working_days, avg_speed
+                priority, effective_daily, working_days, avg_speed
             )
 
             # Cluster into recommended rep zones
@@ -1354,6 +1363,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "daily_minutes":        daily_minutes,
                 "working_days":         working_days,
                 "avg_speed_kmh":        avg_speed,
+                "break_minutes":        break_minutes,
                 "recommended_reps":     actual_reps,
                 "requested_reps":       rec_reps,
                 "current_reps":         current_reps,
@@ -1379,7 +1389,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
                         centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
                         zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
-                        monthly_cap = daily_minutes * working_days
+                        monthly_cap = effective_daily * working_days
                         zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
                         zone_centres.append({
                             "zone":                 zone + 1,
@@ -1423,7 +1433,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
-                    "monthly_cap_per_rep": daily_minutes * working_days,
+                    "break_minutes":       break_minutes,
+                    "monthly_cap_per_rep": effective_daily * working_days,
                     "min_utilisation_pct": min_util_pct,
                     "under_utilised_zones": [z["zone"] for z in under_util],
                     "zone_centres":        kept_zones_f,
@@ -1609,6 +1620,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             "coverage_rate_after":round(covered_n/max(len(all_stores),1)*100,1),
             "portfolio":portfolio,"universe":universe,
             "rep_recommendation": rep_recommendation,
+            "geocode_summary": {"ok": geocode_ok, "failed": geocode_fail},
         }
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
