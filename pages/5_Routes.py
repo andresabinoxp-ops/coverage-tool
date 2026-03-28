@@ -408,9 +408,18 @@ if not display_df.empty:
 
     # Summary metrics
     st.markdown("---")
-    cfg_ref   = st.session_state.get("market_config", {})
-    daily_cap = cfg_ref.get("daily_minutes", 480)
-    work_days = cfg_ref.get("working_days", 22)
+    cfg_ref        = st.session_state.get("market_config", {})
+    daily_cap      = cfg_ref.get("daily_minutes", 480)
+    break_mins     = cfg_ref.get("break_minutes",
+        st.session_state.get("admin_rep_defaults",{}).get("break_minutes", 30))
+    work_days      = cfg_ref.get("working_days", 22)
+    effective_daily = daily_cap - break_mins  # actual selling time per day
+    # Number of reps for this view
+    n_reps_in_view = len(set(s.get("rep_id",0) for s in all_stores
+                              if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0))
+    if tbl_rep_id:
+        n_reps_in_view = 1
+    monthly_cap_total = effective_daily * work_days * max(n_reps_in_view, 1)
 
     m1,m2,m3,m4 = st.columns(4)
     m1.metric("Stores in view", len(display_df))
@@ -428,23 +437,23 @@ if not display_df.empty:
             day_visit_time = int(_routed["visit_duration_min"].sum()) if not _routed.empty else 0
             m2.metric("Time for this day",
                 f"{day_visit_time} min",
-                delta=f"Daily budget: {daily_cap} min",
+                delta=f"Daily budget: {effective_daily} min (excl. {break_mins} min break)",
                 delta_color="inverse" if day_visit_time > daily_cap else "off",
                 help=f"Routed stores only. Should be ≤ {daily_cap} min.")
             m3.metric("Budget status",
-                "✅ Within budget" if day_visit_time <= daily_cap else f"⚠️ Over by {day_visit_time - daily_cap} min")
+                "✅ Within budget" if day_visit_time <= effective_daily else f"⚠️ Over by {day_visit_time - effective_daily} min")
         else:
             # Full plan/month view — show monthly from routed stores only
             if "visits_per_month" in _routed.columns and not _routed.empty:
                 total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
-                monthly_cap      = daily_cap * work_days
-                util_pct         = round(total_time_month / monthly_cap * 100) if monthly_cap > 0 else 0
+                util_pct         = round(total_time_month / monthly_cap_total * 100) if monthly_cap_total > 0 else 0
+                cap_label        = f"{effective_daily}×{work_days} days×{n_reps_in_view} rep{'s' if n_reps_in_view!=1 else ''} = {monthly_cap_total:,} min"
                 m2.metric("Time needed / month",
                     f"{total_time_month:,} min",
-                    help="Recommended stores only: visits × duration. Capacity = " + f"{monthly_cap:,} min/month.")
+                    help="Recommended stores only: visits × duration per month.")
                 m3.metric("Utilisation",
                     f"{util_pct}%",
-                    delta=f"Capacity: {monthly_cap:,} min",
+                    delta=cap_label,
                     delta_color="off")
             else:
                 m2.metric("—","—"); m3.metric("—","—")
