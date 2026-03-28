@@ -31,6 +31,10 @@ st.markdown("""
     padding: 6px 14px; border-radius: 20px; color: white;
     font-weight: 700; font-size: 0.82rem; display: inline-block; margin: 3px;
 }
+.legend-chip {
+    display: inline-block; padding: 5px 14px; border-radius: 20px;
+    color: white; font-size: 0.8rem; font-weight: 600; margin: 3px;
+}
 div.stButton > button[kind="primary"] {
     background: #1565C0; border-color: #1565C0; color: white; border-radius: 6px; font-weight: 600;
 }
@@ -47,18 +51,30 @@ all_stores = res["all_stores"]
 market     = st.session_state.get("last_market", "Market")
 cfg        = st.session_state.get("market_config", {})
 
-route_year  = cfg.get("route_year", datetime.date.today().year)
+route_year   = cfg.get("route_year",   datetime.date.today().year)
+route_month1 = cfg.get("route_month1", datetime.date.today().month)
 
-st.markdown(f"""
-<div class="page-header">
-    <h2>🗺️ Rep Routes — {route_year}</h2>
-    <p>Market: {market}</p>
-</div>
-""", unsafe_allow_html=True)
+# Get 2-month plan labels from session state
+plan_months = st.session_state.get("route_plan_months", {})
+m1_name = plan_months.get("month1", datetime.date(route_year, route_month1, 1).strftime("%B %Y"))
+m2_idx  = route_month1 % 12 + 1
+m2_year = route_year + (1 if m2_idx == 1 else 0)
+m2_name = plan_months.get("month2", datetime.date(m2_year, m2_idx, 1).strftime("%B %Y"))
+m1_key  = plan_months.get("m1_key", datetime.date(route_year, route_month1, 1).strftime("%b").lower())
+m2_key  = plan_months.get("m2_key", datetime.date(m2_year, m2_idx, 1).strftime("%b").lower())
 
+PLAN_MONTHS      = [m1_name, m2_name]
+PLAN_MONTH_KEYS  = [m1_key,  m2_key]
 MONTH_NAMES = ["January","February","March","April","May","June",
                "July","August","September","October","November","December"]
 MONTH_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+
+st.markdown(f"""
+<div class="page-header">
+    <h2>🗺️ Rep Routes</h2>
+    <p>Market: {market} &nbsp;·&nbsp; 2-month plan: {m1_name} + {m2_name}</p>
+</div>
+""", unsafe_allow_html=True)
 
 REP_COLORS = [
     [21,101,192],[46,125,50],[230,81,0],[136,14,79],[0,96,100],
@@ -114,7 +130,7 @@ with col1:
 with col2:
     sel_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps])
 with col3:
-    sel_month = st.selectbox("Month", ["Full year"] + MONTH_NAMES)
+    sel_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS)
 with col4:
     if sel_month != "Full year":
         _mkey     = MONTH_SHORT[MONTH_NAMES.index(sel_month)]
@@ -128,8 +144,9 @@ with col5:
 
 # Resolve selected month key
 sel_month_key = None
-if sel_month != "Full year":
-    sel_month_key = MONTH_SHORT[MONTH_NAMES.index(sel_month)]
+if sel_month != "Full plan":
+    idx = PLAN_MONTHS.index(sel_month) if sel_month in PLAN_MONTHS else -1
+    sel_month_key = PLAN_MONTH_KEYS[idx] if idx >= 0 else None
 
 # Apply filters
 map_stores = [s for s in all_stores if s.get("lat") and s.get("lng")]
@@ -139,6 +156,8 @@ if sel_rep != "All reps":
 # For month filter — only show stores that have visits in that month
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
+elif sel_month == "Full plan":
+    map_stores = [s for s in map_stores if s.get("plan_visits",0) > 0]
 # For specific date filter
 if sel_day not in ("Full month", "All dates") and sel_month_key:
     map_stores = [s for s in map_stores if sel_day in s.get(f"{sel_month_key}_dates", [])]
@@ -194,26 +213,37 @@ st.markdown('<div class="section-title">Legend</div>', unsafe_allow_html=True)
 if colour_by == "Rep route":
     reps = sorted(set(s.get("rep_id",0) for s in map_stores if s.get("rep_id")))
     if reps:
-        cols = st.columns(min(len(reps),5))
-        for i,rep in enumerate(reps):
-            rs = [s for s in map_stores if s.get("rep_id")==rep]
-            tv = sum(s.get("visits_per_month",0) for s in rs)
-            c  = REP_COLORS[rep % len(REP_COLORS)]
-            hx = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
-            cols[i%5].markdown(f'<div class="rep-chip" style="background:{hx}">Rep {rep}<br><small>{len(rs)} stores · {tv:.0f} visits/mo</small></div>',unsafe_allow_html=True)
+        cols = st.columns(min(len(reps),6))
+        # Universe = all stores for this rep regardless of map filter
+        all_rep_stores = {rep: [s for s in all_stores if s.get("rep_id")==rep] for rep in reps}
+        for i,rep in enumerate(reps[:6]):
+            universe_n = len(all_rep_stores[rep])
+            rs         = [s for s in map_stores if s.get("rep_id")==rep]
+            stores_mo  = len(rs)
+            visits_mo  = sum(s.get("visits_per_month",0) for s in rs)
+            c          = REP_COLORS[rep % len(REP_COLORS)]
+            hx         = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+            cols[i].markdown(
+                f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                f'Universe: {universe_n} &nbsp;·&nbsp; Stores/mo: {stores_mo} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                f'</div></div>',
+                unsafe_allow_html=True)
 elif colour_by == "Day of week":
     lc = st.columns(5)
     for i,(day,col) in enumerate(DAY_COLORS.items()):
         ds = [s for s in map_stores if s.get("assigned_day")==day]
-        lc[i].markdown(f'<div class="day-chip" style="background:{col}">{day}<br><small>{len(ds)} stores</small></div>',unsafe_allow_html=True)
+        lc[i].markdown(
+            f'<span class="legend-chip" style="background:{col}">{day} · {len(ds)} stores</span>',
+            unsafe_allow_html=True)
 elif colour_by == "Size tier":
     lc = st.columns(3)
     for i,(tier,col) in enumerate([("Large","#2E7D32"),("Medium","#1565C0"),("Small","#F57F17")]):
-        lc[i].markdown(f'<div class="rep-chip" style="background:{col}">{tier}</div>',unsafe_allow_html=True)
+        cnt = len([s for s in map_stores if s.get("size_tier")==tier])
+        lc[i].markdown(f'<span class="legend-chip" style="background:{col}">{tier} · {cnt} stores</span>',unsafe_allow_html=True)
 elif colour_by == "Coverage status":
     lc = st.columns(2)
-    lc[0].markdown('<div class="rep-chip" style="background:#2E7D32">Covered</div>',unsafe_allow_html=True)
-    lc[1].markdown('<div class="rep-chip" style="background:#C62828">Gap</div>',unsafe_allow_html=True)
+    cov = len([s for s in map_stores if s.get("coverage_status")=="covered"])
+    gap = len([s for s in map_stores if s.get("coverage_status")=="gap"])
+    lc[0].markdown(f'<span class="legend-chip" style="background:#2E7D32">Covered · {cov}</span>',unsafe_allow_html=True)
+    lc[1].markdown(f'<span class="legend-chip" style="background:#C62828">Gap · {gap}</span>',unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -304,7 +334,7 @@ col_r, col_m, col_d = st.columns(3)
 with col_r:
     tbl_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps], key="tbl_rep")
 with col_m:
-    tbl_month = st.selectbox("Month", ["Full year"] + MONTH_NAMES, key="tbl_month")
+    tbl_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS, key="tbl_month")
 with col_d:
     if tbl_month != "Full year":
         _tbl_mkey  = MONTH_SHORT[MONTH_NAMES.index(tbl_month)]
@@ -314,7 +344,10 @@ with col_d:
         tbl_day    = st.selectbox("Day", all_days, key="tbl_day")
 
 tbl_rep_id    = int(tbl_rep.split()[1]) if tbl_rep != "All reps" else None
-tbl_month_key = MONTH_SHORT[MONTH_NAMES.index(tbl_month)] if tbl_month != "Full year" else None
+if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
+    tbl_month_key = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
+else:
+    tbl_month_key = None
 display_df    = build_rep_df(all_stores, rep_id=tbl_rep_id,
     day=tbl_day if tbl_day != "Full month" else None,
     month_key=tbl_month_key)
@@ -337,8 +370,8 @@ if not display_df.empty:
         month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
-        # Show all month visit counts
-        base_cols = base_cols + [f"{m}_visits" for m in MONTH_SHORT]
+        # Full plan — show both month visit columns
+        base_cols = base_cols + [f"{m}_visits" for m in PLAN_MONTH_KEYS]
     show_cols = [c for c in base_cols if c in display_df.columns]
     rename_map = {
         "rep_id":"Rep","assigned_day":"Day","day_visit_order":"Visit Order",
@@ -370,7 +403,7 @@ if not display_df.empty:
     m1.metric("Stores in view", len(display_df))
 
     if "visit_duration_min" in display_df.columns:
-        if tbl_day not in ("Full month", "All dates", "") and tbl_month != "Full year":
+        if tbl_day not in ("Full month", "All dates", "") and tbl_month != "Full plan":
             # Specific day + month selected: show ONE day's time
             # These stores are all visited on this specific weekday
             # Each store appears once per occurrence — show single-day time
