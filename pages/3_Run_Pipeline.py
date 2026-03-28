@@ -1643,7 +1643,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             sum(s["lat"] for s in rs if s.get("lat")) / max(sum(1 for s in rs if s.get("lat")),1),
                             sum(s["lng"] for s in rs if s.get("lng")) / max(sum(1 for s in rs if s.get("lng")),1),
                         )
-                # Reassign stores from under-utilised reps
+                # Reassign stores from under-utilised reps to nearest kept rep
                 for s in all_stores:
                     if s.get("rep_id") in under_util_reps:
                         if s.get("lat") and s.get("lng") and kept_centroids:
@@ -1652,6 +1652,39 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             s["rep_id"] = nearest
                         elif kept_reps:
                             s["rep_id"] = kept_reps[0]
+
+                # Check if any kept rep is now over 100% capacity — if so rebalance
+                # Build rep time map after redistribution
+                rep_time_after = {}
+                for s in all_stores:
+                    rid = s.get("rep_id",0)
+                    if rid and s.get("plan_visits",0) > 0:
+                        rep_time_after[rid] = rep_time_after.get(rid,0) + (
+                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
+                        )
+
+                over_cap_reps = {rid for rid,t in rep_time_after.items() if t > final_monthly_cap}
+                if over_cap_reps:
+                    for over_rid in over_cap_reps:
+                        # Get stores for this rep sorted by score ascending (lowest first to move)
+                        rep_stores_sorted = sorted(
+                            [s for s in all_stores if s.get("rep_id")==over_rid and s.get("plan_visits",0)>0],
+                            key=lambda x: x.get("score",0)
+                        )
+                        rep_t = rep_time_after.get(over_rid, 0)
+                        for s in rep_stores_sorted:
+                            if rep_t <= final_monthly_cap:
+                                break
+                            s_t = s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
+                            # Find another kept rep with capacity — not the over-capacity one
+                            candidates = {r:t for r,t in rep_time_after.items()
+                                          if r != over_rid and r in kept_reps and t + s_t <= final_monthly_cap}
+                            if candidates:
+                                best_r = min(candidates.keys(), key=lambda r: candidates[r])
+                                s["rep_id"] = best_r
+                                rep_time_after[best_r] = rep_time_after.get(best_r,0) + s_t
+                                rep_t -= s_t
+                                rep_time_after[over_rid] = rep_t
 
                 # Recalculate after redistribution
                 routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
