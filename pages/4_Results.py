@@ -147,7 +147,7 @@ if rep_rec:
     else:
         m1.metric("Fixed reps", rec_reps)
     m2.metric("Time needed / month", f"{total_mins:,.0f} min",
-        help="Sum of visits × duration per store per month")
+        help="Monthly estimate: visits_per_month × duration. Used for rep count calculation.")
     m3.metric("Rep capacity / month", f"{monthly_cap:,} min",
         help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days")
     if cur_reps > 0:
@@ -209,9 +209,9 @@ if rep_rec:
                 "Time needed — 2mo (min)":   0,
             }
         rep_rows[rid]["Stores recommended"]      += 1
-        # visits_per_month × duration × 2 months = 2-month time needed
+        # plan_visits = actual visits across 2-month window from route builder
         rep_rows[rid]["Time needed — 2mo (min)"] += (
-            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25) * 2
+            s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
         )
         if s.get("covered"):
             rep_rows[rid]["Current"]   += 1
@@ -273,8 +273,18 @@ run_date = datetime.date.today().strftime("%Y-%m-%d")
 
 col1, col2, col3 = st.columns(3)
 with col1:
+    # Build clean CSV — keep only plan months, remove other month columns
+    plan_months_sess = st.session_state.get("route_plan_months", {})
+    _m1k = plan_months_sess.get("m1_key","")
+    _m2k = plan_months_sess.get("m2_key","")
+    _all_months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+    _keep_month_cols = {f"{_m1k}_dates","m1_dates",f"{_m1k}_visits",f"{_m2k}_dates","m2_dates",f"{_m2k}_visits","plan_visits"}
+    _drop_cols = [c for c in (pd.DataFrame(all_stores).columns if all_stores else [])
+                  if any(c.startswith(f"{m}_") for m in _all_months)
+                  and c not in _keep_month_cols]
+    _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
     st.download_button("📄 Full scored universe CSV",
-        pd.DataFrame(all_stores).to_csv(index=False),
+        _clean_df.to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
     st.download_button("🎯 Gap report CSV",
@@ -315,7 +325,7 @@ summary_df = pd.DataFrame(summary_data)
 col_s1, col_s2 = st.columns(2)
 with col_s1:
     st.download_button("⬇️ Stores snapshot (upload to Dashboard)",
-        pd.DataFrame(all_stores).to_csv(index=False),
+        _clean_df.to_csv(index=False),
         f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
 with col_s2:
     st.download_button("⬇️ Summary snapshot (upload to Dashboard)",
