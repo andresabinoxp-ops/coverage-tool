@@ -132,12 +132,12 @@ with col2:
 with col3:
     sel_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS)
 with col4:
-    if sel_month != "Full year":
-        _mkey     = MONTH_SHORT[MONTH_NAMES.index(sel_month)]
-        _dates    = get_dates_for_month(all_stores, _mkey)
-        sel_day   = st.selectbox("Date", _dates)
+    if sel_month != "Full plan" and sel_month in PLAN_MONTHS:
+        _mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(sel_month)]
+        _dates = get_dates_for_month(all_stores, _mkey)
+        sel_day = st.selectbox("Date", _dates)
     else:
-        sel_day   = st.selectbox("Day", all_days)
+        sel_day = st.selectbox("Date", ["All dates"])
 with col5:
     show_gaps    = st.checkbox("Show gap stores",    value=True)
     show_covered = st.checkbox("Show covered stores",value=True)
