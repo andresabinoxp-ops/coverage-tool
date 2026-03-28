@@ -375,7 +375,8 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 
 def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
     """
-    Calculate recommended rep count using time-based model.
+    Calculate recommended rep count using visit time only.
+    Travel time is handled separately by build_daily_routes budget enforcement.
     Returns (recommended_reps, total_minutes_needed, minutes_per_rep_per_month).
     """
     if not priority_stores:
@@ -383,33 +384,14 @@ def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days
 
     monthly_capacity = daily_minutes * working_days
 
-    # Quick estimate: total visit time + average travel estimate
+    # Total visit time per month = visits_per_month × visit_duration_min
     total_visit_time = sum(
         s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
         for s in priority_stores
     )
 
-    # Estimate average travel time per visit using average inter-store distance
-    geo_stores = [s for s in priority_stores if s.get("lat") and s.get("lng")]
-    if len(geo_stores) > 1:
-        # Sample distances between nearby stores
-        sample_distances = []
-        for i in range(min(len(geo_stores)-1, 50)):
-            d = haversine_m(
-                geo_stores[i]["lat"], geo_stores[i]["lng"],
-                geo_stores[i+1]["lat"], geo_stores[i+1]["lng"]
-            ) / 1000
-            sample_distances.append(d)
-        avg_dist_km   = sum(sample_distances) / len(sample_distances)
-        avg_travel_t  = (avg_dist_km / avg_speed_kmh) * 60
-        total_travel  = avg_travel_t * sum(s.get("visits_per_month",1) for s in priority_stores)
-    else:
-        total_travel = total_visit_time * 0.3  # assume 30% overhead if no geo
-
-    total_minutes = total_visit_time + total_travel
-    rec_reps      = max(1, math.ceil(total_minutes / monthly_capacity))
-
-    return rec_reps, round(total_minutes), round(monthly_capacity)
+    rec_reps = max(1, math.ceil(total_visit_time / monthly_capacity))
+    return rec_reps, round(total_visit_time), round(monthly_capacity)
 
 
 def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percentiles):
@@ -1076,7 +1058,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             rec_reps, total_mins, monthly_cap = recommended_reps_time_based(dry_priority, daily_mins, work_days, speed_kmh)
             dry_rec = {
                 "mode":                 "recommended",
-                "total_minutes_needed": total_mins * 2,
+                "total_minutes_needed": total_mins,
                 "monthly_cap_per_rep":  monthly_cap,
                 "daily_minutes":        daily_mins,
                 "working_days":         work_days,
@@ -1395,7 +1377,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
             rep_recommendation = {
                 "mode":                "recommended",
-                "total_minutes_needed": total_mins * 2,
+                "total_minutes_needed": total_mins,
                 "monthly_cap_per_rep":  monthly_cap,
                 "daily_minutes":        daily_minutes,
                 "working_days":         working_days,
