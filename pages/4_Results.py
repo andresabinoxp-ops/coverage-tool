@@ -187,6 +187,8 @@ if rep_rec:
         "Time needed = avg monthly visit time for those stores."
     )
 
+    MONTH_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+
     rep_rows = {}
     for s in all_stores:
         rid = s.get("rep_id", 0)
@@ -197,31 +199,40 @@ if rep_rec:
                 "Full universe":        0,
                 "Current coverage":     0,
                 "Gap stores":           0,
-                "Avg stores / month":   0.0,
-                "Avg current / month":  0.0,
-                "Avg gap / month":      0.0,
+                "_monthly_total":       0,   # sum of months where store has >=1 visit
+                "_monthly_current":     0,
+                "_monthly_gap":         0,
                 "Time needed (min)":    0.0,
             }
         rep_rows[rid]["Full universe"] += 1
-        vpm = s.get("visits_per_month", 1)
-        # A store is visited every month if vpm >= 1
-        # Avg monthly presence = vpm / 1 capped at 1 (store either visited that month or not)
-        monthly_presence = min(1, vpm / max(1, 1))  # always 1 if in universe
         if s.get("covered"):
-            rep_rows[rid]["Current coverage"]    += 1
-            rep_rows[rid]["Avg current / month"] += 1
+            rep_rows[rid]["Current coverage"] += 1
         else:
-            rep_rows[rid]["Gap stores"]          += 1
-            rep_rows[rid]["Avg gap / month"]     += 1
-        rep_rows[rid]["Avg stores / month"]  += 1
-        rep_rows[rid]["Time needed (min)"]   += vpm * s.get("visit_duration_min", 25)
+            rep_rows[rid]["Gap stores"] += 1
+
+        # Count how many months this store is actually visited (has visits > 0)
+        months_visited = sum(1 for m in MONTH_SHORT if s.get(f"{m}_visits", 0) > 0)
+        rep_rows[rid]["_monthly_total"]   += months_visited
+        if s.get("covered"):
+            rep_rows[rid]["_monthly_current"] += months_visited
+        else:
+            rep_rows[rid]["_monthly_gap"]     += months_visited
+
+        # Time needed = avg monthly visit time (visits_per_month × duration)
+        rep_rows[rid]["Time needed (min)"] += (
+            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+        )
 
     if rep_rows:
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        rdf["Coverage %"]         = (rdf["Current coverage"] / rdf["Full universe"].replace(0,1) * 100).round(1)
-        rdf["Time needed (min)"]  = rdf["Time needed (min)"].round(0).astype(int)
-        rdf["Capacity (min)"]     = monthly_cap
-        rdf["Utilisation %"]      = (rdf["Time needed (min)"] / max(monthly_cap,1) * 100).round(0).astype(int)
+        # Avg stores per month = total store-months / 12
+        rdf["Avg stores / month"]  = (rdf["_monthly_total"]   / 12).round(1)
+        rdf["Avg current / month"] = (rdf["_monthly_current"] / 12).round(1)
+        rdf["Avg gap / month"]     = (rdf["_monthly_gap"]     / 12).round(1)
+        rdf["Coverage %"]          = (rdf["Current coverage"] / rdf["Full universe"].replace(0,1) * 100).round(1)
+        rdf["Time needed (min)"]   = rdf["Time needed (min)"].round(0).astype(int)
+        rdf["Capacity (min)"]      = monthly_cap
+        rdf["Utilisation %"]       = (rdf["Time needed (min)"] / max(monthly_cap,1) * 100).round(0).astype(int)
 
         col_order = [
             "Rep",
@@ -244,9 +255,9 @@ if rep_rec:
             "Current coverage":    rdf["Current coverage"].sum(),
             "Coverage %":          round(rdf["Current coverage"].sum() / max(rdf["Full universe"].sum(),1) * 100, 1),
             "Gap stores":          rdf["Gap stores"].sum(),
-            "Avg stores / month":  rdf["Avg stores / month"].sum(),
-            "Avg current / month": rdf["Avg current / month"].sum(),
-            "Avg gap / month":     rdf["Avg gap / month"].sum(),
+            "Avg stores / month":  rdf["Avg stores / month"].sum().round(1),
+            "Avg current / month": rdf["Avg current / month"].sum().round(1),
+            "Avg gap / month":     rdf["Avg gap / month"].sum().round(1),
             "Time needed (min)":   rdf["Time needed (min)"].sum(),
             "Capacity (min)":      rdf["Capacity (min)"].sum(),
             "Utilisation %":       round(rdf["Time needed (min)"].sum() / max(rdf["Capacity (min)"].sum(),1) * 100),
