@@ -290,16 +290,21 @@ saved_rep = st.session_state.get("admin_rep_defaults",{
     "minutes_per_day":480,"travel_speed_kmh":30,"working_days":22,"min_utilisation_pct":60
 })
 
-c1,c2,c3 = st.columns(3)
+c1,c2,c3,c4 = st.columns(4)
 with c1:
-    minutes_day  = st.number_input("Working minutes per day",   min_value=240,max_value=600,step=30,value=saved_rep.get("minutes_per_day",480))
-    st.caption(f"{minutes_day//60}h {minutes_day%60}min per day")
+    minutes_day  = st.number_input("Total working day (min)",   min_value=240,max_value=600,step=30,value=saved_rep.get("minutes_per_day",480),
+        help="Full working day including travel and breaks. Default 480 = 8 hours.")
+    st.caption(f"{minutes_day//60}h {minutes_day%60}min total day")
 with c2:
+    break_mins   = st.number_input("Break time (min/day)",      min_value=0,  max_value=120,step=15,value=saved_rep.get("break_minutes",30),
+        help="Lunch and rest breaks deducted from selling time. Default 30 min.")
+    st.caption(f"Effective selling time: {minutes_day-break_mins} min/day")
+with c3:
     travel_speed = st.number_input("Avg travel speed (km/h)",   min_value=10, max_value=80, step=5, value=saved_rep.get("travel_speed_kmh",30))
     st.caption("30 = dense city · 50 = suburban · 70 = rural")
-with c3:
+with c4:
     working_days = st.number_input("Working days per month",    min_value=15, max_value=26, step=1, value=saved_rep.get("working_days",22))
-    st.caption(f"Capacity: {minutes_day*working_days:,} min/rep/month")
+    st.caption(f"Capacity: {(minutes_day-break_mins)*working_days:,} min/rep/month")
 
 st.markdown("**Minimum utilisation threshold:**")
 min_util = st.slider(
@@ -317,6 +322,7 @@ st.caption(
 if st.button("Save rep planning defaults", type="primary", key="save_rep"):
     st.session_state["admin_rep_defaults"] = {
         "minutes_per_day":     minutes_day,
+        "break_minutes":       break_mins,
         "travel_speed_kmh":    travel_speed,
         "working_days":        working_days,
         "min_utilisation_pct": min_util,
