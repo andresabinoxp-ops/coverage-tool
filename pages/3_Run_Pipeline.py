@@ -558,41 +558,78 @@ def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, ci
             s["day_visit_order"] = i + 1
         day_groups[day] = ordered
 
-    # ── Step 3: Enforce daily time budget — trim each day to fit 480 min ────
-    # Stores are already sorted by nearest-neighbour visit order (Step 2).
-    # Walk through each store, accumulate visit + travel time.
-    # Stop adding stores once we hit the daily budget.
-    # Stores that don't fit are marked as "overflow" — they still exist in the
-    # data but get no visit_dates for this day (they are simply not visited).
+    # ── Step 3: Enforce daily time budget — redistribute overflow stores ─────
+    # For each day: walk stores in visit order, accumulate time.
+    # If a store doesn't fit on this day, try to move it to the least-loaded
+    # other day that has remaining capacity. Only drop if no day can fit it.
+    def day_used_time(stores_list):
+        t = 0.0
+        prev_lat2, prev_lng2 = city_lat, city_lng
+        for s2 in stores_list:
+            t += s2.get("visit_duration_min", 25)
+            if s2.get("lat") and s2.get("lng"):
+                t += travel_time_minutes(prev_lat2, prev_lng2, s2["lat"], s2["lng"], avg_speed_kmh)
+                prev_lat2, prev_lng2 = s2["lat"], s2["lng"]
+        return t
+
+    # Two-pass: first pass fills each day to budget, overflow goes to a pool
+    overflow_pool = []
     for day in list(day_groups.keys()):
         stores = day_groups[day]
         if not stores:
             continue
-
-        kept        = []
-        cumulative  = 0.0
+        kept       = []
+        cumulative = 0.0
         prev_lat, prev_lng = city_lat, city_lng
-
         for s in stores:
             visit_t  = s.get("visit_duration_min", 25)
             travel_t = 0.0
             if s.get("lat") and s.get("lng"):
-                travel_t = travel_time_minutes(
-                    prev_lat, prev_lng, s["lat"], s["lng"], avg_speed_kmh
-                )
+                travel_t = travel_time_minutes(prev_lat, prev_lng, s["lat"], s["lng"], avg_speed_kmh)
             total_t = visit_t + travel_t
-
             if cumulative + total_t <= daily_minutes:
                 kept.append(s)
                 cumulative += total_t
                 if s.get("lat") and s.get("lng"):
                     prev_lat, prev_lng = s["lat"], s["lng"]
             else:
-                # Store doesn't fit — clear its day assignment so it won't appear on this day
-                s["assigned_day"]    = ""
-                s["day_visit_order"] = 0
-
+                overflow_pool.append(s)
         day_groups[day] = kept
+
+    # Second pass: try to fit overflow stores into days that still have capacity
+    # Sort overflow by score descending — highest priority first
+    overflow_pool.sort(key=lambda x: x.get("score", 0), reverse=True)
+    for s in overflow_pool:
+        visit_t = s.get("visit_duration_min", 25)
+        # Find the day with most remaining capacity
+        best_day = None
+        best_remaining = -1
+        for day in WEEKDAYS:
+            used      = day_used_time(day_groups[day])
+            remaining = daily_minutes - used
+            if remaining >= visit_t and remaining > best_remaining:
+                best_remaining = remaining
+                best_day = day
+        if best_day:
+            day_groups[best_day].append(s)
+            s["assigned_day"] = best_day
+            # Re-sort this day by nearest neighbour
+            if len(day_groups[best_day]) > 1:
+                ordered  = []
+                remaining_s = day_groups[best_day][:]
+                cur_lat2, cur_lng2 = city_lat, city_lng
+                while remaining_s:
+                    nearest = min(remaining_s, key=lambda x: haversine_m(cur_lat2, cur_lng2, x.get("lat",cur_lat2), x.get("lng",cur_lng2)))
+                    ordered.append(nearest)
+                    cur_lat2, cur_lng2 = nearest.get("lat",cur_lat2), nearest.get("lng",cur_lng2)
+                    remaining_s.remove(nearest)
+                for i2, s2 in enumerate(ordered):
+                    s2["day_visit_order"] = i2 + 1
+                day_groups[best_day] = ordered
+        else:
+            # No day can fit this store — drop it from plan
+            s["assigned_day"]    = ""
+            s["day_visit_order"] = 0
 
     # ── Step 4: Build visit_dates from calendar ───────────────────────────────
     for day, stores in day_groups.items():
@@ -1572,25 +1609,69 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             "m1_key": m1_key,  "m2_key": m2_key,
         }
 
-        # ── Recalculate rep recommendation using plan_visits (post route-builder) ──
-        # Now plan_visits is set — use it as single source of truth
+        # ── Recalculate using plan_visits and apply 60% utilisation threshold ──
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
         if routed_stores:
             _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
                 routed_stores, effective_daily, working_days, avg_speed
             )
-            # Update rep_recommendation with plan_visits-based numbers
+
+            # Recalculate utilisation per rep using plan_visits
+            rep_time_map = {}
+            for s in routed_stores:
+                rid = s.get("rep_id", 0)
+                rep_time_map[rid] = rep_time_map.get(rid, 0) + (
+                    s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
+                )
+
+            # Apply 60% utilisation threshold — remove under-utilised reps
+            min_util_pct  = cfg.get("min_utilisation_pct",
+                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
+            min_util_mins = final_monthly_cap * min_util_pct / 100
+
+            under_util_reps = [rid for rid, t in rep_time_map.items() if t < min_util_mins]
+            kept_reps       = [rid for rid, t in rep_time_map.items() if t >= min_util_mins]
+
+            if under_util_reps and kept_reps:
+                status.info(f"Stage 6b — {len(under_util_reps)} rep(s) below {min_util_pct}% utilisation — redistributing stores...")
+                # Build centroids for kept reps
+                kept_centroids = {}
+                for rid in kept_reps:
+                    rs = [s for s in routed_stores if s.get("rep_id") == rid]
+                    if rs:
+                        kept_centroids[rid] = (
+                            sum(s["lat"] for s in rs if s.get("lat")) / max(sum(1 for s in rs if s.get("lat")),1),
+                            sum(s["lng"] for s in rs if s.get("lng")) / max(sum(1 for s in rs if s.get("lng")),1),
+                        )
+                # Reassign stores from under-utilised reps
+                for s in all_stores:
+                    if s.get("rep_id") in under_util_reps:
+                        if s.get("lat") and s.get("lng") and kept_centroids:
+                            nearest = min(kept_centroids.keys(),
+                                key=lambda r: haversine_m(s["lat"],s["lng"],kept_centroids[r][0],kept_centroids[r][1]))
+                            s["rep_id"] = nearest
+                        elif kept_reps:
+                            s["rep_id"] = kept_reps[0]
+
+                # Recalculate after redistribution
+                routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
+                _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
+                    routed_stores, effective_daily, working_days, avg_speed
+                )
+
+            # Update rep_recommendation
             if rep_recommendation:
                 rep_recommendation["total_minutes_needed"] = round(final_total_mins)
                 rep_recommendation["monthly_cap_per_rep"]  = round(final_monthly_cap)
-                # Update utilisation in zone_centres too
+                rep_recommendation["recommended_reps"]     = len(kept_reps) if kept_reps else len(rep_time_map)
+                # Update zone_centres utilisation
                 for z in rep_recommendation.get("zone_centres", []):
                     zid = z.get("zone", 0)
                     zs  = [s for s in routed_stores if s.get("rep_id") == zid]
                     if zs:
                         z_mins = sum(s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2 for s in zs)
-                        z["time_needed_min"]  = round(z_mins)
-                        z["utilisation_pct"]  = round(z_mins / max(final_monthly_cap,1) * 100)
+                        z["time_needed_min"] = round(z_mins)
+                        z["utilisation_pct"] = round(z_mins / max(final_monthly_cap,1) * 100)
 
         bar.progress(80)
 
