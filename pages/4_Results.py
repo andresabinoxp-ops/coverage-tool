@@ -147,7 +147,7 @@ if rep_rec:
     else:
         m1.metric("Fixed reps", rec_reps)
     m2.metric("Time needed / month", f"{total_mins:,.0f} min",
-        help="Monthly estimate: visits_per_month × duration. Used for rep count calculation.")
+        help="plan_visits ÷ 2 × duration per store — monthly equivalent from actual route plan.")
     m3.metric("Rep capacity / month", f"{monthly_cap:,} min",
         help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days")
     if cur_reps > 0:
@@ -191,7 +191,7 @@ if rep_rec:
     plan_label = f"{m1_name} + {m2_name}" if m1_key else "2-month plan"
 
     st.markdown("**Rep workload breakdown:**")
-    st.caption(f"Stores recommended = unique stores in the {plan_label} route plan. Time needed = plan visits × visit duration across both months.")
+    st.caption(f"Stores recommended = unique stores in the {plan_label} route. Time needed = plan_visits × duration (actual scheduled visits across both months). Matches top panel × 2.")
 
     # Time needed = plan_visits × visit_duration_min for each store assigned to rep
     # plan_visits = actual visits across the 2-month window from route builder
