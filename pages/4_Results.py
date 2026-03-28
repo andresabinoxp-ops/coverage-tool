@@ -241,13 +241,13 @@ if rep_rec:
         col_order = ["Rep","Stores recommended","Current","Gap (new)","Time needed — 2mo (min)","Capacity — 2mo (min)","Utilisation %"]
 
         total_row = {
-            "Rep":                "TOTAL",
-            "Stores recommended": rdf["Stores recommended"].sum(),
-            "Current":            rdf["Current"].sum(),
-            "Gap (new)":          rdf["Gap (new)"].sum(),
-            "Time needed (min)":  rdf["Time needed (min)"].sum(),
-            "Capacity (min)":     rdf["Capacity (min)"].sum(),
-            "Utilisation %":      round(rdf["Time needed (min)"].sum() / max(rdf["Capacity (min)"].sum(),1) * 100),
+            "Rep":                       "TOTAL",
+            "Stores recommended":        rdf["Stores recommended"].sum(),
+            "Current":                   rdf["Current"].sum(),
+            "Gap (new)":                 rdf["Gap (new)"].sum(),
+            "Time needed — 2mo (min)":   rdf["Time needed — 2mo (min)"].sum(),
+            "Capacity — 2mo (min)":      rdf["Capacity — 2mo (min)"].sum(),
+            "Utilisation %":             round(rdf["Time needed — 2mo (min)"].sum() / max(rdf["Capacity — 2mo (min)"].sum(),1) * 100),
         }
 
         rdf_with_total = pd.concat(
