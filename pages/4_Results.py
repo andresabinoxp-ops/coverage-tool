@@ -68,14 +68,13 @@ new_stores      = [s for s in route_stores if not s.get("covered")]  # gap store
 monthly_visits  = sum(s.get("visits_per_month", 0) for s in route_stores)
 annual_visits   = sum(s.get("annual_visits", 0) for s in route_stores)
 
-cols = st.columns(6)
+cols = st.columns(5)
 for col, val, label, color in [
-    (cols[0], f"{total_universe:,}",      "Total universe",        "#1565C0"),
-    (cols[1], f"{currently_covered:,}",   "Currently covered",     "#2E7D32"),
-    (cols[2], f"{total_gaps:,}",          "Gap stores",            "#C62828"),
-    (cols[3], f"{cov_pct}%",              "Coverage rate",         "#1565C0"),
-    (cols[4], f"{len(new_stores):,}",     "New stores in routes",  "#E65100"),
-    (cols[5], f"{monthly_visits:,.0f}",   "Planned visits / month","#6A1B9A"),
+    (cols[0], f"{total_universe:,}",    "Total universe",        "#1565C0"),
+    (cols[1], f"{currently_covered:,}", "Currently covered",     "#2E7D32"),
+    (cols[2], f"{total_gaps:,}",        "Gap stores",            "#C62828"),
+    (cols[3], f"{cov_pct}%",            "Coverage rate",         "#1565C0"),
+    (cols[4], f"{monthly_visits:,.0f}", "Planned visits / month","#6A1B9A"),
 ]:
     col.markdown(f"""
     <div class="kpi-card" style="border-top-color:{color}">
@@ -179,45 +178,6 @@ if rep_rec:
             f"{total_mins/max(cur_reps,1):,.0f} min/month each "
             f"({total_mins/max(cur_reps,1)/max(monthly_cap,1)*100:.0f}% utilisation)."
         )
-
-    # ── Zone summary ──────────────────────────────────────────────────────────
-    zone_centres = rep_rec.get("zone_centres", [])
-    if zone_centres:
-        st.markdown("**Rep territory summary:**")
-        st.caption(
-            "Each zone is one rep's geographic territory. "
-            "'Recommended stores' = stores assigned to this rep's monthly route (covered + new gap stores)."
-        )
-
-        # Enrich zone data with store-level breakdown
-        zone_rows = []
-        for z in zone_centres:
-            zid         = z.get("zone", 0)
-            zone_s      = [s for s in all_stores if s.get("rep_id") == zid]
-            z_covered   = sum(1 for s in zone_s if s.get("covered"))
-            z_new       = sum(1 for s in zone_s if not s.get("covered"))
-            z_vpm       = sum(s.get("visits_per_month", 0) for s in zone_s)
-            t_needed    = z.get("time_needed_min", 0)
-            cap         = z.get("capacity_min", monthly_cap)
-            util        = z.get("utilisation_pct", round(t_needed/max(cap,1)*100))
-            zone_rows.append({
-                "Rep":                  zid,
-                "Total stores":         len(zone_s),
-                "Currently covered":    z_covered,
-                "Recommended stores":   len(zone_s),
-                "New stores in route":  z_new,
-                "Visits / month":       round(z_vpm),
-                "Time needed (min)":    round(t_needed),
-                "Capacity (min)":       round(cap),
-                "Utilisation %":        util,
-            })
-
-        zdf = pd.DataFrame(zone_rows)
-        st.dataframe(zdf, use_container_width=True, hide_index=True,
-            column_config={
-                "Utilisation %": st.column_config.ProgressColumn(
-                    "Utilisation %", min_value=0, max_value=100, format="%d%%"),
-            })
 
     # ── Rep workload table ────────────────────────────────────────────────────
     st.markdown("**Rep workload breakdown:**")
