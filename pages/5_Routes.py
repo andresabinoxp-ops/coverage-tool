@@ -445,7 +445,11 @@ if not display_df.empty:
         else:
             # Full plan/month view — show monthly from routed stores only
             if "visits_per_month" in _routed.columns and not _routed.empty:
-                total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
+                # Use plan_visits/2 × duration to match Results page source of truth
+                if "plan_visits" in _routed.columns:
+                    total_time_month = int((_routed["plan_visits"] / 2 * _routed["visit_duration_min"]).sum())
+                else:
+                    total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
                 util_pct         = round(total_time_month / monthly_cap_total * 100) if monthly_cap_total > 0 else 0
                 cap_label        = f"{effective_daily}×{work_days} days×{n_reps_in_view} rep{'s' if n_reps_in_view!=1 else ''} = {monthly_cap_total:,} min"
                 m2.metric("Time needed / month",
