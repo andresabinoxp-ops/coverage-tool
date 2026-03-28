@@ -146,10 +146,10 @@ if rep_rec:
         m1.metric("Recommended reps", rec_reps)
     else:
         m1.metric("Fixed reps", rec_reps)
-    m2.metric("Time needed (2-month plan)", f"{total_mins*2:,.0f} min",
-        help="Sum of visit durations across both route months (visits × duration per store)")
-    m3.metric("Rep capacity (2-month plan)", f"{plan_cap:,} min",
-        help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days × 2 months")
+    m2.metric("Time needed / month", f"{total_mins:,.0f} min",
+        help="Sum of visits × duration per store per month")
+    m3.metric("Rep capacity / month", f"{monthly_cap:,} min",
+        help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days")
     if cur_reps > 0:
         m4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
@@ -159,7 +159,7 @@ if rep_rec:
             help="Enter current rep count in Configure to see comparison.")
 
     if plan_cap > 0 and total_mins > 0 and rec_reps > 0:
-        util = round((total_mins * 2) / (rec_reps * plan_cap) * 100)
+        util = round(total_mins / (rec_reps * monthly_cap) * 100)
         st.caption(
             f"Average utilisation per rep: {util}% over the 2-month plan · "
             f"{daily_mins} min/day total · {break_mins} min break · "
@@ -171,15 +171,15 @@ if rep_rec:
         st.error(
             f"⚠️ {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
             f"With {cur_reps} reps, each would need "
-            f"{total_mins*2/max(cur_reps,1):,.0f} min over 2 months "
-            f"({total_mins*2/max(cur_reps,1)/max(plan_cap,1)*100:.0f}% utilisation) — over capacity."
+            f"{total_mins/max(cur_reps,1):,.0f} min/month "
+            f"({total_mins/max(cur_reps,1)/max(monthly_cap,1)*100:.0f}% utilisation) — over capacity."
         )
     elif cur_reps > 0 and shortfall < 0:
         st.success(
             f"✅ {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
             f"Your {cur_reps} reps can handle this market at "
-            f"{total_mins*2/max(cur_reps,1):,.0f} min over 2 months each "
-            f"({total_mins*2/max(cur_reps,1)/max(plan_cap,1)*100:.0f}% utilisation)."
+            f"{total_mins/max(cur_reps,1):,.0f} min/month each "
+            f"({total_mins/max(cur_reps,1)/max(monthly_cap,1)*100:.0f}% utilisation)."
         )
 
     # ── Rep workload table ────────────────────────────────────────────────────
@@ -209,8 +209,9 @@ if rep_rec:
                 "Time needed — 2mo (min)":   0,
             }
         rep_rows[rid]["Stores recommended"]      += 1
+        # visits_per_month × duration × 2 months = 2-month time needed
         rep_rows[rid]["Time needed — 2mo (min)"] += (
-            s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
+            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25) * 2
         )
         if s.get("covered"):
             rep_rows[rid]["Current"]   += 1
