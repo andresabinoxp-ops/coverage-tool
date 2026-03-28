@@ -227,26 +227,38 @@ if rep_rec:
         if not rid or rid == 0: continue
         if rid not in rep_rows:
             rep_rows[rid] = {
-                "Rep": rid,
+                "Rep":                    rid,
                 "Stores visited / month": 0,
-                "New stores (gap)": 0,
-                "Time needed (min)": 0.0,
-                "Annual visits": 0,
+                "Current stores":         0,
+                "New stores (gap)":       0,
+                "Time needed (min)":      0.0,
             }
         rep_rows[rid]["Stores visited / month"] += 1
-        if not s.get("covered"):
+        if s.get("covered"):
+            rep_rows[rid]["Current stores"] += 1
+        else:
             rep_rows[rid]["New stores (gap)"] += 1
         rep_rows[rid]["Time needed (min)"] += (
             s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
         )
-        rep_rows[rid]["Annual visits"] += s.get("annual_visits", 0)
 
     if rep_rows:
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        rdf["Time needed (min)"] = rdf["Time needed (min)"].round(0).astype(int)
-        rdf["Capacity (min)"]    = monthly_cap
-        rdf["Utilisation %"]     = (rdf["Time needed (min)"] / max(monthly_cap,1) * 100).round(0).astype(int)
-        st.dataframe(rdf, use_container_width=True, hide_index=True,
+        rdf["Time needed (min)"]    = rdf["Time needed (min)"].round(0).astype(int)
+        rdf["Capacity (min)"]       = monthly_cap
+        rdf["Utilisation %"]        = (rdf["Time needed (min)"] / max(monthly_cap,1) * 100).round(0).astype(int)
+        # Reorder columns: Rep | Stores visited/month | Current stores | New stores (gap) | Time needed | Capacity | Utilisation
+        rdf = rdf.rename(columns={"Stores visited / month": "Stores visited / month"})
+        col_order = [c for c in [
+            "Rep",
+            "Stores visited / month",
+            "Current stores",
+            "New stores (gap)",
+            "Time needed (min)",
+            "Capacity (min)",
+            "Utilisation %",
+        ] if c in rdf.columns]
+        st.dataframe(rdf[col_order], use_container_width=True, hide_index=True,
             column_config={
                 "Utilisation %": st.column_config.ProgressColumn(
                     "Utilisation %", min_value=0, max_value=100, format="%d%%"),
