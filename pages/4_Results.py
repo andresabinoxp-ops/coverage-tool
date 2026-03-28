@@ -181,56 +181,84 @@ if rep_rec:
 
     # ── Rep workload table ────────────────────────────────────────────────────
     st.markdown("**Rep workload breakdown:**")
+    st.caption(
+        "Full universe = all stores assigned to this rep across the year. "
+        "Avg stores / month = stores with at least one visit in a typical month (based on visit frequency). "
+        "Time needed = avg monthly visit time for those stores."
+    )
+
     rep_rows = {}
     for s in all_stores:
         rid = s.get("rep_id", 0)
         if not rid or rid == 0: continue
         if rid not in rep_rows:
             rep_rows[rid] = {
-                "Rep":                    rid,
-                "Stores visited / month": 0,
-                "Current stores":         0,
-                "New stores (gap)":       0,
-                "Time needed (min)":      0.0,
+                "Rep":                  rid,
+                "Full universe":        0,
+                "Current coverage":     0,
+                "Gap stores":           0,
+                "Avg stores / month":   0.0,
+                "Avg current / month":  0.0,
+                "Avg gap / month":      0.0,
+                "Time needed (min)":    0.0,
             }
-        rep_rows[rid]["Stores visited / month"] += 1
+        rep_rows[rid]["Full universe"] += 1
+        vpm = s.get("visits_per_month", 1)
+        # A store is visited every month if vpm >= 1
+        # Avg monthly presence = vpm / 1 capped at 1 (store either visited that month or not)
+        monthly_presence = min(1, vpm / max(1, 1))  # always 1 if in universe
         if s.get("covered"):
-            rep_rows[rid]["Current stores"] += 1
+            rep_rows[rid]["Current coverage"]    += 1
+            rep_rows[rid]["Avg current / month"] += 1
         else:
-            rep_rows[rid]["New stores (gap)"] += 1
-        rep_rows[rid]["Time needed (min)"] += (
-            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
-        )
+            rep_rows[rid]["Gap stores"]          += 1
+            rep_rows[rid]["Avg gap / month"]     += 1
+        rep_rows[rid]["Avg stores / month"]  += 1
+        rep_rows[rid]["Time needed (min)"]   += vpm * s.get("visit_duration_min", 25)
 
     if rep_rows:
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        rdf["Time needed (min)"]    = rdf["Time needed (min)"].round(0).astype(int)
-        rdf["Capacity (min)"]       = monthly_cap
-        rdf["Utilisation %"]        = (rdf["Time needed (min)"] / max(monthly_cap,1) * 100).round(0).astype(int)
-        # Reorder columns: Rep | Stores visited/month | Current stores | New stores (gap) | Time needed | Capacity | Utilisation
-        rdf = rdf.rename(columns={"Stores visited / month": "Stores visited / month"})
-        col_order = [c for c in [
+        rdf["Coverage %"]         = (rdf["Current coverage"] / rdf["Full universe"].replace(0,1) * 100).round(1)
+        rdf["Time needed (min)"]  = rdf["Time needed (min)"].round(0).astype(int)
+        rdf["Capacity (min)"]     = monthly_cap
+        rdf["Utilisation %"]      = (rdf["Time needed (min)"] / max(monthly_cap,1) * 100).round(0).astype(int)
+
+        col_order = [
             "Rep",
-            "Stores visited / month",
-            "Current stores",
-            "New stores (gap)",
+            "Full universe",
+            "Current coverage",
+            "Coverage %",
+            "Gap stores",
+            "Avg stores / month",
+            "Avg current / month",
+            "Avg gap / month",
             "Time needed (min)",
             "Capacity (min)",
             "Utilisation %",
-        ] if c in rdf.columns]
-        # Add total row
+        ]
+
+        # Total row
         total_row = {
-            "Rep":                    "TOTAL",
-            "Stores visited / month": rdf["Stores visited / month"].sum(),
-            "Current stores":         rdf["Current stores"].sum(),
-            "New stores (gap)":       rdf["New stores (gap)"].sum(),
-            "Time needed (min)":      rdf["Time needed (min)"].sum(),
-            "Capacity (min)":         rdf["Capacity (min)"].sum(),
-            "Utilisation %":          round(rdf["Time needed (min)"].sum() / max(rdf["Capacity (min)"].sum(), 1) * 100),
+            "Rep":                 "TOTAL",
+            "Full universe":       rdf["Full universe"].sum(),
+            "Current coverage":    rdf["Current coverage"].sum(),
+            "Coverage %":          round(rdf["Current coverage"].sum() / max(rdf["Full universe"].sum(),1) * 100, 1),
+            "Gap stores":          rdf["Gap stores"].sum(),
+            "Avg stores / month":  rdf["Avg stores / month"].sum(),
+            "Avg current / month": rdf["Avg current / month"].sum(),
+            "Avg gap / month":     rdf["Avg gap / month"].sum(),
+            "Time needed (min)":   rdf["Time needed (min)"].sum(),
+            "Capacity (min)":      rdf["Capacity (min)"].sum(),
+            "Utilisation %":       round(rdf["Time needed (min)"].sum() / max(rdf["Capacity (min)"].sum(),1) * 100),
         }
-        rdf_with_total = pd.concat([rdf[col_order], pd.DataFrame([total_row])[col_order]], ignore_index=True)
+
+        rdf_with_total = pd.concat(
+            [rdf[col_order], pd.DataFrame([total_row])[col_order]],
+            ignore_index=True
+        )
         st.dataframe(rdf_with_total, use_container_width=True, hide_index=True,
             column_config={
+                "Coverage %":    st.column_config.NumberColumn("Coverage %",  format="%.1f%%"),
                 "Utilisation %": st.column_config.ProgressColumn(
                     "Utilisation %", min_value=0, max_value=100, format="%d%%"),
             })
