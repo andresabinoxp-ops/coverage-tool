@@ -1324,43 +1324,79 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Stage 4: Gap match
         status.info(f"Stage 4/{total_steps} — Matching coverage gaps...")
 
-        # Build lookup sets for fast matching
-        # 1) Portfolio place_ids (if geocoded via Google)
+        # Read matching settings from Admin
+        match_cfg      = st.session_state.get("admin_matching", {})
+        base_radius    = match_cfg.get("base_radius_m",       100)
+        fuzzy_radius   = match_cfg.get("fuzzy_radius_m",      150)
+        fuzzy_thresh   = match_cfg.get("fuzzy_threshold_pct",  60) / 100
+
+        def name_similarity(a, b):
+            """Simple character overlap similarity between two store names."""
+            a = str(a).lower().strip()
+            b = str(b).lower().strip()
+            if not a or not b: return 0.0
+            # Remove common words that add noise
+            for w in ["supermercado","super","mercado","hipermercado","hiper","atacado","atacadao","ltda","eireli","me "]:
+                a = a.replace(w,""); b = b.replace(w,"")
+            a = a.strip(); b = b.strip()
+            if not a or not b: return 0.0
+            # Bigram similarity
+            def bigrams(s): return set(s[i:i+2] for i in range(len(s)-1))
+            ba, bb = bigrams(a), bigrams(b)
+            if not ba or not bb: return 0.0
+            return len(ba & bb) / max(len(ba | bb), 1)
+
+        # Build lookup structures
         portfolio_place_ids = {p.get("place_id") for p in portfolio if p.get("place_id")}
-        # 2) Portfolio (lat, lng) rounded to 4 decimal places (~11m precision)
         portfolio_coords    = {(round(p["lat"],4), round(p["lng"],4))
                                for p in portfolio if p.get("lat") and p.get("lng")}
-        # 3) Portfolio stores with coords for radius matching
-        covered_p = [s for s in portfolio if s.get("lat") and s.get("lng")]
-
-        match_radius = 150  # metres — covers GPS rounding and geocoding discrepancy
+        covered_p           = [s for s in portfolio if s.get("lat") and s.get("lng")]
 
         for u in universe:
             if not (u.get("lat") and u.get("lng")):
                 u["coverage_status"] = "no_coords"
+                u["covered"] = False
                 continue
 
             matched = False
 
-            # Match 1: same place_id (definitive — same Google record)
+            # Match 1: same place_id — definitively the same store
             if u.get("place_id") and u["place_id"] in portfolio_place_ids:
                 matched = True
 
-            # Match 2: exact same coordinates (rounded)
+            # Match 2: exact same coordinates (rounded to ~11m)
             if not matched:
-                u_coord = (round(u["lat"],4), round(u["lng"],4))
-                if u_coord in portfolio_coords:
+                if (round(u["lat"],4), round(u["lng"],4)) in portfolio_coords:
                     matched = True
 
-            # Match 3: within 150m radius
+            # Match 3 + 4: distance-based
             if not matched:
-                matched = any(haversine_m(u["lat"],u["lng"],p["lat"],p["lng"]) <= match_radius
-                              for p in covered_p)
+                for p in covered_p:
+                    dist = haversine_m(u["lat"],u["lng"],p["lat"],p["lng"])
+                    # Match 3: within base radius — always covered
+                    if dist <= base_radius:
+                        matched = True
+                        break
+                    # Match 4: within fuzzy radius — only if names are similar enough
+                    if dist <= fuzzy_radius:
+                        sim = name_similarity(u.get("store_name",""), p.get("store_name",""))
+                        if sim >= fuzzy_thresh:
+                            matched = True
+                            break
 
             u["covered"]         = matched
             u["coverage_status"] = "covered" if matched else "gap"
 
         for p in portfolio: p["coverage_status"] = "covered"
+
+        # Log matching summary
+        n_covered = sum(1 for u in universe if u.get("covered"))
+        n_gap     = sum(1 for u in universe if not u.get("covered"))
+        status.info(
+            f"Stage 4/{total_steps} — Coverage matching complete: "
+            f"{n_covered} covered · {n_gap} gaps "
+            f"(base radius: {base_radius}m · fuzzy: {fuzzy_radius}m @ {int(fuzzy_thresh*100)}%)"
+        )
         bar.progress(65)
 
         # Stage 5: Size tier + visit frequency assignment
