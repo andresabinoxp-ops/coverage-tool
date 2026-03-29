@@ -782,6 +782,9 @@ if portfolio_df is None:
         try:
             df = pd.read_csv(up)
             df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
+            # Drop completely blank rows (empty Excel rows at end of file)
+            df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
+            df = df[df["store_name"].fillna("").str.strip() != ""].reset_index(drop=True)
             missing = [c for c in ["store_name","address","city"] if c not in df.columns]
             if missing:
                 st.error(f"Missing columns: {missing}")
