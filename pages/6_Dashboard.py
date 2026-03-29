@@ -1,4 +1,5 @@
 import streamlit as st
+import ast
 import pandas as pd
 import datetime
 
@@ -54,15 +55,27 @@ REP_COLORS  = ["#1565C0","#2E7D32","#E65100","#6A1B9A","#00695C","#4A148C","#B71
 MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"]
 MONTH_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 
+def parse_dates_cell(val):
+    """Parse a date cell — handles both real lists and stringified lists from CSV."""
+    if val is None or (isinstance(val, float)): return []
+    if isinstance(val, list): return val
+    s = str(val).strip()
+    if not s or s == "nan" or s == "[]": return []
+    try:
+        parsed = ast.literal_eval(s)
+        if isinstance(parsed, list): return [str(d).strip() for d in parsed if d]
+    except Exception: pass
+    # Fallback: strip brackets/quotes and split by comma
+    s = s.strip("[]").replace("'","").replace('"',"")
+    return [d.strip() for d in s.split(",") if d.strip()]
+
 def get_dates_for_month(df, month_key):
     dates = set()
     col = f"{month_key}_dates"
     if col in df.columns:
         for val in df[col].dropna():
-            for d in str(val).split(","):
-                d = d.strip()
-                if d and d != "nan":
-                    dates.add(d)
+            for d in parse_dates_cell(val):
+                if d: dates.add(d)
     return ["All dates"] + sorted(dates)
 
 def hex_to_rgb(h):
@@ -264,7 +277,7 @@ if not map_df.empty:
         if sel_date != "All dates":
             date_col = f"{mkey}_dates"
             if date_col in map_df.columns:
-                map_df = map_df[map_df[date_col].apply(lambda x: sel_date in str(x) if pd.notna(x) else False)]
+                map_df = map_df[map_df[date_col].apply(lambda x: sel_date in parse_dates_cell(x))]
     elif sel_month == "Full plan" and "plan_visits" in map_df.columns:
         map_df = map_df[map_df["plan_visits"].fillna(0) > 0]
     if not show_gaps and "coverage_status" in map_df.columns:
@@ -370,7 +383,7 @@ if tbl_month != "Full plan" and tbl_month in DASH_PLAN_NAMES:
     if tbl_date != "All dates":
         dcol = f"{tmkey}_dates"
         if dcol in route_df.columns:
-            route_df = route_df[route_df[dcol].apply(lambda x: tbl_date in str(x) if pd.notna(x) else False)]
+            route_df = route_df[route_df[dcol].apply(lambda x: tbl_date in parse_dates_cell(x))]
 
 if "day_visit_order" in route_df.columns:
     route_df = route_df.sort_values(["rep_id","day_visit_order"]).reset_index(drop=True)
