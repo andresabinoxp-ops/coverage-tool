@@ -1,4 +1,5 @@
 import streamlit as st
+import ast
 import pandas as pd
 import json
 import datetime
@@ -113,13 +114,25 @@ def get_color(s, colour_by):
 # ── FILTERS ───────────────────────────────────────────────────────────────────
 all_reps  = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 # Build date list from actual visit dates in the selected month
+def parse_dates_val(val):
+    """Parse a date value — handles real lists and stringified lists from CSV."""
+    if val is None or (isinstance(val, float)): return []
+    if isinstance(val, list): return [str(d).strip() for d in val if d]
+    s = str(val).strip()
+    if not s or s == "nan" or s == "[]": return []
+    try:
+        parsed = ast.literal_eval(s)
+        if isinstance(parsed, list): return [str(d).strip() for d in parsed if d]
+    except Exception: pass
+    s = s.strip("[]").replace("'","").replace('"',"")
+    return [d.strip() for d in s.split(",") if d.strip()]
+
 def get_dates_for_month(stores, month_key):
     """Get all unique visit dates for a given month key (e.g. 'jan')."""
     dates = set()
     for s in stores:
-        for d in s.get(f"{month_key}_dates", []):
-            if d:
-                dates.add(d)
+        for d in parse_dates_val(s.get(f"{month_key}_dates", [])):
+            if d: dates.add(d)
     return ["All dates"] + sorted(dates)
 
 all_days = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
@@ -160,7 +173,7 @@ elif sel_month == "Full plan":
     map_stores = [s for s in map_stores if s.get("plan_visits",0) > 0]
 # For specific date filter
 if sel_day not in ("Full month", "All dates") and sel_month_key:
-    map_stores = [s for s in map_stores if sel_day in s.get(f"{sel_month_key}_dates", [])]
+    map_stores = [s for s in map_stores if sel_day in parse_dates_val(s.get(f"{sel_month_key}_dates", []))]
 elif sel_day not in ("Full month", "All dates") and not sel_month_key:
     # weekday filter for full year view
     map_stores = [s for s in map_stores if s.get("assigned_day") == sel_day]
