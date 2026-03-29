@@ -303,32 +303,9 @@ with col3:
         f"rep_routes_{mkt_safe}.geojson", "application/json")
 
 st.markdown("---")
-st.markdown('<div class="section-title">Dashboard snapshot files</div>', unsafe_allow_html=True)
-st.caption("Download these two files and upload them to the Dashboard page.")
-
-summary_data = {
-    "market_name":           [market],
-    "run_date":              [run_date],
-    "total_stores":          [total_universe],
-    "covered_stores":        [currently_covered],
-    "gap_stores":            [total_gaps],
-    "coverage_rate":         [cov_pct],
-    "new_stores_in_routes":  [len(new_stores)],
-    "planned_visits_month":  [monthly_visits],
-    "annual_visits":         [annual_visits],
-    "large_stores":          [sum(1 for s in all_stores if s.get("size_tier")=="Large")],
-    "medium_stores":         [sum(1 for s in all_stores if s.get("size_tier")=="Medium")],
-    "small_stores":          [sum(1 for s in all_stores if s.get("size_tier")=="Small")],
-}
-summary_df = pd.DataFrame(summary_data)
-
-col_s1, col_s2 = st.columns(2)
-with col_s1:
-    st.download_button("⬇️ Stores snapshot (upload to Dashboard)",
-        _clean_df.reset_index(drop=True).to_csv(index=False),
-        f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
-with col_s2:
-    st.download_button("⬇️ Summary snapshot (upload to Dashboard)",
-        summary_df.reset_index(drop=True).to_csv(index=False),
-        f"{mkt_safe}_{run_date}_summary.csv", "text/csv")
-st.info("Upload both files to the Dashboard page. Admin manages the market library from there.")
+st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
+st.caption("Download this file and upload it to the Dashboard page to view results anytime.")
+st.download_button("⬇️ Download stores snapshot (upload to Dashboard)",
+    _clean_df.reset_index(drop=True).to_csv(index=False),
+    f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
+st.info("Upload the stores CSV to the Dashboard page. Admin manages the market library from there.")
