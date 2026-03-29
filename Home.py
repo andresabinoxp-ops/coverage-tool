@@ -137,7 +137,7 @@ st.markdown("""
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 st.markdown("### Navigate to")
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
 with col1:
     if st.button("🔐\nAdmin Settings\nAPI keys & config", key="nav_admin"):
@@ -154,6 +154,12 @@ with col4:
 with col5:
     if st.button("🗺️\nRoutes\nRep route map", key="nav_routes"):
         st.switch_page("pages/5_Routes.py")
+with col6:
+    if st.button("📈\nDashboard\nMarket snapshots", key="nav_dashboard"):
+        st.switch_page("pages/6_Dashboard.py")
+with col7:
+    if st.button("📋\nChangelog\nVersion history", key="nav_changelog"):
+        st.switch_page("pages/7_Changelog.py")
 
 st.markdown("---")
 
