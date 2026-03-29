@@ -98,7 +98,22 @@ if is_admin:
         else:
             try:
                 stores_df  = pd.read_csv(stores_file)
+                # Drop auto-index column if present
+                if "Unnamed: 0" in stores_df.columns:
+                    stores_df = stores_df.drop(columns=["Unnamed: 0"])
                 summary_df = pd.read_csv(summary_file) if summary_file else pd.DataFrame()
+                # Validate correct files uploaded (stores should have store_name column)
+                if "store_name" not in stores_df.columns and summary_file:
+                    # User may have swapped files — try the other way
+                    stores_df2  = pd.read_csv(summary_file)
+                    summary_df2 = stores_df.copy()
+                    if "store_name" in stores_df2.columns:
+                        stores_df  = stores_df2
+                        summary_df = summary_df2
+                        st.warning("⚠️ Files appeared swapped — corrected automatically.")
+                if "store_name" not in stores_df.columns:
+                    st.error("Stores CSV does not contain a store_name column. Please check you uploaded the correct file.")
+                    st.stop()
                 snap_key   = f"{snap_market}_{snap_category}_{snap_date}".replace(" ","_")
                 st.session_state["snapshot_library"][snap_key] = {
                     "name": snap_market, "category": snap_category,
