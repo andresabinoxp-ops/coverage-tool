@@ -42,7 +42,7 @@ st.markdown("""
 versions = [
     {
         "version": "v1.4",
-        "date": "March 2026",
+        "date": "29 March 2026",
         "tag": "current",
         "summary": "Route planning, rep capacity and coverage matching overhaul",
         "sections": {
@@ -89,7 +89,7 @@ versions = [
     },
     {
         "version": "v1.3",
-        "date": "February 2026",
+        "date": "28 March 2026",
         "tag": "stable",
         "summary": "Scoring stability, size tiers and pipeline error handling",
         "sections": {
@@ -115,7 +115,7 @@ versions = [
     },
     {
         "version": "v1.2",
-        "date": "January 2026",
+        "date": "27 March 2026",
         "tag": "previous",
         "summary": "Rep planning model and route builder",
         "sections": {
@@ -141,7 +141,7 @@ versions = [
     },
     {
         "version": "v1.0 — v1.1",
-        "date": "December 2025",
+        "date": "26 March 2026",
         "tag": "previous",
         "summary": "Initial build — scraping, scoring and gap analysis",
         "sections": {
