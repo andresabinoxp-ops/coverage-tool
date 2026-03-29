@@ -78,12 +78,8 @@ is_admin = st.session_state.get("admin_authenticated", False)
 # ── ADMIN UPLOAD ──────────────────────────────────────────────────────────────
 if is_admin:
     st.markdown('<div class="section-title">Upload market snapshot (Admin only)</div>', unsafe_allow_html=True)
-    st.caption("Upload the two CSV files generated after a pipeline run from the Results page.")
-    col1, col2 = st.columns(2)
-    with col1:
-        stores_file  = st.file_uploader("Stores CSV  (*_stores.csv)",  type=["csv"], key="upload_stores")
-    with col2:
-        summary_file = st.file_uploader("Summary CSV  (*_summary.csv)", type=["csv"], key="upload_summary")
+    st.caption("Upload the stores CSV downloaded from the Results page (*_stores.csv).")
+    stores_file = st.file_uploader("Stores CSV  (*_stores.csv)", type=["csv"], key="upload_stores")
 
     col_a, col_b, col_c = st.columns(3)
     with col_a: snap_market   = st.text_input("Market name",  placeholder="e.g. Oman")
@@ -97,23 +93,13 @@ if is_admin:
             st.error("Market name is required.")
         else:
             try:
-                stores_df  = pd.read_csv(stores_file)
-                # Drop auto-index column if present
+                stores_df = pd.read_csv(stores_file)
                 if "Unnamed: 0" in stores_df.columns:
                     stores_df = stores_df.drop(columns=["Unnamed: 0"])
-                summary_df = pd.read_csv(summary_file) if summary_file else pd.DataFrame()
-                # Validate correct files uploaded (stores should have store_name column)
-                if "store_name" not in stores_df.columns and summary_file:
-                    # User may have swapped files — try the other way
-                    stores_df2  = pd.read_csv(summary_file)
-                    summary_df2 = stores_df.copy()
-                    if "store_name" in stores_df2.columns:
-                        stores_df  = stores_df2
-                        summary_df = summary_df2
-                        st.warning("⚠️ Files appeared swapped — corrected automatically.")
                 if "store_name" not in stores_df.columns:
-                    st.error("Stores CSV does not contain a store_name column. Please check you uploaded the correct file.")
+                    st.error("This doesn't look like a stores CSV — missing store_name column. Please upload the *_stores.csv file from the Results page.")
                     st.stop()
+                summary_df = pd.DataFrame()
                 snap_key   = f"{snap_market}_{snap_category}_{snap_date}".replace(" ","_")
                 st.session_state["snapshot_library"][snap_key] = {
                     "name": snap_market, "category": snap_category,
