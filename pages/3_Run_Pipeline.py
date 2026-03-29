@@ -1323,12 +1323,43 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         # Stage 4: Gap match
         status.info(f"Stage 4/{total_steps} — Matching coverage gaps...")
+
+        # Build lookup sets for fast matching
+        # 1) Portfolio place_ids (if geocoded via Google)
+        portfolio_place_ids = {p.get("place_id") for p in portfolio if p.get("place_id")}
+        # 2) Portfolio (lat, lng) rounded to 4 decimal places (~11m precision)
+        portfolio_coords    = {(round(p["lat"],4), round(p["lng"],4))
+                               for p in portfolio if p.get("lat") and p.get("lng")}
+        # 3) Portfolio stores with coords for radius matching
         covered_p = [s for s in portfolio if s.get("lat") and s.get("lng")]
+
+        match_radius = 150  # metres — covers GPS rounding and geocoding discrepancy
+
         for u in universe:
-            if not (u.get("lat") and u.get("lng")): u["coverage_status"]="no_coords"; continue
-            matched = any(haversine_m(u["lat"],u["lng"],p["lat"],p["lng"])<=50 for p in covered_p)
+            if not (u.get("lat") and u.get("lng")):
+                u["coverage_status"] = "no_coords"
+                continue
+
+            matched = False
+
+            # Match 1: same place_id (definitive — same Google record)
+            if u.get("place_id") and u["place_id"] in portfolio_place_ids:
+                matched = True
+
+            # Match 2: exact same coordinates (rounded)
+            if not matched:
+                u_coord = (round(u["lat"],4), round(u["lng"],4))
+                if u_coord in portfolio_coords:
+                    matched = True
+
+            # Match 3: within 150m radius
+            if not matched:
+                matched = any(haversine_m(u["lat"],u["lng"],p["lat"],p["lng"]) <= match_radius
+                              for p in covered_p)
+
             u["covered"]         = matched
             u["coverage_status"] = "covered" if matched else "gap"
+
         for p in portfolio: p["coverage_status"] = "covered"
         bar.progress(65)
 
