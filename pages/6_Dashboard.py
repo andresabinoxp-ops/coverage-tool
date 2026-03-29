@@ -81,37 +81,51 @@ if is_admin:
     st.caption("Upload the stores CSV downloaded from the Results page (*_stores.csv).")
     stores_file = st.file_uploader("Stores CSV  (*_stores.csv)", type=["csv"], key="upload_stores")
 
+    if stores_file:
+        # Auto-detect run date from filename e.g. Brazil_Recife_2026-03-29_stores.csv
+        import re as _re
+        fname       = stores_file.name
+        date_match  = _re.search(r"(\d{4}-\d{2}-\d{2})", fname)
+        auto_date   = datetime.date.fromisoformat(date_match.group(1)) if date_match else datetime.date.today()
+        # Auto-detect market name from filename (first part before date)
+        name_part   = fname.replace("_stores.csv","").replace("_stores","")
+        name_part   = _re.sub(r"_?\d{4}-\d{2}-\d{2}_?","", name_part).replace("_"," ").strip()
+        st.caption(f"Detected from filename: **{name_part}** · **{auto_date}**")
+    else:
+        auto_date  = datetime.date.today()
+        name_part  = ""
+
     col_a, col_b, col_c = st.columns(3)
-    with col_a: snap_market   = st.text_input("Market name",  placeholder="e.g. Oman")
-    with col_b: snap_category = st.text_input("Category",     placeholder="e.g. Pharmacy")
-    with col_c: snap_date     = st.date_input("Run date", value=datetime.date.today())
+    with col_a: snap_market   = st.text_input("Market name",  value=name_part, placeholder="e.g. Recife")
+    with col_b: snap_category = st.text_input("Category",     placeholder="e.g. Supermarket")
+    with col_c: snap_date     = st.date_input("Run date",     value=auto_date)
 
     if st.button("Save snapshot to library", type="primary"):
         if not stores_file:
-            st.error("Stores CSV is required.")
+            st.error("Please upload a stores CSV first.")
         elif not snap_market:
             st.error("Market name is required.")
         else:
             try:
+                stores_file.seek(0)
                 stores_df = pd.read_csv(stores_file)
                 if "Unnamed: 0" in stores_df.columns:
                     stores_df = stores_df.drop(columns=["Unnamed: 0"])
                 if "store_name" not in stores_df.columns:
                     st.error("This doesn't look like a stores CSV — missing store_name column. Please upload the *_stores.csv file from the Results page.")
                     st.stop()
-                summary_df = pd.DataFrame()
-                snap_key   = f"{snap_market}_{snap_category}_{snap_date}".replace(" ","_")
+                snap_key = f"{snap_market}_{snap_category}_{snap_date}".replace(" ","_")
                 st.session_state["snapshot_library"][snap_key] = {
                     "name": snap_market, "category": snap_category,
                     "run_date": str(snap_date), "stores_df": stores_df,
-                    "summary_df": summary_df,
+                    "summary_df": pd.DataFrame(),
                     "uploaded_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "key": snap_key,
                 }
-                st.success(f"Snapshot saved: {snap_market} — {snap_category} — {snap_date}")
+                st.success(f"✅ Snapshot saved: {snap_market} — {snap_date}")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error reading files: {e}")
+                st.error(f"Error reading file: {e}")
     st.markdown("---")
 
 library = st.session_state.get("snapshot_library", {})
