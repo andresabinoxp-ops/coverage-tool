@@ -284,11 +284,11 @@ with col1:
                   and c not in _keep_month_cols]
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
     st.download_button("📄 Full scored universe CSV",
-        _clean_df.to_csv(index=False),
+        _clean_df.reset_index(drop=True).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
     st.download_button("🎯 Gap report CSV",
-        pd.DataFrame(gap_stores).to_csv(index=False),
+        pd.DataFrame(gap_stores).reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
@@ -325,10 +325,10 @@ summary_df = pd.DataFrame(summary_data)
 col_s1, col_s2 = st.columns(2)
 with col_s1:
     st.download_button("⬇️ Stores snapshot (upload to Dashboard)",
-        _clean_df.to_csv(index=False),
+        _clean_df.reset_index(drop=True).to_csv(index=False),
         f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
 with col_s2:
     st.download_button("⬇️ Summary snapshot (upload to Dashboard)",
-        summary_df.to_csv(index=False),
+        summary_df.reset_index(drop=True).to_csv(index=False),
         f"{mkt_safe}_{run_date}_summary.csv", "text/csv")
 st.info("Upload both files to the Dashboard page. Admin manages the market library from there.")
