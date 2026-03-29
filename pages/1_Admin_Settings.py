@@ -344,9 +344,73 @@ if st.button("Save rep planning defaults", type="primary", key="save_rep"):
     }
     st.success("✅ Rep planning defaults saved.")
 
-# ── SECTION 5: APP ACCESS ─────────────────────────────────────────────────────
+# ── SECTION 5: COVERAGE MATCHING ─────────────────────────────────────────────
 st.markdown("---")
-sec("5","App Access","Manage admin session and password.")
+sec("5","Coverage Matching Rules",
+    "Controls how the pipeline decides whether a Google-scraped store is already covered by your portfolio. "
+    "This affects your coverage rate and gap count — if the radius is too small, stores you already sell to "
+    "will appear as gaps. If too large, stores you don't sell to will be incorrectly marked as covered.",
+    "Stage 4 — Gap matching")
+
+st.markdown("""
+<div style="background:#F0F4F8;border:1px solid #D0DCF0;border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem;font-size:0.88rem;line-height:1.7">
+<strong>How coverage matching works:</strong><br>
+After scraping Google Places, every store in the universe is checked against your portfolio to see if it is already covered.
+A scraped store is marked <strong>covered</strong> if it matches a portfolio store by any of these rules:<br><br>
+<strong>1. Same Google Place ID</strong> — Google assigns a unique ID to every location. If the scraped store and your portfolio store share the same ID, they are definitively the same store. No distance needed.<br><br>
+<strong>2. Same GPS coordinates</strong> — If the coordinates match (rounded to ~11m precision), it is the same physical point.<br><br>
+<strong>3. Within distance radius</strong> — If a scraped store is within the configured radius of a portfolio store, it is treated as covered. This handles GPS rounding and geocoding differences for the same address.<br><br>
+<strong>4. Within extended radius + similar name</strong> — If a scraped store is within the extended radius AND its name is similar to a nearby portfolio store, it is also treated as covered. This catches cases where Google uses a slightly different store name.<br><br>
+⚠️ <strong>Be careful with large radii in dense cities</strong> — two different stores can be 100-150m apart in a city centre. A radius that is too large will incorrectly mark genuine gaps as covered.
+</div>
+""", unsafe_allow_html=True)
+
+saved_match = st.session_state.get("admin_matching", {
+    "base_radius_m": 100,
+    "fuzzy_radius_m": 150,
+    "fuzzy_threshold_pct": 60,
+})
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    base_radius = st.number_input(
+        "Base match radius (metres)",
+        min_value=10, max_value=300, value=saved_match.get("base_radius_m", 100), step=10,
+        help="Distance within which a scraped store is automatically marked as covered. Safe range: 50-100m for cities, up to 200m for rural markets."
+    )
+    st.caption("Recommended: 100m city · 150m suburban · 200m rural")
+with c2:
+    fuzzy_radius = st.number_input(
+        "Extended radius for name matching (metres)",
+        min_value=50, max_value=500, value=saved_match.get("fuzzy_radius_m", 150), step=25,
+        help="Stores within this radius are also checked for name similarity. Only matched if name similarity passes the threshold below."
+    )
+    st.caption("Only applies when names are similar enough")
+with c3:
+    fuzzy_threshold = st.slider(
+        "Name similarity threshold %",
+        min_value=40, max_value=90, value=saved_match.get("fuzzy_threshold_pct", 60), step=5,
+        help="How similar the store names must be to count as a match. 60% = loose match (handles abbreviations). 80% = strict match (near-identical names only)."
+    )
+    st.caption(f"Example: 'Bom Preco' vs 'Bom Preço' ≈ 85% similar")
+
+st.info(
+    f"With current settings: stores within **{base_radius}m** are always covered. "
+    f"Stores {base_radius}-{fuzzy_radius}m away are covered only if names are **{fuzzy_threshold}%+ similar**. "
+    f"Stores beyond {fuzzy_radius}m are always gaps."
+)
+
+if st.button("Save matching rules", type="primary", key="save_match"):
+    st.session_state["admin_matching"] = {
+        "base_radius_m":      base_radius,
+        "fuzzy_radius_m":     fuzzy_radius,
+        "fuzzy_threshold_pct": fuzzy_threshold,
+    }
+    st.success("✅ Matching rules saved — will apply on next pipeline run.")
+
+# ── SECTION 6: APP ACCESS ─────────────────────────────────────────────────────
+st.markdown("---")
+sec("6","App Access","Manage admin session and password.")
 
 with st.expander("How to change the admin password"):
     st.markdown("""
