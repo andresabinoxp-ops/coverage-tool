@@ -522,24 +522,11 @@ with col2:
     )
 
 import datetime as _dt
-_today = _dt.date.today()
-col_rm1, col_rm2, col_rm3 = st.columns(3)
-with col_rm1:
-    route_month1 = st.selectbox("Route start month",
-        options=list(range(1,13)),
-        index=_today.month - 1,
-        format_func=lambda m: _dt.date(2025,m,1).strftime("%B"),
-        help="The agent builds routes for this month and the following month."
-    )
-with col_rm2:
-    route_year = st.number_input("Year", min_value=2024, max_value=2030, value=_today.year)
-with col_rm3:
-    _m2 = route_month1 % 12 + 1
-    _y2 = int(route_year) + (1 if _m2 == 1 else 0)
-    m1_label = _dt.date(int(route_year), route_month1, 1).strftime("%B %Y")
-    m2_label = _dt.date(_y2, _m2, 1).strftime("%B %Y")
-    st.metric("2-month plan", f"{m1_label} + {m2_label}")
-st.caption("Day-of-week assignments are fixed across both months. Occasional stores (0.5 visits/month) get 1 visit in this 2-month window.")
+st.info(
+    "📅 **Route plan period is set automatically** by the lowest visit frequency across your tiers. "
+    "Example: if Small = 0.5 visits/month → 2-month plan (Month 1 + Month 2). "
+    "If Small = 0.33 → 3-month plan. Routes use Month 1, Month 2 etc — no fixed calendar dates."
+)
 
 st.markdown("---")
 st.subheader("5b. Rep planning mode")
@@ -698,7 +685,7 @@ visit_benchmarks = {}
 if final_categories:
     st.markdown("**Set visits per month and visit duration (minutes) per category:**")
     # Header row
-    hc0, hc1, hc2, hc3, hc4, hc5, hc6 = st.columns([2,1,1,1,1,1,1])
+    hc0,hc1,hc2,hc3,hc4,hc5,hc6 = st.columns([2,1,1,1,1,1,1])
     hc0.markdown("**Category**")
     hc1.markdown("**Large visits/mo**")
     hc2.markdown("**Large duration**")
@@ -706,35 +693,54 @@ if final_categories:
     hc4.markdown("**Medium duration**")
     hc5.markdown("**Small visits/mo**")
     hc6.markdown("**Small duration**")
+    st.caption("Use decimals for less-than-monthly: 0.5 = every 2 months · 0.33 = every 3 months · 0.25 = quarterly")
 
+    _all_min_freq = []
     for cat in final_categories:
         cat_label = cat.replace("_"," ").title()
         c0,c1,c2,c3,c4,c5,c6 = st.columns([2,1,1,1,1,1,1])
         with c0:
             st.markdown(f"<div style='padding-top:8px;font-weight:600'>{cat_label}</div>", unsafe_allow_html=True)
         with c1:
-            lv = st.number_input("", min_value=1, max_value=20,
-                value=admin_defaults["large_visits"], key=f"lv_{cat}", label_visibility="collapsed")
+            lv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
+                value=float(admin_defaults.get("large_visits",4)), key=f"lv_{cat}", label_visibility="collapsed")
         with c2:
             ld = st.number_input("", min_value=5, max_value=120,
-                value=admin_defaults["large_duration"], key=f"ld_{cat}", label_visibility="collapsed")
+                value=admin_defaults.get("large_duration",40), key=f"ld_{cat}", label_visibility="collapsed")
         with c3:
-            mv = st.number_input("", min_value=1, max_value=20,
-                value=admin_defaults["medium_visits"], key=f"mv_{cat}", label_visibility="collapsed")
+            mv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
+                value=float(admin_defaults.get("medium_visits",2)), key=f"mv_{cat}", label_visibility="collapsed")
         with c4:
             md = st.number_input("", min_value=5, max_value=120,
-                value=admin_defaults["medium_duration"], key=f"md_{cat}", label_visibility="collapsed")
+                value=admin_defaults.get("medium_duration",25), key=f"md_{cat}", label_visibility="collapsed")
         with c5:
-            sv = st.number_input("", min_value=1, max_value=20,
-                value=admin_defaults["small_visits"], key=f"sv_{cat}", label_visibility="collapsed")
+            sv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
+                value=float(admin_defaults.get("small_visits",1)), key=f"sv_{cat}", label_visibility="collapsed")
         with c6:
             sd = st.number_input("", min_value=5, max_value=120,
-                value=admin_defaults["small_duration"], key=f"sd_{cat}", label_visibility="collapsed")
+                value=admin_defaults.get("small_duration",15), key=f"sd_{cat}", label_visibility="collapsed")
         visit_benchmarks[cat] = {
-            "large_visits": int(lv), "large_duration": int(ld),
-            "medium_visits": int(mv), "medium_duration": int(md),
-            "small_visits": int(sv), "small_duration": int(sd),
+            "large_visits": lv, "large_duration": int(ld),
+            "medium_visits": mv, "medium_duration": int(md),
+            "small_visits": sv, "small_duration": int(sd),
         }
+        _all_min_freq.append(min(lv, mv, sv))
+
+    # Calculate and display plan period from minimum frequency
+    if _all_min_freq:
+        min_freq    = min(_all_min_freq)
+        plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
+        import datetime as _dt2
+        plan_months_preview = []
+        for i in range(plan_period):
+            mo = (route_month1 - 1 + i) % 12 + 1
+            yr = int(route_year) + ((route_month1 - 1 + i) // 12)
+            plan_months_preview.append(_dt2.date(yr, mo, 1).strftime("%B %Y"))
+        st.info(
+            f"📅 **Plan period: {plan_period} month{'s' if plan_period > 1 else ''}** "
+            f"({' + '.join(plan_months_preview)}) — "
+            f"driven by minimum frequency {min_freq}/month (Small tier)"
+        )
 else:
     st.info("Select scraping categories first (Step 6).")
     visit_benchmarks = {}
@@ -793,8 +799,7 @@ else:
         st.session_state["market_config"] = {
             "market_name":             market_name,
             "country":                 st.session_state["country_name"],
-            "route_year":              int(route_year),
-            "route_month1":            int(route_month1),
+            
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
             "city":                    final_scope,
@@ -812,6 +817,7 @@ else:
             "market_api_key":          market_api_key,
             "detected_from_portfolio": detected_categories,
             "visit_benchmarks":          visit_benchmarks,
+            "plan_period":             max(1, round(1/min(min(v.get("large_visits",4), v.get("medium_visits",2), v.get("small_visits",1)) for v in visit_benchmarks.values())) if visit_benchmarks else 1),
             "size_percentiles":           admin_defaults,
             "weights": {
                 "rating":     w_rating    / 100,
