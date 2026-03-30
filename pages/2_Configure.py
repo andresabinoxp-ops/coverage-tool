@@ -175,8 +175,23 @@ google_categories  = []
 
 if uploaded:
     try:
-        df = pd.read_csv(uploaded)
+        df = None
+        for _enc in ["utf-8","utf-8-sig","latin-1","cp1252","cp1256","iso-8859-1"]:
+            try:
+                uploaded.seek(0)
+                df = pd.read_csv(uploaded, encoding=_enc)
+                break
+            except (UnicodeDecodeError, Exception):
+                continue
+        if df is None:
+            st.error("Could not read the file — please save as UTF-8 CSV.")
+            st.stop()
         df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
+        # Drop blank rows
+        df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
+        df = df[df["store_name"].fillna("").str.strip() != ""].reset_index(drop=True)
+        if "lat" not in df.columns: df["lat"] = None
+        if "lng" not in df.columns: df["lng"] = None
         missing = [c for c in ["store_name","address","city"] if c not in df.columns]
         if missing:
             st.error(f"Missing required columns: {missing}")
