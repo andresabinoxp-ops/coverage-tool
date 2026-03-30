@@ -1535,6 +1535,31 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         for p in portfolio: p["coverage_status"] = "covered"
 
+        # ── Enrich portfolio stores with Google data from matched scraped store ─
+        # Portfolio stores start with rating=0, review_count=0 — copy Google data
+        # from the best matching scraped store (closest within fuzzy_radius)
+        GOOGLE_FIELDS = ["rating","review_count","price_level","place_id",
+                         "phone","opening_hours","website","business_status"]
+        for p in portfolio:
+            if not (p.get("lat") and p.get("lng")): continue
+            best_dist  = float("inf")
+            best_match = None
+            for u in universe:
+                if not (u.get("lat") and u.get("lng")): continue
+                dist = haversine_m(p["lat"],p["lng"],u["lat"],u["lng"])
+                if dist < best_dist and dist <= fuzzy_radius:
+                    best_dist  = dist
+                    best_match = u
+            if best_match:
+                for field in GOOGLE_FIELDS:
+                    if best_match.get(field) and not p.get(field):
+                        p[field] = best_match[field]
+                # Always update rating and review_count from Google (they start at 0)
+                if best_match.get("rating"):
+                    p["rating"]       = best_match["rating"]
+                if best_match.get("review_count"):
+                    p["review_count"] = best_match["review_count"]
+
         # ── Fix suspect portfolio stores using scraped universe ───────────────
         # For portfolio stores still flagged as suspect, try name-match against
         # scraped universe to borrow the correct Google coordinates
