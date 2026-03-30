@@ -497,6 +497,29 @@ def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percent
     return tier, visits, duration
 
 
+def clean_store_name(name):
+    """Clean store name — fix encoding issues, filter pure Arabic, remove junk.
+    Returns empty string for pure Arabic names (no Latin chars) so they are skipped.
+    Handles mojibake (double-encoded UTF-8 appearing as Latin-1 garbage like Ù…Ø±ÙƒØ²)."""
+    import re
+    if not name: return ""
+    # Fix mojibake: try to recover double-encoded UTF-8
+    # e.g. Ù…Ø±ÙƒØ² is Arabic text encoded as Latin-1 instead of UTF-8
+    try:
+        fixed = name.encode("latin-1").decode("utf-8")
+        name = fixed
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass  # already correct encoding
+    # Remove junk symbols
+    name = re.sub(r'[|*#@~`^\\]+', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    # Skip pure Arabic names (no Latin characters at all)
+    # These are either untransliterated local names or still-garbled encoding
+    has_latin = any(c.isascii() and c.isalpha() for c in name)
+    if not has_latin and name:
+        return ""  # caller will skip empty names
+    return name
+
 def build_category_percentiles(stores):
     """Build a dict of category -> sorted list of scores for percentile ranking."""
     cat_scores = {}
@@ -1352,6 +1375,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         timeout=10
                     )
                     data = r.json()
+                    fixed_google_data = {}
                     if data.get("status") == "OK" and data.get("results"):
                         for res in data["results"]:
                             loc = res.get("geometry",{}).get("location",{})
@@ -1359,23 +1383,50 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             if rlat and rlng:
                                 if (bbox_lat_min - lat_buf <= rlat <= bbox_lat_max + lat_buf and
                                     bbox_lng_min - lng_buf <= rlng <= bbox_lng_max + lng_buf):
-                                    fixed_lat = round(rlat, 6)
-                                    fixed_lng = round(rlng, 6)
+                                    fixed_lat  = round(rlat, 6)
+                                    fixed_lng  = round(rlng, 6)
+                                    # Capture Google data from the same result
+                                    fixed_google_data = {
+                                        "place_id":     res.get("place_id",""),
+                                        "rating":       float(res.get("rating",0) or 0),
+                                        "review_count": int(res.get("user_ratings_total",0) or 0),
+                                        "price_level":  int(res.get("price_level",0) or 0),
+                                    }
                                     break
                     time.sleep(0.1)
                 except Exception:
                     pass
                 if fixed_lat and fixed_lng:
-                    s["lat"] = fixed_lat
-                    s["lng"] = fixed_lng
-                    s["geocode_suspect"]  = False
-                    s["geocode_fixed"]    = True
-                    s["original_lat"]     = bad_lat
-                    s["original_lng"]     = bad_lng
+                    # Check if another portfolio store already has these exact coordinates
+                    # to avoid multiple stores being assigned the same location
+                    already_used = any(
+                        abs(p2.get("lat",0) - fixed_lat) < 0.0001 and
+                        abs(p2.get("lng",0) - fixed_lng) < 0.0001
+                        for p2 in portfolio if p2 is not s and p2.get("lat") and p2.get("lng")
+                    )
+                    if not already_used:
+                        s["lat"] = fixed_lat
+                        s["lng"] = fixed_lng
+                        s["geocode_suspect"]  = False
+                        s["geocode_fixed"]    = True
+                        s["original_lat"]     = bad_lat
+                        s["original_lng"]     = bad_lng
+                        # Apply Google data captured from text search
+                        for k, v in fixed_google_data.items():
+                            if v: s[k] = v
+                    else:
+                        # Duplicate coords — keep original and flag for manual fix
+                        s["geocode_suspect"] = True
+                        s["original_lat"]    = bad_lat
+                        s["original_lng"]    = bad_lng
                 else:
+                    # Could not fix — null out bad coordinates so they don't
+                    # cause false coverage matches or wrong map positions
                     s["geocode_suspect"]  = True
                     s["original_lat"]     = bad_lat
                     s["original_lng"]     = bad_lng
+                    s["lat"]              = None
+                    s["lng"]              = None
                 st.session_state["_geocode_suspect_stores"].append(s)
 
         bar.progress(15)
@@ -1415,9 +1466,12 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         else:
                             store_city    = cfg.get("city","")
                             store_address = ""
+                        cleaned_name = clean_store_name(place.get("name",""))
+                        if not cleaned_name:
+                            continue  # skip pure Arabic / garbled names
                         universe.append({
                             "store_id":pid,"place_id":pid,
-                            "store_name":place.get("name",""),
+                            "store_name":cleaned_name,
                             "address":store_address,"city":store_city,
                             "region":cfg.get("city",""),  # configured market area = region
                             "lat":loc.get("lat"),"lng":loc.get("lng"),
@@ -1578,20 +1632,38 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         GOOGLE_FIELDS = ["rating","review_count","price_level","place_id",
                          "phone","opening_hours","website","business_status"]
         for p in portfolio:
-            if not (p.get("lat") and p.get("lng")): continue
-            best_dist  = float("inf")
             best_match = None
-            for u in universe:
-                if not (u.get("lat") and u.get("lng")): continue
-                dist = haversine_m(p["lat"],p["lng"],u["lat"],u["lng"])
-                if dist < best_dist and dist <= 250:  # 250m search radius for Google data enrichment
-                    best_dist  = dist
-                    best_match = u
+
+            # Try distance-based match first (if coordinates are valid)
+            if p.get("lat") and p.get("lng"):
+                best_dist = float("inf")
+                for u in universe:
+                    if not (u.get("lat") and u.get("lng")): continue
+                    dist = haversine_m(p["lat"],p["lng"],u["lat"],u["lng"])
+                    if dist < best_dist and dist <= 250:
+                        best_dist  = dist
+                        best_match = u
+
+            # Fallback: name similarity match if no distance match found
+            if not best_match:
+                best_sim = 0.0
+                p_name   = str(p.get("store_name","")).lower().strip()
+                for u in universe:
+                    u_name = str(u.get("store_name","")).lower().strip()
+                    if not p_name or not u_name: continue
+                    # Simple token overlap
+                    p_tokens = set(p_name.split())
+                    u_tokens = set(u_name.split())
+                    if not p_tokens or not u_tokens: continue
+                    sim = len(p_tokens & u_tokens) / max(len(p_tokens | u_tokens), 1)
+                    if sim > best_sim and sim >= 0.5:
+                        best_sim   = sim
+                        best_match = u
+
             if best_match:
                 for field in GOOGLE_FIELDS:
                     if best_match.get(field) and not p.get(field):
                         p[field] = best_match[field]
-                # Always update rating and review_count from Google (they start at 0)
                 if best_match.get("rating"):
                     p["rating"]       = best_match["rating"]
                 if best_match.get("review_count"):
@@ -1622,8 +1694,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     p["geocode_fixed"]   = True
                     coord_fixes         += 1
                 else:
-                    # Keep original suspect coords — at least they appear in output
+                    # Could not fix via name match either — keep coords null
+                    # Store will appear in output without map position
                     p["geocode_fixed"]   = False
+                    p["lat"]             = None
+                    p["lng"]             = None
             if coord_fixes:
                 st.success(f"✅ Fixed coordinates for {coord_fixes} store(s) using scraped data match.")
 
