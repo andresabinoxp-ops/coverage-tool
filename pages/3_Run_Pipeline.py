@@ -1578,7 +1578,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             for u in universe:
                 if not (u.get("lat") and u.get("lng")): continue
                 dist = haversine_m(p["lat"],p["lng"],u["lat"],u["lng"])
-                if dist < best_dist and dist <= fuzzy_radius:
+                if dist < best_dist and dist <= 250:  # 250m search radius for Google data enrichment
                     best_dist  = dist
                     best_match = u
             if best_match:
