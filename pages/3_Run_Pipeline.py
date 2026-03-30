@@ -1370,10 +1370,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
             def try_regeocde(store, api_key, mkt_lat, mkt_lng, bbox_lat_min, bbox_lat_max, bbox_lng_min, bbox_lng_max, lat_buf, lng_buf):
                 """Try multiple strategies to re-geocode a suspect store. Returns (lat, lng, google_data) or (None, None, {})."""
-                name    = store.get("store_name","").strip()
-                city    = (store.get("city","") or store.get("address","") or "").strip()
-                district= (store.get("district","") or "").strip()
-                region  = (store.get("region","") or "").strip()
+                def _s(v): return str(v).strip() if v and str(v) not in ("nan","None","") else ""
+                name    = _s(store.get("store_name",""))
+                city    = _s(store.get("city","")) or _s(store.get("address",""))
+                district= _s(store.get("district",""))
+                region  = _s(store.get("region",""))
 
                 # Build query variants from most to least specific
                 # ALWAYS include country to prevent geocoding to wrong country
@@ -1491,7 +1492,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         loc = place.get("geometry",{}).get("location",{})
                         # Extract city from vicinity — Google returns "street, city"
                         # vicinity = full address string, last comma-part is usually the city/area
-                        vicinity  = place.get("vicinity","")
+                        vicinity  = str(place.get("vicinity","") or "")
                         vparts    = [p.strip() for p in vicinity.split(",") if p.strip()]
                         # Use last part of vicinity as city if it looks like a place name
                         # Fall back to configured market city only if vicinity has 1 part or is empty
