@@ -1334,33 +1334,22 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         status.info(msg)
 
         if suspect_stores:
-            status.info(f"Stage 1/{total_steps} — Attempting to re-geocode {len(suspect_stores)} suspect stores using market area search...")
-
-            # Market centre for re-geocoding
+            status.info(f"Stage 1/{total_steps} — Re-geocoding {len(suspect_stores)} suspect stores near market centre...")
             mkt_lat = (bbox_lat_min + bbox_lat_max) / 2
             mkt_lng = (bbox_lng_min + bbox_lng_max) / 2
-
-            suspect_rows = []
+            # Store rows for final report — shown after Stage 4 when we know final status
+            st.session_state["_geocode_suspect_stores"] = []
             for s in suspect_stores:
                 bad_lat = round(s["lat"], 5)
                 bad_lng = round(s["lng"], 5)
-
-                # Try to find the store via Google Places text search near market centre
                 fixed_lat, fixed_lng = None, None
                 try:
-                    search_name = s.get("store_name","")
-                    city_hint   = s.get("city","") or s.get("address","")
-                    query       = f"{search_name} {city_hint}".strip()
+                    query = f"{s.get('store_name','')} {s.get('city','') or s.get('address','')}".strip()
                     r = requests.get(
                         "https://maps.googleapis.com/maps/api/place/textsearch/json",
-                        params={
-                            "query":    query,
-                            "location": f"{mkt_lat},{mkt_lng}",
-                            "radius":   max(50000, haversine_m(
-                                bbox_lat_min, bbox_lng_min,
-                                bbox_lat_max, bbox_lng_max) / 2),
-                            "key": api_key
-                        },
+                        params={"query": query, "location": f"{mkt_lat},{mkt_lng}",
+                                "radius": max(50000, haversine_m(bbox_lat_min,bbox_lng_min,bbox_lat_max,bbox_lng_max)/2),
+                                "key": api_key},
                         timeout=10
                     )
                     data = r.json()
@@ -1369,7 +1358,6 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             loc = res.get("geometry",{}).get("location",{})
                             rlat, rlng = loc.get("lat"), loc.get("lng")
                             if rlat and rlng:
-                                # Check result is inside market bounding box
                                 if (bbox_lat_min - lat_buf <= rlat <= bbox_lat_max + lat_buf and
                                     bbox_lng_min - lng_buf <= rlng <= bbox_lng_max + lng_buf):
                                     fixed_lat = round(rlat, 6)
@@ -1378,49 +1366,18 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     time.sleep(0.1)
                 except Exception:
                     pass
-
                 if fixed_lat and fixed_lng:
                     s["lat"] = fixed_lat
                     s["lng"] = fixed_lng
-                    s["geocode_suspect"] = False
-                    suspect_rows.append({
-                        "Store":          s.get("store_name",""),
-                        "Address":        s.get("address",""),
-                        "City":           s.get("city",""),
-                        "Bad coords":     f"{bad_lat}, {bad_lng}",
-                        "Fixed coords":   f"{fixed_lat}, {fixed_lng}",
-                        "Status":         "✅ Auto-corrected",
-                    })
+                    s["geocode_suspect"]  = False
+                    s["geocode_fixed"]    = True
+                    s["original_lat"]     = bad_lat
+                    s["original_lng"]     = bad_lng
                 else:
-                    # Could not fix — null out so it doesn't cause false matches
-                    s["lat"] = None
-                    s["lng"] = None
-                    suspect_rows.append({
-                        "Store":          s.get("store_name",""),
-                        "Address":        s.get("address",""),
-                        "City":           s.get("city",""),
-                        "Bad coords":     f"{bad_lat}, {bad_lng}",
-                        "Fixed coords":   "—",
-                        "Status":         "❌ Could not fix — add lat/lng manually to your CSV",
-                    })
-
-            fixed_count   = sum(1 for r in suspect_rows if "✅" in r["Status"])
-            unfixed_count = len(suspect_rows) - fixed_count
-
-            if fixed_count:
-                st.success(f"✅ Auto-corrected {fixed_count} store(s) with wrong geocoding.")
-            if unfixed_count:
-                st.warning(
-                    f"⚠️ {unfixed_count} store(s) could not be auto-corrected. "
-                    f"Add the correct lat/lng columns to your portfolio CSV and re-run."
-                )
-
-            st.markdown("**Geocoding correction report:**")
-            st.dataframe(pd.DataFrame(suspect_rows), use_container_width=True, hide_index=True)
-            st.caption(
-                "For stores marked ❌: open Google Maps, find the store, right-click the pin → 'What's here?' "
-                "to get the correct coordinates. Add lat and lng columns to your portfolio CSV."
-            )
+                    s["geocode_suspect"]  = True
+                    s["original_lat"]     = bad_lat
+                    s["original_lng"]     = bad_lng
+                st.session_state["_geocode_suspect_stores"].append(s)
 
         bar.progress(15)
 
@@ -1578,14 +1535,89 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         for p in portfolio: p["coverage_status"] = "covered"
 
+        # ── Fix suspect portfolio stores using scraped universe ───────────────
+        # For portfolio stores still flagged as suspect, try name-match against
+        # scraped universe to borrow the correct Google coordinates
+        still_suspect = [s for s in portfolio if s.get("geocode_suspect")]
+        if still_suspect:
+            status.info(f"Stage 4/{total_steps} — Attempting coordinate fix for {len(still_suspect)} suspect stores using scraped data...")
+            coord_fixes = 0
+            for p in still_suspect:
+                best_sim  = 0
+                best_match = None
+                for u in universe:
+                    if not (u.get("lat") and u.get("lng")): continue
+                    sim = name_similarity(p.get("store_name",""), u.get("store_name",""))
+                    if sim > best_sim and sim >= 0.5:  # 50% name similarity minimum
+                        best_sim   = sim
+                        best_match = u
+                if best_match:
+                    p["original_lat"]    = p.get("original_lat", round(p.get("lat",0),5))
+                    p["original_lng"]    = p.get("original_lng", round(p.get("lng",0),5))
+                    p["lat"]             = best_match["lat"]
+                    p["lng"]             = best_match["lng"]
+                    p["geocode_suspect"] = False
+                    p["geocode_fixed"]   = True
+                    coord_fixes         += 1
+                else:
+                    # Keep original suspect coords — at least they appear in output
+                    p["geocode_fixed"]   = False
+            if coord_fixes:
+                st.success(f"✅ Fixed coordinates for {coord_fixes} store(s) using scraped data match.")
+
         # Log matching summary
         n_covered = sum(1 for u in universe if u.get("covered"))
         n_gap     = sum(1 for u in universe if not u.get("covered"))
-        status.info(
+        # Count portfolio stores with coord fixes for user info
+        n_fixed   = sum(1 for p in portfolio if p.get("geocode_fixed"))
+        n_suspect = sum(1 for p in portfolio if p.get("geocode_suspect"))
+        msg = (
             f"Stage 4/{total_steps} — Coverage matching complete: "
             f"{n_covered} covered · {n_gap} gaps "
             f"(base radius: {base_radius}m · fuzzy: {fuzzy_radius}m @ {int(fuzzy_thresh*100)}%)"
         )
+        if n_fixed:   msg += f" · ✅ {n_fixed} coords auto-fixed"
+        if n_suspect: msg += f" · ⚠️ {n_suspect} coords still suspect"
+        status.info(msg)
+
+        # Show consolidated geocoding correction report now that Stage 4 fixes are done
+        all_suspect = st.session_state.get("_geocode_suspect_stores", [])
+        if all_suspect:
+            report_rows = []
+            for s in all_suspect:
+                if s.get("geocode_fixed"):
+                    status_str = "✅ Fixed automatically"
+                elif not s.get("geocode_suspect"):
+                    status_str = "✅ Fixed automatically"
+                else:
+                    status_str = "⚠️ Could not fix — see note below"
+                report_rows.append({
+                    "Store":            s.get("store_name",""),
+                    "Address":          s.get("address",""),
+                    "City":             s.get("city",""),
+                    "Original lat/lng": f"{s.get('original_lat','')} , {s.get('original_lng','')}",
+                    "Corrected lat/lng": f"{round(s.get('lat',0),5)} , {round(s.get('lng',0),5)}" if s.get("lat") else "—",
+                    "Status":           status_str,
+                })
+            unfixed = [r for r in report_rows if "Could not fix" in r["Status"]]
+            fixed   = [r for r in report_rows if "Fixed" in r["Status"]]
+            if fixed:
+                st.success(f"✅ {len(fixed)} store(s) had incorrect geocoding and were automatically corrected.")
+            if unfixed:
+                st.warning(
+                    f"⚠️ {len(unfixed)} store(s) could not be corrected automatically. "
+                    f"To fix: add correct **lat** and **lng** columns to your portfolio CSV. "
+                    f"Open Google Maps → find the store → right-click the pin → 'What's here?' to get coordinates."
+                )
+            with st.expander(f"📍 Geocoding correction report ({len(report_rows)} stores)", expanded=bool(unfixed)):
+                st.dataframe(pd.DataFrame(report_rows), use_container_width=True, hide_index=True)
+                st.caption(
+                    "Original lat/lng = coordinates from geocoding (wrong location). "
+                    "Corrected lat/lng = fixed coordinates used in this run. "
+                    "These corrections are also saved in the output CSV columns original_lat / original_lng / geocode_fixed."
+                )
+            st.session_state.pop("_geocode_suspect_stores", None)
+
         bar.progress(65)
 
         # Stage 5: Size tier + visit frequency assignment
