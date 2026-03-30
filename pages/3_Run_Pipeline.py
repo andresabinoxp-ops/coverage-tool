@@ -1170,69 +1170,75 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 "zone_centres":        [],
             }
 
-        # Build 2-month route plan for dry run
-        dry_year   = cfg.get("route_year",   datetime.date.today().year)
-        dry_month1 = cfg.get("route_month1", datetime.date.today().month)
-        dry_month2 = dry_month1 % 12 + 1
-        dry_year2  = dry_year + (1 if dry_month2 == 1 else 0)
+        # Dry run — abstract plan period from frequencies
+        all_freqs_d   = [s.get("visits_per_month",1) for s in all_stores if s.get("visits_per_month",0)>0]
+        min_freq_d    = min(all_freqs_d) if all_freqs_d else 1
+        plan_period_d = max(1, round(1/min_freq_d)) if min_freq_d < 1 else 1
+        plan_keys_d   = [f"m{i+1}" for i in range(plan_period_d)]
+        plan_labels_d = [f"Month {i+1}" for i in range(plan_period_d)]
+
         dry_city_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
         dry_city_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
         dry_rep_ids  = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
         dry_speed    = cfg.get("avg_speed_kmh", 30)
         dry_daily    = cfg.get("daily_minutes", 480)
-        m1_key  = datetime.date(dry_year,  dry_month1, 1).strftime("%b").lower()
-        m2_key  = datetime.date(dry_year2, dry_month2, 1).strftime("%b").lower()
-        m1_name = datetime.date(dry_year,  dry_month1, 1).strftime("%B %Y")
-        m2_name = datetime.date(dry_year2, dry_month2, 1).strftime("%B %Y")
 
         for rep_id in dry_rep_ids:
             try:
                 rep_s = [s for s in all_stores if s.get("rep_id")==rep_id
                          and s.get("size_tier") in ("Large","Medium","Small")]
                 if rep_s:
-                    build_daily_routes(rep_s, dry_year, dry_month1, dry_daily, dry_speed, dry_city_lat, dry_city_lng)
+                    build_daily_routes(rep_s, daily_minutes=dry_daily, avg_speed_kmh=dry_speed,
+                                       city_lat=dry_city_lat, city_lng=dry_city_lng)
             except Exception:
                 for i, s in enumerate([s for s in all_stores if s.get("rep_id")==rep_id]):
                     s["assigned_day"]    = WEEKDAYS[i % 5]
                     s["day_visit_order"] = (i // 5) + 1
 
-        m1_days = get_month_weekdays(dry_year,  dry_month1)
-        m2_days = get_month_weekdays(dry_year2, dry_month2)
+        WEEK_LABELS_DRY = ["Week 1","Week 2","Week 3","Week 4"]
+        def _pick_weeks_d(vpm):
+            if vpm >= 4: return WEEK_LABELS_DRY
+            if vpm >= 2: return [WEEK_LABELS_DRY[0], WEEK_LABELS_DRY[2]]
+            if vpm >= 1: return [WEEK_LABELS_DRY[1]]
+            return []
 
-        def _pick(occ, vpm):
-            if not occ: return []
-            if vpm >= len(occ): return occ
-            if vpm >= 2: return occ[0:1] + (occ[2:3] if len(occ)>2 else occ[-1:])
-            return [occ[len(occ)//2]]
+        for s in all_stores:
+            for mk in plan_keys_d:
+                s[f"{mk}_weeks"]  = []
+                s[f"{mk}_visits"] = 0
+            s["plan_visits"] = 0
 
         for s in all_stores:
             if not s.get("assigned_day"):
-                s[m1_key+"_dates"]=[]; s[m1_key+"_visits"]=0
-                s[m2_key+"_dates"]=[]; s[m2_key+"_visits"]=0
-                s["plan_visits"]=0; continue
-            day = s["assigned_day"]; vpm = s.get("visits_per_month", 1)
-            occ1 = m1_days.get(day,[]); occ2 = m2_days.get(day,[])
-            if s.get("size_tier") == "Occasional":
-                if s.get("day_visit_order",1) % 2 == 1:
-                    m1d = [occ1[len(occ1)//2]] if occ1 else []; m2d = []
-                else:
-                    m1d = []; m2d = [occ2[len(occ2)//2]] if occ2 else []
+                s["plan_visits"] = 0; continue
+            day = s["assigned_day"]; vpm = s.get("visits_per_month",1)
+            if vpm >= 1:
+                weeks = _pick_weeks_d(vpm)
+                for mk in plan_keys_d:
+                    s[f"{mk}_weeks"]  = [f"{w} - {day}" for w in weeks]
+                    s[f"{mk}_visits"] = len(weeks)
+                    s["plan_visits"] += len(weeks)
             else:
-                m1d = _pick(occ1, vpm); m2d = _pick(occ2, vpm)
-            s[m1_key+"_dates"]  = [d.strftime("%b %d") for d in m1d]
-            s[m1_key+"_visits"] = len(m1d)
-            s[m2_key+"_dates"]  = [d.strftime("%b %d") for d in m2d]
-            s[m2_key+"_visits"] = len(m2d)
-            s["plan_visits"]    = len(m1d) + len(m2d)
+                total_v = max(1, round(vpm * plan_period_d))
+                order   = s.get("day_visit_order",1); vc = 0
+                for i, mk in enumerate(plan_keys_d):
+                    if vc >= total_v: break
+                    if (order+i) % plan_period_d == 0 or (i==len(plan_keys_d)-1 and vc==0):
+                        s[f"{mk}_weeks"]  = [f"Week 2 - {day}"]
+                        s[f"{mk}_visits"] = 1
+                        s["plan_visits"] += 1; vc += 1
 
         for s in all_stores:
             if "assigned_day" not in s:
                 s["assigned_day"]=""; s["day_visit_order"]=0; s["plan_visits"]=0
-                s[m1_key+"_dates"]=[]; s[m1_key+"_visits"]=0
-                s[m2_key+"_dates"]=[]; s[m2_key+"_visits"]=0
+                for mk in plan_keys_d:
+                    s[f"{mk}_weeks"]=[]; s[f"{mk}_visits"]=0
 
         st.session_state["route_plan_months"] = {
-            "month1":m1_name,"month2":m2_name,"m1_key":m1_key,"m2_key":m2_key}
+            "plan_period":  plan_period_d,
+            "month_keys":   plan_keys_d,
+            "month_labels": plan_labels_d,
+        }
 
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
@@ -1630,7 +1636,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         msg = (
             f"Stage 4/{total_steps} — Coverage matching complete: "
             f"{n_covered} covered · {n_gap} gaps "
-            f"(base radius: {base_radius}m · fuzzy: {fuzzy_radius}m @ {int(fuzzy_thresh*100)}%)"
+            f"(size-aware radius matching · name similarity ≥ {int(NAME_SIM_THRESH*100)}%)"
         )
         if n_fixed:   msg += f" · ✅ {n_fixed} coords auto-fixed"
         if n_suspect: msg += f" · ⚠️ {n_suspect} coords still suspect"
