@@ -185,20 +185,31 @@ def calculate_estimate(enrich_count, enrich_scope):
     n_categories  = len(cfg["categories"])
     n_portfolio   = get_portfolio_count()
 
+    # Calibrate estimates based on area density
+    # Large radius = sparse/rural area — fewer pages per tile, fewer stores per tile
+    if radius_m >= 20000:
+        avg_pages           = 1.2   # rural — most tiles return only 1 page
+        stores_per_tile     = 8     # sparse
+    elif radius_m >= 8000:
+        avg_pages           = 1.5   # suburban
+        stores_per_tile     = 12
+    else:
+        avg_pages           = 1.8   # dense city
+        stores_per_tile     = 18
+
     # Scraping
-    avg_pages         = 1.8
     scrape_calls      = round(n_tiles * n_categories * avg_pages)
     scrape_cost       = scrape_calls * PRICE_NEARBY_PER_CALL
-    scrape_time       = scrape_calls * 0.35 + n_tiles * n_categories * (avg_pages-1) * 2
+    scrape_time       = scrape_calls * 0.25 + n_tiles * n_categories * (avg_pages-1) * 2
 
     # Geocoding
     geocode_calls     = n_portfolio  # estimate — actual count may be lower if stores have existing coordinates
     geocode_cost      = geocode_calls * PRICE_GEOCODE_PER_CALL
-    geocode_time      = geocode_calls * 0.15
+    geocode_time      = geocode_calls * 0.1
 
     # Enrichment
     # Estimate universe size for scope
-    estimated_universe = n_tiles * n_categories * 15  # ~15 stores per tile average
+    estimated_universe = n_tiles * n_categories * stores_per_tile
     if enrich_scope == "none":
         enrich_calls, enrich_cost = 0, 0.0
     elif enrich_scope == "top_n":
