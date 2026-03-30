@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import datetime
 
-st.set_page_config(page_title="Results - Coverage Tool", page_icon="ðŸ“Š", layout="wide")
+st.set_page_config(page_title="Results - Coverage Tool", page_icon="📊", layout="wide")
 
 st.markdown("""
 <style>
@@ -37,7 +37,7 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 
 st.markdown("""
 <div class="page-header">
-    <h2>ðŸ“Š Results</h2>
+    <h2>📊 Results</h2>
     <p>Scored store universe, coverage analysis and rep planning</p>
 </div>
 """, unsafe_allow_html=True)
@@ -54,7 +54,7 @@ cfg        = st.session_state.get("market_config", {})
 
 st.markdown(f"**Market:** {market}")
 
-# â”€â”€ KEY METRICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── KEY METRICS ───────────────────────────────────────────────────────────────
 st.markdown('<div class="section-title">Market overview</div>', unsafe_allow_html=True)
 
 total_universe  = len(all_stores)
@@ -85,21 +85,21 @@ for col, val, label, color in [
 
 st.markdown("")
 
-# â”€â”€ GEOCODING SUMMARY (if available) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── GEOCODING SUMMARY (if available) ─────────────────────────────────────────
 geo_summary = res.get("geocode_summary")
 if geo_summary:
     ok  = geo_summary.get("ok", 0)
     fail= geo_summary.get("failed", 0)
     if fail > 0:
         st.warning(
-            f"ðŸ“ Geocoding: {ok} stores located successfully Â· "
-            f"{fail} stores failed (no lat/lng) â€” these are treated as gaps since their location could not be confirmed. "
+            f"📍 Geocoding: {ok} stores located successfully · "
+            f"{fail} stores failed (no lat/lng) — these are treated as gaps since their location could not be confirmed. "
             "Check addresses in your portfolio CSV."
         )
     else:
-        st.success(f"ðŸ“ Geocoding: all {ok} portfolio stores located successfully.")
+        st.success(f"📍 Geocoding: all {ok} portfolio stores located successfully.")
 
-# â”€â”€ SIZE DISTRIBUTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── SIZE DISTRIBUTION ─────────────────────────────────────────────────────────
 st.markdown('<div class="section-title">Store size distribution</div>', unsafe_allow_html=True)
 
 size_colors = {"Large":"#2E7D32","Medium":"#1565C0","Small":"#F57F17"}
@@ -117,13 +117,13 @@ for i, tier in enumerate(["Large","Medium","Small"]):
         <div style="font-size:1.6rem;font-weight:800;color:#1A2B4A">{cnt:,}</div>
         <div style="font-size:0.78rem;color:#6B7280;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">{tier}</div>
         <div style="font-size:0.75rem;color:#9E9E9E;margin-top:4px">
-            {covered} covered Â· {gaps_t} gaps Â· {vpm:.0f} visits/mo
+            {covered} covered · {gaps_t} gaps · {vpm:.0f} visits/mo
         </div>
     </div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 
-# â”€â”€ REP PLANNING PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── REP PLANNING PANEL ────────────────────────────────────────────────────────
 rep_rec = res.get("rep_recommendation")
 if rep_rec:
     st.markdown('<div class="section-title">Rep planning</div>', unsafe_allow_html=True)
@@ -151,9 +151,9 @@ if rep_rec:
     else:
         m1.metric("Fixed reps", rec_reps)
     m2.metric("Time needed / month", f"{total_mins:,.0f} min",
-        help="visits_per_month Ã— duration per store â€” monthly estimate used for rep count.")
+        help="visits_per_month × duration per store — monthly estimate used for rep count.")
     m3.metric("Rep capacity / month", f"{monthly_cap:,} min",
-        help=f"{daily_mins} min/day (incl. {break_mins} min break) Ã— {work_days} days")
+        help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days")
     if cur_reps > 0:
         m4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
@@ -163,7 +163,7 @@ if rep_rec:
             help="Enter current rep count in Configure to see comparison.")
 
     # Calculate actual utilisation from plan_visits (what was actually routed)
-    # This is the true utilisation â€” not the pre-route estimate
+    # This is the true utilisation — not the pre-route estimate
     actual_plan_time = sum(
         s.get("plan_visits",0) * s.get("visit_duration_min",25)
         for s in all_stores if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0
@@ -174,29 +174,29 @@ if rep_rec:
     if total_capacity > 0 and actual_monthly > 0 and rec_reps > 0:
         util = round(actual_monthly / total_capacity * 100)
         st.caption(
-            f"Average utilisation per rep: {util}% Â· "
-            f"{daily_mins} min/day total Â· {break_mins} min break Â· "
-            f"{work_days} working days/month Â· {speed} km/h avg travel speed"
+            f"Average utilisation per rep: {util}% · "
+            f"{daily_mins} min/day total · {break_mins} min break · "
+            f"{work_days} working days/month · {speed} km/h avg travel speed"
         )
 
-    # Shortfall / surplus message â€” based on actual routed time
+    # Shortfall / surplus message — based on actual routed time
     if cur_reps > 0 and actual_monthly > 0:
         time_per_cur_rep = actual_monthly / max(cur_reps, 1)
         util_cur = round(time_per_cur_rep / max(monthly_cap,1) * 100)
         if shortfall > 0:
             st.error(
-                f"âš ï¸ {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
+                f"⚠️ {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
                 f"With {cur_reps} reps, each would need "
-                f"{time_per_cur_rep:,.0f} min/month ({util_cur}% utilisation) â€” over capacity."
+                f"{time_per_cur_rep:,.0f} min/month ({util_cur}% utilisation) — over capacity."
             )
         elif shortfall < 0:
             st.success(
-                f"âœ… {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
+                f"✅ {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
                 f"Your {cur_reps} reps handle this market at "
                 f"{time_per_cur_rep:,.0f} min/month each ({util_cur}% utilisation)."
             )
 
-    # â”€â”€ Rep workload table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Rep workload table ────────────────────────────────────────────────────
     # Get plan period from session state
     _plan_meta  = st.session_state.get("route_plan_months", {})
     _plan_pp    = _plan_meta.get("plan_period", 2)
@@ -231,8 +231,8 @@ if rep_rec:
     if rep_rows:
         rdf      = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
         plan_cap = monthly_cap * _plan_pp
-        t_col    = f"Time needed â€” {_plan_pp}mo (min)"
-        c_col    = f"Capacity â€” {_plan_pp}mo (min)"
+        t_col    = f"Time needed — {_plan_pp}mo (min)"
+        c_col    = f"Capacity — {_plan_pp}mo (min)"
         rdf[t_col]          = rdf["Time needed (min)"].round(0).astype(int)
         rdf[c_col]          = plan_cap
         rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap,1) * 100).round(0).astype(int)
@@ -260,10 +260,10 @@ if rep_rec:
                     "Utilisation %", min_value=0, max_value=100, format="%d%%"),
             })
 
-# â”€â”€ GAP OPPORTUNITIES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── GAP OPPORTUNITIES ─────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">Top gap opportunities</div>', unsafe_allow_html=True)
-st.caption("Uncovered stores ranked by score â€” these are candidate new distribution points.")
+st.caption("Uncovered stores ranked by score — these are candidate new distribution points.")
 
 high_gaps = [s for s in gap_stores if s.get("score", 0) >= 40]
 if high_gaps:
@@ -277,7 +277,7 @@ if high_gaps:
 else:
     st.info("No gap stores with score above 40.")
 
-# â”€â”€ DOWNLOADS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── DOWNLOADS ─────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">Download results</div>', unsafe_allow_html=True)
 
@@ -286,7 +286,7 @@ run_date = datetime.date.today().strftime("%Y-%m-%d")
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    # Build clean CSV â€” keep only plan months, remove other month columns
+    # Build clean CSV — keep only plan months, remove other month columns
     plan_months_sess = st.session_state.get("route_plan_months", {})
     _m1k = plan_months_sess.get("m1_key","")
     _m2k = plan_months_sess.get("m2_key","")
@@ -296,11 +296,11 @@ with col1:
                   if any(c.startswith(f"{m}_") for m in _all_months)
                   and c not in _keep_month_cols]
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
-    st.download_button("ðŸ“„ Full scored universe CSV",
+    st.download_button("📄 Full scored universe CSV",
         _clean_df.reset_index(drop=True).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
-    st.download_button("ðŸŽ¯ Gap report CSV",
+    st.download_button("🎯 Gap report CSV",
         pd.DataFrame(gap_stores).reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
@@ -311,14 +311,14 @@ with col3:
              "visits_per_month","rep_id","coverage_status","category"]}}
         for s in all_stores if s.get("lat") and s.get("lng")
     ]
-    st.download_button("ðŸ—º Routes GeoJSON",
+    st.download_button("🗺 Routes GeoJSON",
         json.dumps({"type":"FeatureCollection","features":features}, indent=2),
         f"rep_routes_{mkt_safe}.geojson", "application/json")
 
 st.markdown("---")
 st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
 st.caption("Download this file and upload it to the Dashboard page to view results anytime.")
-st.download_button("â¬‡ï¸ Download stores snapshot (upload to Dashboard)",
+st.download_button("⬇️ Download stores snapshot (upload to Dashboard)",
     _clean_df.reset_index(drop=True).to_csv(index=False),
     f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
 st.info("Upload the stores CSV to the Dashboard page. Admin manages the market library from there.")
