@@ -58,22 +58,45 @@ def geocode_lookup(query, api_key):
     return []
 
 def extract_bbox(result):
-    """Extract bounding box from a geocoding result."""
+    """Extract bounding box from a geocoding result.
+    Uses viewport if available. Applies minimum buffer based on place type
+    so governorates/states get a larger area than individual cities."""
+    types  = result.get("types", [])
+    # Determine minimum buffer in degrees based on place type
+    # governorate/state/region → ~50km buffer (0.45°), city → ~15km (0.13°), town → ~8km (0.07°)
+    if any(t in types for t in ["administrative_area_level_1","administrative_area_level_2","sublocality"]):
+        min_buf = 0.45  # ~50km — governorate / state
+    elif any(t in types for t in ["locality","postal_town"]):
+        min_buf = 0.13  # ~15km — city
+    else:
+        min_buf = 0.25  # ~28km — unknown / be generous
+
     vp = result.get("geometry", {}).get("viewport", {})
     sw = vp.get("southwest", {})
     ne = vp.get("northeast", {})
-    if sw and ne:
-        return (
-            round(sw["lat"], 4),
-            round(ne["lat"], 4),
-            round(sw["lng"], 4),
-            round(ne["lng"], 4),
-        )
-    # fallback to location point with small buffer
     loc = result.get("geometry", {}).get("location", {})
+
+    if sw and ne:
+        lat_min = sw["lat"]; lat_max = ne["lat"]
+        lng_min = sw["lng"]; lng_max = ne["lng"]
+        # Ensure minimum size
+        lat_span = lat_max - lat_min
+        lng_span = lng_max - lng_min
+        if lat_span < min_buf * 2:
+            mid_lat  = (lat_min + lat_max) / 2
+            lat_min  = mid_lat - min_buf
+            lat_max  = mid_lat + min_buf
+        if lng_span < min_buf * 2:
+            mid_lng  = (lng_min + lng_max) / 2
+            lng_min  = mid_lng - min_buf
+            lng_max  = mid_lng + min_buf
+        return (round(lat_min,4), round(lat_max,4), round(lng_min,4), round(lng_max,4))
+
+    # Fallback to location point with buffer
     if loc:
         lat, lng = loc["lat"], loc["lng"]
-        return (round(lat-0.1,4), round(lat+0.1,4), round(lng-0.1,4), round(lng+0.1,4))
+        return (round(lat-min_buf,4), round(lat+min_buf,4),
+                round(lng-min_buf,4), round(lng+min_buf,4))
     return None
 
 def extract_component(result, component_type):
@@ -414,17 +437,32 @@ else:
             with st.spinner(f"Searching for {city_input}..."):
                 results = geocode_lookup(query, api_key)
             if results:
-                r    = results[0]
-                bbox = extract_bbox(r)
-                name = r.get("formatted_address", city_input).split(",")[0].strip()
+                r     = results[0]
+                bbox  = extract_bbox(r)
+                name  = r.get("formatted_address", city_input).split(",")[0].strip()
+                types = r.get("types", [])
+                # Warn user if Google returned a very different place type
+                type_label = ""
+                if "administrative_area_level_1" in types: type_label = "State/Province"
+                elif "administrative_area_level_2" in types: type_label = "Governorate/County"
+                elif "locality" in types: type_label = "City"
+                elif "postal_town" in types: type_label = "Town"
+                elif "country" in types: type_label = "⚠️ Country (too broad — try a more specific name)"
+                full_name = r.get("formatted_address", city_input)
                 existing_names = [e["name"] for e in st.session_state["city_entries"]]
                 if name in existing_names:
                     st.warning(f"{name} is already added.")
                 else:
                     st.session_state["city_entries"].append({"name": name, "bbox": bbox})
+                    if type_label:
+                        st.info(f"Found: **{full_name}** ({type_label})")
                     st.rerun()
             else:
-                st.error(f"Could not find {city_input} in {country_name}. Try a different spelling.")
+                st.error(
+                    f"Could not find '{city_input}' in {country_name}. "
+                    f"Try adding the full name — e.g. 'Al Kamil wal Wafi Governorate' or "
+                    f"'Al Kamil, South Al Batinah' — or search at region level instead."
+                )
 
     # Show added cities
     if st.session_state["city_entries"]:
