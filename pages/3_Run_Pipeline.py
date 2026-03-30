@@ -1362,8 +1362,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             # Store rows for final report — shown after Stage 4 when we know final status
             st.session_state["_geocode_suspect_stores"] = []
             for s in suspect_stores:
-                bad_lat = round(s["lat"], 5)
-                bad_lng = round(s["lng"], 5)
+                bad_lat = round(float(s.get("lat") or 0), 5)
+                bad_lng = round(float(s.get("lng") or 0), 5)
                 fixed_lat, fixed_lng = None, None
                 try:
                     query = f"{s.get('store_name','')} {s.get('city','') or s.get('address','')}".strip()
@@ -1686,8 +1686,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         best_sim   = sim
                         best_match = u
                 if best_match:
-                    p["original_lat"]    = p.get("original_lat", round(p.get("lat",0),5))
-                    p["original_lng"]    = p.get("original_lng", round(p.get("lng",0),5))
+                    p["original_lat"]    = p.get("original_lat", round(float(p.get("lat") or 0), 5))
+                    p["original_lng"]    = p.get("original_lng", round(float(p.get("lng") or 0), 5))
                     p["lat"]             = best_match["lat"]
                     p["lng"]             = best_match["lng"]
                     p["geocode_suspect"] = False
@@ -1733,7 +1733,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     "Address":          s.get("address",""),
                     "City":             s.get("city",""),
                     "Original lat/lng": f"{s.get('original_lat','')} , {s.get('original_lng','')}",
-                    "Corrected lat/lng": f"{round(s.get('lat',0),5)} , {round(s.get('lng',0),5)}" if s.get("lat") else "—",
+                    "Corrected lat/lng": f"{round(float(s.get('lat') or 0),5)} , {round(float(s.get('lng') or 0),5)}" if s.get("lat") else "—",
                     "Status":           status_str,
                 })
             unfixed = [r for r in report_rows if "Could not fix" in r["Status"]]
