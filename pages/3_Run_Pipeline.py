@@ -424,8 +424,10 @@ def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days
     # Always use visits_per_month for rep count estimation
     # plan_visits under-counts because it reflects stores already cut by budget
     # — that creates a circular dependency (fewer reps → more cuts → fewer plan_visits → fewer reps)
+    # Use visits_per_month which is always the monthly rate
+    # For stores with sub-monthly frequency (0.5, 0.33) this correctly represents monthly time
     total_visit_time = sum(
-        s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
+        float(s.get("visit_duration_min", 25)) * float(s.get("visits_per_month", 1) or 1)
         for s in priority_stores
     )
 
@@ -1853,7 +1855,17 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Stage 6: Routes + Time-Based Rep Planning
         # Route universe = ALL scored stores (covered + gap) with a size tier and valid coordinates
         # Gap stores in the route = new distribution points for the rep to develop
-        priority = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
+        # Priority stores: must have a size tier, valid coordinates, and score > 0
+        # score=0 stores are typically empty/unmatched portfolio stores
+        priority = [s for s in all_stores
+                    if s.get("size_tier") in ("Large","Medium","Small")
+                    and s.get("lat") and s.get("lng")
+                    and s.get("score", 0) > 0]
+        # If that leaves too few stores, fall back to all with coordinates
+        if len(priority) < 5:
+            priority = [s for s in all_stores
+                        if s.get("size_tier") in ("Large","Medium","Small")
+                        and s.get("lat") and s.get("lng")]
         rep_recommendation = None
 
         rep_mode      = cfg.get("rep_mode","fixed")
@@ -2114,12 +2126,12 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 routed_stores, effective_daily, working_days, avg_speed
             )
 
-            # Recalculate utilisation per rep using plan_visits
+            # Recalculate utilisation per rep using plan_visits / plan_period
             rep_time_map = {}
             for s in routed_stores:
                 rid = s.get("rep_id", 0)
                 rep_time_map[rid] = rep_time_map.get(rid, 0) + (
-                    s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
+                    s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / max(plan_period, 1)
                 )
 
             # Apply 60% utilisation threshold — remove under-utilised reps
@@ -2158,7 +2170,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     rid = s.get("rep_id",0)
                     if rid and s.get("plan_visits",0) > 0:
                         rep_time_after[rid] = rep_time_after.get(rid,0) + (
-                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
+                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / max(plan_period,1)
                         )
 
                 over_cap_reps = {rid for rid,t in rep_time_after.items() if t > final_monthly_cap}
@@ -2173,7 +2185,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         for s in rep_stores_sorted:
                             if rep_t <= final_monthly_cap:
                                 break
-                            s_t = s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
+                            s_t = s.get("plan_visits",0) * s.get("visit_duration_min",25) / max(plan_period,1)
                             # Find another kept rep with capacity — not the over-capacity one
                             candidates = {r:t for r,t in rep_time_after.items()
                                           if r != over_rid and r in kept_reps and t + s_t <= final_monthly_cap}
@@ -2190,7 +2202,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     rid = s.get("rep_id",0)
                     if rid and s.get("plan_visits",0) > 0:
                         rep_time_final[rid] = rep_time_final.get(rid,0) + (
-                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
+                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / max(plan_period,1)
                         )
                 still_under = [rid for rid,t in rep_time_final.items() if t < min_util_mins]
                 still_kept  = [rid for rid,t in rep_time_final.items() if t >= min_util_mins]
@@ -2228,7 +2240,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     zid = z.get("zone", 0)
                     zs  = [s for s in routed_stores if s.get("rep_id") == zid]
                     if zs:
-                        z_mins = sum(s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2 for s in zs)
+                        z_mins = sum(s.get("plan_visits",0) * s.get("visit_duration_min",25) / max(plan_period,1) for s in zs)
                         z["time_needed_min"] = round(z_mins)
                         z["utilisation_pct"] = round(z_mins / max(final_monthly_cap,1) * 100)
 
