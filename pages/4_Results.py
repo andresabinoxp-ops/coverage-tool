@@ -139,7 +139,10 @@ if rep_rec:
     break_mins  = rep_rec.get("break_minutes", 30)
 
     # 2-month plan capacity
-    plan_cap = monthly_cap * 2  # capacity across both months
+    plan_months_sess = st.session_state.get("route_plan_months", {})
+    plan_period = plan_months_sess.get("plan_period", len(plan_months_sess.get("month_keys", ["m1","m2"])))
+    plan_period = max(plan_period, 1)
+    plan_cap = monthly_cap * plan_period
 
     m1, m2, m3, m4 = st.columns(4)
     if mode == "recommended":
@@ -147,7 +150,7 @@ if rep_rec:
     else:
         m1.metric("Fixed reps", rec_reps)
     m2.metric("Time needed / month", f"{total_mins:,.0f} min",
-        help="plan_visits ÷ 2 × duration per store — monthly equivalent from actual route plan.")
+        help="visits_per_month × duration per store — monthly estimate used for rep count.")
     m3.metric("Rep capacity / month", f"{monthly_cap:,} min",
         help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days")
     if cur_reps > 0:
@@ -158,59 +161,65 @@ if rep_rec:
         m4.metric("Current headcount", "Not provided",
             help="Enter current rep count in Configure to see comparison.")
 
-    if plan_cap > 0 and total_mins > 0 and rec_reps > 0:
-        util = round(total_mins / (rec_reps * monthly_cap) * 100)
+    # Calculate actual utilisation from plan_visits (what was actually routed)
+    # This is the true utilisation — not the pre-route estimate
+    actual_plan_time = sum(
+        s.get("plan_visits",0) * s.get("visit_duration_min",25)
+        for s in all_stores if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0
+    )
+    actual_monthly   = actual_plan_time / max(plan_period, 1)  # monthly equivalent
+    total_capacity   = rec_reps * monthly_cap if rec_reps > 0 else monthly_cap
+
+    if total_capacity > 0 and actual_monthly > 0 and rec_reps > 0:
+        util = round(actual_monthly / total_capacity * 100)
         st.caption(
-            f"Average utilisation per rep: {util}% over the 2-month plan · "
+            f"Average utilisation per rep: {util}% · "
             f"{daily_mins} min/day total · {break_mins} min break · "
             f"{work_days} working days/month · {speed} km/h avg travel speed"
         )
 
-    # Shortfall / surplus message
-    if cur_reps > 0 and shortfall > 0:
-        st.error(
-            f"⚠️ {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
-            f"With {cur_reps} reps, each would need "
-            f"{total_mins/max(cur_reps,1):,.0f} min/month "
-            f"({total_mins/max(cur_reps,1)/max(monthly_cap,1)*100:.0f}% utilisation) — over capacity."
-        )
-    elif cur_reps > 0 and shortfall < 0:
-        st.success(
-            f"✅ {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
-            f"Your {cur_reps} reps can handle this market at "
-            f"{total_mins/max(cur_reps,1):,.0f} min/month each "
-            f"({total_mins/max(cur_reps,1)/max(monthly_cap,1)*100:.0f}% utilisation)."
-        )
+    # Shortfall / surplus message — based on actual routed time
+    if cur_reps > 0 and actual_monthly > 0:
+        time_per_cur_rep = actual_monthly / max(cur_reps, 1)
+        util_cur = round(time_per_cur_rep / max(monthly_cap,1) * 100)
+        if shortfall > 0:
+            st.error(
+                f"⚠️ {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
+                f"With {cur_reps} reps, each would need "
+                f"{time_per_cur_rep:,.0f} min/month ({util_cur}% utilisation) — over capacity."
+            )
+        elif shortfall < 0:
+            st.success(
+                f"✅ {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
+                f"Your {cur_reps} reps handle this market at "
+                f"{time_per_cur_rep:,.0f} min/month each ({util_cur}% utilisation)."
+            )
 
     # ── Rep workload table ────────────────────────────────────────────────────
-    plan_months = st.session_state.get("route_plan_months", {})
-    m1_key  = plan_months.get("m1_key", "")
-    m2_key  = plan_months.get("m2_key", "")
-    m1_name = plan_months.get("month1", "Month 1")
-    m2_name = plan_months.get("month2", "Month 2")
-    plan_label = f"{m1_name} + {m2_name}" if m1_key else "2-month plan"
+    # Get plan period from session state
+    _plan_meta  = st.session_state.get("route_plan_months", {})
+    _plan_pp    = _plan_meta.get("plan_period", 2)
+    _plan_labels= _plan_meta.get("month_labels", ["Month 1","Month 2"])
+    plan_label  = " + ".join(_plan_labels)
 
     st.markdown("**Rep workload breakdown:**")
-    st.caption(f"Stores recommended = unique stores in the {plan_label} route. Time needed = plan_visits × duration (actual scheduled visits across both months). Matches top panel × 2.")
+    st.caption(f"Stores recommended = unique stores in the {plan_label} route plan.")
 
-    # Time needed = plan_visits × visit_duration_min for each store assigned to rep
-    # plan_visits = actual visits across the 2-month window from route builder
     rep_rows = {}
     for s in all_stores:
         rid = s.get("rep_id", 0)
         if not rid or rid == 0: continue
-        if s.get("plan_visits", 0) == 0: continue  # only stores in the 2-month plan
+        if s.get("plan_visits", 0) == 0: continue
         if rid not in rep_rows:
             rep_rows[rid] = {
-                "Rep":                       rid,
-                "Stores recommended":        0,
-                "Current":                   0,
-                "Gap (new)":                 0,
-                "Time needed — 2mo (min)":   0,
+                "Rep":                 rid,
+                "Stores recommended":  0,
+                "Current":             0,
+                "Gap (new)":           0,
+                "Time needed (min)":   0,
             }
-        rep_rows[rid]["Stores recommended"]      += 1
-        # plan_visits = actual visits across 2-month window from route builder
-        rep_rows[rid]["Time needed — 2mo (min)"] += (
+        rep_rows[rid]["Stores recommended"] += 1
+        rep_rows[rid]["Time needed (min)"]  += (
             s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
         )
         if s.get("covered"):
@@ -219,22 +228,25 @@ if rep_rec:
             rep_rows[rid]["Gap (new)"] += 1
 
     if rep_rows:
-        rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        plan_cap = monthly_cap * 2
-        rdf["Time needed — 2mo (min)"] = rdf["Time needed — 2mo (min)"].round(0).astype(int)
-        rdf["Capacity — 2mo (min)"]    = plan_cap
-        rdf["Utilisation %"]           = (rdf["Time needed — 2mo (min)"] / max(plan_cap,1) * 100).round(0).astype(int)
+        rdf      = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
+        plan_cap = monthly_cap * _plan_pp
+        t_col    = f"Time needed — {_plan_pp}mo (min)"
+        c_col    = f"Capacity — {_plan_pp}mo (min)"
+        rdf[t_col]          = rdf["Time needed (min)"].round(0).astype(int)
+        rdf[c_col]          = plan_cap
+        rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap,1) * 100).round(0).astype(int)
+        rdf = rdf.drop(columns=["Time needed (min)"])
 
-        col_order = ["Rep","Stores recommended","Current","Gap (new)","Time needed — 2mo (min)","Capacity — 2mo (min)","Utilisation %"]
+        col_order = ["Rep","Stores recommended","Current","Gap (new)", t_col, c_col, "Utilisation %"]
 
         total_row = {
-            "Rep":                       "TOTAL",
-            "Stores recommended":        rdf["Stores recommended"].sum(),
-            "Current":                   rdf["Current"].sum(),
-            "Gap (new)":                 rdf["Gap (new)"].sum(),
-            "Time needed — 2mo (min)":   rdf["Time needed — 2mo (min)"].sum(),
-            "Capacity — 2mo (min)":      rdf["Capacity — 2mo (min)"].sum(),
-            "Utilisation %":             round(rdf["Time needed — 2mo (min)"].sum() / max(rdf["Capacity — 2mo (min)"].sum(),1) * 100),
+            "Rep":                "TOTAL",
+            "Stores recommended": int(rdf["Stores recommended"].sum()),
+            "Current":            int(rdf["Current"].sum()),
+            "Gap (new)":          int(rdf["Gap (new)"].sum()),
+            t_col:                int(rdf[t_col].sum()),
+            c_col:                int(rdf[c_col].sum()),
+            "Utilisation %":      round(rdf[t_col].sum() / max(rdf[c_col].sum(),1) * 100),
         }
 
         rdf_with_total = pd.concat(
