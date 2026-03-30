@@ -62,11 +62,12 @@ currently_covered = sum(1 for s in all_stores if s.get("covered"))
 total_gaps      = len(gap_stores)
 cov_pct         = round(currently_covered / max(total_universe, 1) * 100, 1)
 
-# Route universe = stores assigned to a rep (both covered and gap)
-route_stores    = [s for s in all_stores if s.get("rep_id", 0) and s.get("rep_id", 0) > 0]
-new_stores      = [s for s in route_stores if not s.get("covered")]  # gap stores in routes = new
+# Route universe = stores ACTUALLY in the route plan (plan_visits > 0)
+# Excludes stores assigned to a rep but dropped by daily budget
+route_stores    = [s for s in all_stores if s.get("plan_visits", 0) > 0]
+new_stores      = [s for s in route_stores if not s.get("covered")]
 monthly_visits  = sum(s.get("visits_per_month", 0) for s in route_stores)
-annual_visits   = sum(s.get("annual_visits", 0) for s in route_stores)
+annual_visits   = sum(s.get("annual_visits",   0) for s in route_stores)
 
 cols = st.columns(5)
 for col, val, label, color in [
