@@ -216,14 +216,33 @@ if uploaded:
     except Exception as e:
         st.error(f"Error reading file: {e}")
 
-# Sample download
+# Template download
+st.markdown("""
+<div style="background:#F0F4FF;border:1px solid #C7D7F5;border-radius:8px;padding:1rem 1.2rem;margin-bottom:0.8rem;font-size:0.85rem;line-height:1.7">
+<strong>📋 Template column guide</strong><br><br>
+<strong>Required columns:</strong><br>
+• <code>store_name</code> — the store name as you know it<br>
+• <code>address</code> — street address (e.g. "Rua das Flores, 123")<br>
+• <code>city</code> — city name (e.g. "Recife", "Cairo", "Dubai") — used for geocoding<br><br>
+<strong>Optional location columns</strong> — add whichever apply to your market. You can use different column names — the tool auto-detects common variants:<br>
+• <strong>Sub-city area</strong>: <code>district</code>, <code>area</code>, <code>neighbourhood</code>, <code>bairro</code>, <code>zone</code>, <code>suburb</code> — e.g. "Boa Viagem", "Maadi", "Deira"<br>
+• <strong>Region/State</strong>: <code>region</code>, <code>state</code>, <code>governorate</code>, <code>province</code>, <code>county</code>, <code>wilaya</code> — e.g. "Pernambuco", "Cairo Governorate", "Dubai Emirate"<br>
+• <strong>Coordinates</strong>: <code>lat</code> and <code>lng</code> — if you already have GPS coordinates, the tool will skip geocoding for those stores and save API cost<br><br>
+<strong>Optional data columns:</strong><br>
+• <code>store_id</code> — your internal ID (auto-generated if missing)<br>
+• <code>category</code> — store type (e.g. "supermarket", "pharmacy") — used for scraping and scoring<br>
+• <code>annual_sales_usd</code> — your sales at this store — used in scoring<br>
+• <code>lines_per_store</code> — number of your SKUs listed at this store — used in scoring<br>
+</div>
+""", unsafe_allow_html=True)
+
 sample = pd.DataFrame([
-    {"store_id":"S001","store_name":"Carrefour Express","address":"Qurum","city":"Muscat","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
-    {"store_id":"S002","store_name":"Lulu Hypermarket", "address":"Al Khuwair","city":"Muscat","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
-    {"store_id":"S003","store_name":"Pharmacy One",     "address":"Ruwi","city":"Muscat","category":"pharmacy","annual_sales_usd":22000,"lines_per_store":12},
-    {"store_id":"S004","store_name":"Shell Station",    "address":"Ghubra","city":"Muscat","category":"gas station","annual_sales_usd":18000,"lines_per_store":8},
+    {"store_id":"S001","store_name":"Carrefour Express","address":"Av. Conselheiro Aguiar, 2500","city":"Recife","district":"Boa Viagem","region":"Pernambuco","lat":"","lng":"","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
+    {"store_id":"S002","store_name":"Atacadão Recife",  "address":"Av. Caxangá, 2900",          "city":"Recife","district":"Iputinga",  "region":"Pernambuco","lat":"","lng":"","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
+    {"store_id":"S003","store_name":"Farmácia Pague Menos","address":"Rua da Aurora, 500",      "city":"Recife","district":"Boa Vista", "region":"Pernambuco","lat":"","lng":"","category":"pharmacy",   "annual_sales_usd":22000, "lines_per_store":12},
+    {"store_id":"S004","store_name":"Posto Ipiranga",   "address":"Av. Agamenon Magalhães, 100","city":"Recife","district":"Derby",     "region":"Pernambuco","lat":"","lng":"","category":"gas station","annual_sales_usd":18000, "lines_per_store":8},
 ])
-st.download_button("Download sample CSV template", sample.to_csv(index=False), "sample_portfolio.csv", "text/csv")
+st.download_button("⬇️ Download portfolio template", sample.to_csv(index=False), "portfolio_template.csv", "text/csv")
 
 st.markdown("---")
 
