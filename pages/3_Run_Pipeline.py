@@ -409,38 +409,50 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 
 def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
     """
-    Calculate recommended rep count.
-    Uses plan_visits if available (post route-builder), else visits_per_month.
+    Calculate recommended rep count including geographic travel time estimate.
+    Uses visits_per_month (pre-route) always — plan_visits is only reliable post-route
+    and at that point we use it separately for utilisation reporting.
     Returns (recommended_reps, total_minutes_needed_per_month, minutes_per_rep_per_month).
     """
     if not priority_stores:
         return 1, 0.0, 0.0
 
     monthly_capacity = daily_minutes * working_days
+    n_stores = len(priority_stores)
 
-    # Use plan_visits if route builder has already run, else visits_per_month
-    has_plan = any(s.get("plan_visits") is not None for s in priority_stores)
-    if has_plan:
-        # plan_visits is 2-month total — divide by 2 for monthly equivalent
-        total_visit_time = sum(
-            s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
-            for s in priority_stores
-            if s.get("plan_visits", 0) > 0
-        )
+    # Always use visits_per_month for rep count estimation
+    # plan_visits under-counts because it reflects stores already cut by budget
+    # — that creates a circular dependency (fewer reps → more cuts → fewer plan_visits → fewer reps)
+    total_visit_time = sum(
+        s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
+        for s in priority_stores
+    )
+
+    # Estimate travel time based on geographic spread of stores
+    geo = [s for s in priority_stores if s.get("lat") and s.get("lng")]
+    if len(geo) > 1:
+        lat_span = max(s["lat"] for s in geo) - min(s["lat"] for s in geo)
+        lng_span = max(s["lng"] for s in geo) - min(s["lng"] for s in geo)
+        mid_lat  = sum(s["lat"] for s in geo) / len(geo)
+        area_km2 = lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid_lat))
+        # Average inter-store distance ~ sqrt(area / stores) × 0.7 (empirical factor)
+        avg_dist_km    = math.sqrt(max(area_km2, 1) / max(n_stores, 1)) * 0.7
+        avg_travel_min = (avg_dist_km / max(avg_speed_kmh, 1)) * 60
+        total_visits   = sum(s.get("visits_per_month", 1) for s in priority_stores)
+        total_travel   = avg_travel_min * total_visits
     else:
-        total_visit_time = sum(
-            s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
-            for s in priority_stores
-        )
+        total_travel = total_visit_time * 0.2  # 20% overhead if no geo data
 
-    rec_reps = max(1, math.ceil(total_visit_time / monthly_capacity))
-    return rec_reps, round(total_visit_time), round(monthly_capacity)
+    total_minutes = total_visit_time + total_travel
+    rec_reps = max(1, math.ceil(total_minutes / monthly_capacity))
+    return rec_reps, round(total_minutes), round(monthly_capacity)
 
 
 def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percentiles):
     """
-    Assign size tier (Large/Medium/Small/Occasional) based on score percentile within category.
-    Occasional = bottom W% — visited once every 2 months (0.5 visits/month), locked.
+    Assign size tier (Large/Medium/Small) based on score percentile within category.
+    Visits/month can be any value including decimals (0.5 = every 2mo, 0.33 = every 3mo).
+    Plan period is determined by the minimum frequency across all tiers.
     Returns (size_tier, visits_per_month, visit_duration_min).
     """
     cat       = store.get("category","")
@@ -454,42 +466,33 @@ def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percent
         rank = sum(1 for s in cat_ranks if s <= score)
         pct  = (rank / n) * 100
 
-    large_pct      = size_percentiles.get("large_pct",      20)
-    medium_pct     = size_percentiles.get("medium_pct",     40)
-    small_pct      = size_percentiles.get("small_pct",      30)
-    occasional_pct = size_percentiles.get("occasional_pct", 10)
+    large_pct  = size_percentiles.get("large_pct",  20)
+    medium_pct = size_percentiles.get("medium_pct", 40)
 
-    # top X% = Large, next Y% = Medium, next Z% = Small, bottom W% = Occasional
-    # If occasional_pct = 0, all bottom stores fall into Small
+    # top X% = Large, next Y% = Medium, bottom = Small
     if pct >= (100 - large_pct):
         tier = "Large"
     elif pct >= (100 - large_pct - medium_pct):
         tier = "Medium"
-    elif pct >= occasional_pct:
-        tier = "Small"
     else:
-        tier = "Occasional" if occasional_pct > 0 else "Small"
+        tier = "Small"
 
     # Get visit benchmarks for this category
     bench = visit_benchmarks.get(cat, visit_benchmarks.get("default", {
         "large_visits":4,"large_duration":40,
         "medium_visits":2,"medium_duration":25,
         "small_visits":1,"small_duration":15,
-        "occasional_duration":15,
     }))
 
     if tier == "Large":
-        visits   = bench.get("large_visits",      4)
-        duration = bench.get("large_duration",     40)
+        visits   = float(bench.get("large_visits",  4))
+        duration = int(bench.get("large_duration",  40))
     elif tier == "Medium":
-        visits   = bench.get("medium_visits",      2)
-        duration = bench.get("medium_duration",    25)
-    elif tier == "Small":
-        visits   = bench.get("small_visits",       1)
-        duration = bench.get("small_duration",     15)
-    else:  # Occasional — locked at 0.5
-        visits   = 0.5
-        duration = bench.get("occasional_duration", 15)
+        visits   = float(bench.get("medium_visits", 2))
+        duration = int(bench.get("medium_duration", 25))
+    else:
+        visits   = float(bench.get("small_visits",  1))
+        duration = int(bench.get("small_duration",  15))
 
     return tier, visits, duration
 
@@ -507,46 +510,36 @@ def build_category_percentiles(stores):
         cat_scores[cat].sort()
     return cat_scores
 
-import calendar as cal_module
-
 WEEKDAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
 
-def get_month_weekdays(year, month):
+def get_month_weekdays(year=None, month=None, month_index=None):
     """
-    Returns dict: {weekday_name: [date, date, ...]} for all occurrences in the month.
-    e.g. {"Monday": [date(2025,6,2), date(2025,6,9), ...], ...}
+    Returns dict: {weekday_name: [week_label, ...]} — e.g. {"Monday": ["Week 1","Week 3"]}
+    Uses abstract week labels (Week 1-5) instead of real dates.
+    month_index: 0-based index of month in plan (0=Month1, 1=Month2 etc)
     """
     result = {d: [] for d in WEEKDAYS}
-    num_days = cal_module.monthrange(year, month)[1]
-    for day in range(1, num_days + 1):
-        d = datetime.date(year, month, day)
-        name = WEEKDAYS[d.weekday()] if d.weekday() < 5 else None
-        if name:
-            result[name].append(d)
+    # Each month has 4 weekday occurrences (sometimes 5 for first/last day)
+    # Use standard 4 occurrences: Week 1, Week 2, Week 3, Week 4
+    for day in WEEKDAYS:
+        result[day] = ["Week 1", "Week 2", "Week 3", "Week 4"]
     return result
 
 
-def build_daily_routes(rep_stores, year, month, daily_minutes, avg_speed_kmh, city_lat, city_lng):
+def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg_speed_kmh=30, city_lat=0, city_lng=0):
     """
     Assign each store to a fixed day of the week and build daily visit sequences.
+    Uses abstract week labels (Week 1-4) instead of real calendar dates.
 
     Returns list of store dicts enriched with:
         assigned_day        — "Monday" etc
-        visit_dates         — list of actual date strings for this month
         day_visit_order     — position within that day's route
         day_travel_time_min — cumulative travel time for this day
-
-    Logic:
-    1. Sort stores by visits_per_month desc, then score desc
-    2. Assign stores to weekdays geographically using k-means into 5 day-clusters
-    3. Within each day sort by nearest-neighbour from city centre
-    4. Validate daily time budget — if exceeded move lowest-score store to next day
-    5. Build visit_dates from actual calendar occurrences
     """
     if not rep_stores:
         return []
 
-    month_days = get_month_weekdays(year, month)
+    month_days = get_month_weekdays()
 
     # ── Step 1: Cluster rep stores into 5 geographic day-groups ──────────────
     geo_stores = [s for s in rep_stores if s.get("lat") and s.get("lng")]
@@ -1145,7 +1138,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         covered_n  = sum(1 for s in all_stores if s["covered"])
 
         # Calculate rep recommendation for dry run — time-based model
-        dry_priority  = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small","Occasional") and s.get("lat") and s.get("lng")]
+        dry_priority  = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
         daily_mins    = cfg.get("daily_minutes", 480)
         work_days     = cfg.get("working_days", 22)
         speed_kmh     = cfg.get("avg_speed_kmh", 30)
@@ -1195,7 +1188,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for rep_id in dry_rep_ids:
             try:
                 rep_s = [s for s in all_stores if s.get("rep_id")==rep_id
-                         and s.get("size_tier") in ("Large","Medium","Small","Occasional")]
+                         and s.get("size_tier") in ("Large","Medium","Small")]
                 if rep_s:
                     build_daily_routes(rep_s, dry_year, dry_month1, dry_daily, dry_speed, dry_city_lat, dry_city_lng)
             except Exception:
@@ -1700,7 +1693,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Stage 6: Routes + Time-Based Rep Planning
         # Route universe = ALL scored stores (covered + gap) with a size tier and valid coordinates
         # Gap stores in the route = new distribution points for the rep to develop
-        priority = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small","Occasional") and s.get("lat") and s.get("lng")]
+        priority = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
         rep_recommendation = None
 
         rep_mode      = cfg.get("rep_mode","fixed")
@@ -1864,105 +1857,96 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
 
-        # ── Build 2-month rolling route plan ──────────────────────────────────
-        route_year   = cfg.get("route_year",  datetime.date.today().year)
-        route_month1 = cfg.get("route_month1", datetime.date.today().month)
-        # Month 2 = next calendar month
-        route_month2 = route_month1 % 12 + 1
-        route_year2  = route_year + (1 if route_month2 == 1 else 0)
+        # ── Build dynamic plan period route plan ─────────────────────────────
+        # Plan period = 1 / min(visits_per_month) across all tiers
+        all_freqs   = [s.get("visits_per_month",1) for s in all_stores if s.get("visits_per_month",0) > 0]
+        min_freq    = min(all_freqs) if all_freqs else 1
+        plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
+
+        # Plan months = abstract labels: m1, m2, m3...
+        plan_month_keys    = [f"m{i+1}" for i in range(plan_period)]
+        plan_month_labels  = [f"Month {i+1}" for i in range(plan_period)]
 
         city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
-        import calendar as _cal
-        m1_name = datetime.date(route_year,  route_month1, 1).strftime("%B %Y")
-        m2_name = datetime.date(route_year2, route_month2, 1).strftime("%B %Y")
-        status.info(f"Stage 6b — Building 2-month route plan: {m1_name} + {m2_name} for {len(all_rep_ids)} reps...")
+        status.info(f"Stage 6b — Building {plan_period}-month route plan for {len(all_rep_ids)} reps...")
 
-        # Assign Occasional stores: split evenly between month 1 and month 2 by geography
-        # First handle all non-occasional stores — build month 1 routes to get day assignments
+        # Build day assignments — establishes fixed weekday per store
         for rep_id in all_rep_ids:
             try:
                 rep_stores = [s for s in all_stores
                     if s.get("rep_id") == rep_id
-                    and s.get("size_tier") in ("Large","Medium","Small","Occasional")]
+                    and s.get("size_tier") in ("Large","Medium","Small")]
                 if rep_stores:
-                    build_daily_routes(rep_stores, route_year, route_month1, daily_minutes, avg_speed, city_lat, city_lng)
+                    build_daily_routes(rep_stores, daily_minutes=daily_minutes,
+                                       avg_speed_kmh=avg_speed, city_lat=city_lat, city_lng=city_lng)
             except Exception as e:
                 status.warning(f"Route building warning for Rep {rep_id}: {e} — continuing...")
                 for i, s in enumerate([s for s in all_stores if s.get("rep_id")==rep_id]):
                     s["assigned_day"]    = WEEKDAYS[i % 5]
                     s["day_visit_order"] = (i // 5) + 1
 
-        # Build month 1 dates for all tiers
-        m1_days = get_month_weekdays(route_year,  route_month1)
-        m2_days = get_month_weekdays(route_year2, route_month2)
-        m1_key  = datetime.date(route_year,  route_month1, 1).strftime("%b").lower()
-        m2_key  = datetime.date(route_year2, route_month2, 1).strftime("%b").lower()
+        # WEEK LABELS: 4 weeks per month
+        WEEK_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
 
+        def pick_weeks(vpm):
+            """Pick which weeks to visit based on visits_per_month."""
+            if vpm >= 4:   return WEEK_LABELS          # weekly — all 4 weeks
+            if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly — Week 1 + 3
+            if vpm >= 1:   return [WEEK_LABELS[1]]     # monthly — Week 2
+            return []  # sub-monthly handled separately
+
+        # Initialise all month columns
+        for s in all_stores:
+            for mk in plan_month_keys:
+                s[f"{mk}_weeks"]  = []
+                s[f"{mk}_visits"] = 0
+            s["plan_visits"] = 0
+
+        # Assign weeks per store per month
         for s in all_stores:
             if not s.get("assigned_day"):
-                s[m1_key+"_dates"] = []; s[m1_key+"_visits"] = 0
-                s[m2_key+"_dates"] = []; s[m2_key+"_visits"] = 0
-                s["plan_visits"] = 0
                 continue
 
-            day  = s["assigned_day"]
-            vpm  = s.get("visits_per_month", 1)
-            tier = s.get("size_tier","")
+            day = s["assigned_day"]
+            vpm = s.get("visits_per_month", 1)
 
-            occ1 = m1_days.get(day, [])
-            occ2 = m2_days.get(day, [])
-
-            if tier == "Occasional":
-                # 0.5 visits/month = 1 visit across the 2-month window
-                # Assign to month 1 or month 2 based on day_visit_order (alternate)
-                if s.get("day_visit_order", 1) % 2 == 1:
-                    # Month 1
-                    mid = len(occ1) // 2
-                    m1_dates = [occ1[mid]] if occ1 else []
-                    m2_dates = []
-                else:
-                    # Month 2
-                    mid = len(occ2) // 2
-                    m1_dates = []
-                    m2_dates = [occ2[mid]] if occ2 else []
+            if vpm >= 1:
+                # Visited every month — assign weeks in each plan month
+                weeks = pick_weeks(vpm)
+                for mk in plan_month_keys:
+                    s[f"{mk}_weeks"]  = [f"{w} - {day}" for w in weeks]
+                    s[f"{mk}_visits"] = len(weeks)
+                    s["plan_visits"] += len(weeks)
             else:
-                # Standard: vpm >= 1
-                def pick_dates(occurrences, vpm):
-                    if not occurrences: return []
-                    if vpm >= len(occurrences): return occurrences
-                    if vpm >= 2:
-                        return occurrences[0:1] + (occurrences[2:3] if len(occurrences) > 2 else occurrences[-1:])
-                    mid = len(occurrences) // 2
-                    return [occurrences[mid]]
-                m1_dates = pick_dates(occ1, vpm)
-                m2_dates = pick_dates(occ2, vpm)
+                # Sub-monthly — 1 visit total across the plan window
+                # Balance across months by day_visit_order
+                total_visits = max(1, round(vpm * plan_period))
+                order = s.get("day_visit_order", 1)
+                visit_count = 0
+                for i, mk in enumerate(plan_month_keys):
+                    if visit_count >= total_visits: break
+                    if (order + i) % plan_period == 0 or                        (i == len(plan_month_keys)-1 and visit_count == 0):
+                        s[f"{mk}_weeks"]  = [f"Week 2 - {day}"]
+                        s[f"{mk}_visits"] = 1
+                        s["plan_visits"] += 1
+                        visit_count      += 1
 
-            s[m1_key+"_dates"]  = [d.strftime("%b %d") for d in m1_dates]
-            s[m1_key+"_visits"] = len(m1_dates)
-            s[m2_key+"_dates"]  = [d.strftime("%b %d") for d in m2_dates]
-            s[m2_key+"_visits"] = len(m2_dates)
-            s["plan_visits"]    = len(m1_dates) + len(m2_dates)
-
-        # Stores not in route
+        # Clear unassigned stores
         for s in all_stores:
             if "assigned_day" not in s:
-                s["assigned_day"]       = ""
-                s["day_visit_order"]    = 0
-                s[m1_key+"_dates"]      = []
-                s[m1_key+"_visits"]     = 0
-                s[m2_key+"_dates"]      = []
-                s[m2_key+"_visits"]     = 0
-                s["plan_visits"]        = 0
+                s["assigned_day"]    = ""
+                s["day_visit_order"] = 0
+                s["plan_visits"]     = 0
 
-        # Store plan metadata in results
+        # Store plan metadata
         st.session_state["route_plan_months"] = {
-            "month1": m1_name, "month2": m2_name,
-            "m1_key": m1_key,  "m2_key": m2_key,
+            "plan_period":  plan_period,
+            "month_keys":   plan_month_keys,
+            "month_labels": plan_month_labels,
         }
-
         # ── Recalculate using plan_visits and apply 60% utilisation threshold ──
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
         if routed_stores:
