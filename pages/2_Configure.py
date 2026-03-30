@@ -730,16 +730,11 @@ if final_categories:
     if _all_min_freq:
         min_freq    = min(_all_min_freq)
         plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
-        import datetime as _dt2
-        plan_months_preview = []
-        for i in range(plan_period):
-            mo = (route_month1 - 1 + i) % 12 + 1
-            yr = int(route_year) + ((route_month1 - 1 + i) // 12)
-            plan_months_preview.append(_dt2.date(yr, mo, 1).strftime("%B %Y"))
+        month_labels = [f"Month {i+1}" for i in range(plan_period)]
         st.info(
             f"📅 **Plan period: {plan_period} month{'s' if plan_period > 1 else ''}** "
-            f"({' + '.join(plan_months_preview)}) — "
-            f"driven by minimum frequency {min_freq}/month (Small tier)"
+            f"({' + '.join(month_labels)}) — "
+            f"driven by minimum frequency {min_freq}/month across tiers"
         )
 else:
     st.info("Select scraping categories first (Step 6).")
