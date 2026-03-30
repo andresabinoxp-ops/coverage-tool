@@ -795,7 +795,18 @@ if portfolio_df is None:
     up = st.file_uploader("Upload portfolio CSV", type=["csv"])
     if up:
         try:
-            df = pd.read_csv(up)
+            # Try multiple encodings — handles UTF-8, Latin-1, Arabic Windows, etc.
+            df = None
+            for _enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252", "cp1256", "iso-8859-1"]:
+                try:
+                    up.seek(0)
+                    df = pd.read_csv(up, encoding=_enc)
+                    break
+                except (UnicodeDecodeError, Exception):
+                    continue
+            if df is None:
+                st.error("Could not read the file — unsupported encoding. Please save as UTF-8 CSV and try again.")
+                st.stop()
             df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
             # Drop completely blank rows (empty Excel rows at end of file)
             df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
