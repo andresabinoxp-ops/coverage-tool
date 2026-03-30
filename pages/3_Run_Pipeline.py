@@ -1680,36 +1680,52 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         for p in portfolio: p["coverage_status"] = "covered"
 
         # ── Enrich portfolio stores with Google data from matched scraped store ─
-        # Portfolio stores start with rating=0, review_count=0 — copy Google data
-        # from the best matching scraped store (closest within fuzzy_radius)
         GOOGLE_FIELDS = ["rating","review_count","price_level","place_id",
                          "phone","opening_hours","website","business_status"]
+
+        def _token_sim(a, b):
+            """Simple token overlap similarity — good for partial name matches."""
+            noise = {"trading","est","llc","co","ltd","trd","al","the","-","&"}
+            a_tok = set(str(a).lower().split()) - noise
+            b_tok = set(str(b).lower().split()) - noise
+            if not a_tok or not b_tok: return 0.0
+            return len(a_tok & b_tok) / max(len(a_tok | b_tok), 1)
+
         for p in portfolio:
             best_match = None
+            best_score = -1
 
-            # Try distance-based match first (if coordinates are valid)
-            if p.get("lat") and p.get("lng"):
-                best_dist = float("inf")
-                for u in universe:
-                    if not (u.get("lat") and u.get("lng")): continue
+            p_name = str(p.get("store_name","") or "").strip()
+
+            for u in universe:
+                if not (u.get("lat") and u.get("lng")): continue
+                score = 0.0
+
+                # Distance score (if portfolio store has valid coords)
+                if p.get("lat") and p.get("lng"):
                     dist = haversine_m(p["lat"],p["lng"],u["lat"],u["lng"])
-                    if dist < best_dist and dist <= 250:
-                        best_dist  = dist
-                        best_match = u
+                    if dist <= 100:   score += 3.0   # very close — strong signal
+                    elif dist <= 300: score += 2.0
+                    elif dist <= 500: score += 1.0
+                    elif dist > 1000: continue       # too far — skip
 
-            # Fallback: name similarity match if no distance match found
-            if not best_match:
+                # Name similarity score
+                if p_name:
+                    sim = _token_sim(p_name, u.get("store_name",""))
+                    if sim >= 0.5:   score += sim * 2
+                    elif sim >= 0.3: score += sim
+
+                if score > best_score and score > 0:
+                    best_score = score
+                    best_match = u
+
+            # Last resort — if still no match and store has no coords,
+            # find closest scraped store by name only (any similarity)
+            if not best_match and p_name:
                 best_sim = 0.0
-                p_name   = str(p.get("store_name","")).lower().strip()
                 for u in universe:
-                    u_name = str(u.get("store_name","")).lower().strip()
-                    if not p_name or not u_name: continue
-                    # Simple token overlap
-                    p_tokens = set(p_name.split())
-                    u_tokens = set(u_name.split())
-                    if not p_tokens or not u_tokens: continue
-                    sim = len(p_tokens & u_tokens) / max(len(p_tokens | u_tokens), 1)
-                    if sim > best_sim and sim >= 0.5:
+                    sim = _token_sim(p_name, u.get("store_name",""))
+                    if sim > best_sim and sim >= 0.25:
                         best_sim   = sim
                         best_match = u
 
@@ -1717,16 +1733,16 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 for field in GOOGLE_FIELDS:
                     if best_match.get(field) and not p.get(field):
                         p[field] = best_match[field]
-                # Always update rating/reviews from Google
+                # Always overwrite rating/reviews — portfolio starts at 0
                 if best_match.get("rating"):
                     p["rating"]       = best_match["rating"]
                 if best_match.get("review_count"):
                     p["review_count"] = best_match["review_count"]
-                # If store has no coordinates, borrow from matched scraped store
+                # If store has no coordinates — borrow from matched scraped store
                 if not (p.get("lat") and p.get("lng")) and best_match.get("lat"):
-                    p["lat"]          = best_match["lat"]
-                    p["lng"]          = best_match["lng"]
-                    p["geocode_fixed"]= True
+                    p["lat"]           = best_match["lat"]
+                    p["lng"]           = best_match["lng"]
+                    p["geocode_fixed"] = True
 
         # ── Fix suspect portfolio stores using scraped universe ───────────────
         # For portfolio stores still flagged as suspect, try name-match against
@@ -1815,7 +1831,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     "Corrected lat/lng = fixed coordinates used in this run. "
                     "These corrections are also saved in the output CSV columns original_lat / original_lng / geocode_fixed."
                 )
-            st.session_state.pop("_geocode_suspect_stores", None)
+            # Keep in session state so it persists across reruns
+            # (don't pop — user may want to see the report after run completes)
 
         bar.progress(65)
 
