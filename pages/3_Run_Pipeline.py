@@ -2018,6 +2018,34 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                                 rep_t -= s_t
                                 rep_time_after[over_rid] = rep_t
 
+                # Final utilisation check — catch any reps still below threshold after rebalancing
+                rep_time_final = {}
+                for s in all_stores:
+                    rid = s.get("rep_id",0)
+                    if rid and s.get("plan_visits",0) > 0:
+                        rep_time_final[rid] = rep_time_final.get(rid,0) + (
+                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
+                        )
+                still_under = [rid for rid,t in rep_time_final.items() if t < min_util_mins]
+                still_kept  = [rid for rid,t in rep_time_final.items() if t >= min_util_mins]
+                if still_under and still_kept:
+                    still_centroids = {}
+                    for rid in still_kept:
+                        rs = [s for s in all_stores if s.get("rep_id")==rid and s.get("lat") and s.get("lng")]
+                        if rs:
+                            still_centroids[rid] = (
+                                sum(s["lat"] for s in rs)/len(rs),
+                                sum(s["lng"] for s in rs)/len(rs)
+                            )
+                    for s in all_stores:
+                        if s.get("rep_id") in still_under:
+                            if s.get("lat") and s.get("lng") and still_centroids:
+                                nearest = min(still_centroids.keys(),
+                                    key=lambda r: haversine_m(s["lat"],s["lng"],still_centroids[r][0],still_centroids[r][1]))
+                                s["rep_id"] = nearest
+                            elif still_kept:
+                                s["rep_id"] = still_kept[0]
+
                 # Recalculate after redistribution
                 routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
                 _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
