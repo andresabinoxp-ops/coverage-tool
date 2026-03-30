@@ -1401,10 +1401,26 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                             continue
                         seen_ids.add(pid)
                         loc = place.get("geometry",{}).get("location",{})
+                        # Extract city from vicinity — Google returns "street, city"
+                        # vicinity = full address string, last comma-part is usually the city/area
+                        vicinity  = place.get("vicinity","")
+                        vparts    = [p.strip() for p in vicinity.split(",") if p.strip()]
+                        # Use last part of vicinity as city if it looks like a place name
+                        # Fall back to configured market city only if vicinity has 1 part or is empty
+                        if len(vparts) >= 2:
+                            store_city    = vparts[-1]   # last part = city/area
+                            store_address = ", ".join(vparts[:-1])  # everything before = street address
+                        elif len(vparts) == 1:
+                            store_city    = cfg.get("city","")
+                            store_address = vparts[0]
+                        else:
+                            store_city    = cfg.get("city","")
+                            store_address = ""
                         universe.append({
                             "store_id":pid,"place_id":pid,
                             "store_name":place.get("name",""),
-                            "address":place.get("vicinity",""),"city":cfg.get("city",""),
+                            "address":store_address,"city":store_city,
+                            "region":cfg.get("city",""),  # configured market area = region
                             "lat":loc.get("lat"),"lng":loc.get("lng"),
                             "rating":float(place.get("rating",0) or 0),
                             "review_count":int(place.get("user_ratings_total",0) or 0),
