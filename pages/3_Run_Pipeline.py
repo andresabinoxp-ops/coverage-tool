@@ -299,10 +299,11 @@ def _get_location_field(store, col_list):
             return str(v).strip()
     return ""
 
-def geocode_store(address, city, api_key, district="", region=""):
-    """Geocode using address + optional district and region for better accuracy."""
+def geocode_store(address, city, api_key, district="", region="", country=""):
+    """Geocode using address + optional district, region and country for better accuracy.
+    Including country is critical to avoid geocoding to wrong countries."""
     try:
-        parts = [p for p in [address, district, city, region] if p and p.strip()]
+        parts = [p for p in [address, district, city, region, country] if p and str(p).strip()]
         full_address = ", ".join(parts)
         r = requests.get(GEOCODE_URL,
             params={"address": full_address, "key": api_key}, timeout=10)
@@ -1315,10 +1316,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             status.info(f"Stage 1/{total_steps} — Geocoding {len(needs_geocode)} stores...")
         bar.progress(5)
 
+        market_country = cfg.get("country_name","") or st.session_state.get("country_name","")
         for s in needs_geocode:
             district = _get_location_field(s, DISTRICT_COLS)
             region   = _get_location_field(s, REGION_COLS)
-            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key, district, region)
+            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key, district, region, market_country)
             s["lat"], s["lng"] = lat, lng
             time.sleep(0.05)
 
@@ -1329,9 +1331,14 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         bbox_lat_max = cfg.get("lat_max",  90)
         bbox_lng_min = cfg.get("lng_min", -180)
         bbox_lng_max = cfg.get("lng_max",  180)
-        # Add 20% buffer around bounding box to allow for border stores
-        lat_buf = (bbox_lat_max - bbox_lat_min) * 0.2
-        lng_buf = (bbox_lng_max - bbox_lng_min) * 0.2
+
+        # Buffer = larger of: 50% of bbox size OR 2 degrees (~220km)
+        # This ensures stores in same country but outside the specific market area
+        # are NOT flagged as suspect (e.g. stores in Sur/Muscat when market is Al Kamil)
+        lat_span = bbox_lat_max - bbox_lat_min
+        lng_span = bbox_lng_max - bbox_lng_min
+        lat_buf  = max(lat_span * 0.5, 2.0)
+        lng_buf  = max(lng_span * 0.5, 2.0)
 
         suspect_stores = []
         for s in needs_geocode:
@@ -1356,69 +1363,100 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         status.info(msg)
 
         if suspect_stores:
-            status.info(f"Stage 1/{total_steps} — Re-geocoding {len(suspect_stores)} suspect stores near market centre...")
+            status.info(f"Stage 1/{total_steps} — Re-geocoding {len(suspect_stores)} suspect stores...")
             mkt_lat = (bbox_lat_min + bbox_lat_max) / 2
             mkt_lng = (bbox_lng_min + bbox_lng_max) / 2
-            # Store rows for final report — shown after Stage 4 when we know final status
             st.session_state["_geocode_suspect_stores"] = []
-            for s in suspect_stores:
-                bad_lat = round(float(s.get("lat") or 0), 5)
-                bad_lng = round(float(s.get("lng") or 0), 5)
-                fixed_lat, fixed_lng = None, None
-                try:
-                    query = f"{s.get('store_name','')} {s.get('city','') or s.get('address','')}".strip()
-                    r = requests.get(
-                        "https://maps.googleapis.com/maps/api/place/textsearch/json",
-                        params={"query": query, "location": f"{mkt_lat},{mkt_lng}",
-                                "radius": max(50000, haversine_m(bbox_lat_min,bbox_lng_min,bbox_lat_max,bbox_lng_max)/2),
-                                "key": api_key},
-                        timeout=10
-                    )
-                    data = r.json()
-                    fixed_google_data = {}
-                    if data.get("status") == "OK" and data.get("results"):
-                        for res in data["results"]:
-                            loc = res.get("geometry",{}).get("location",{})
-                            rlat, rlng = loc.get("lat"), loc.get("lng")
-                            if rlat and rlng:
-                                if (bbox_lat_min - lat_buf <= rlat <= bbox_lat_max + lat_buf and
-                                    bbox_lng_min - lng_buf <= rlng <= bbox_lng_max + lng_buf):
-                                    fixed_lat  = round(rlat, 6)
-                                    fixed_lng  = round(rlng, 6)
-                                    # Capture Google data from the same result
-                                    fixed_google_data = {
+
+            def try_regeocde(store, api_key, mkt_lat, mkt_lng, bbox_lat_min, bbox_lat_max, bbox_lng_min, bbox_lng_max, lat_buf, lng_buf):
+                """Try multiple strategies to re-geocode a suspect store. Returns (lat, lng, google_data) or (None, None, {})."""
+                name    = store.get("store_name","").strip()
+                city    = (store.get("city","") or store.get("address","") or "").strip()
+                district= (store.get("district","") or "").strip()
+                region  = (store.get("region","") or "").strip()
+
+                # Build query variants from most to least specific
+                # ALWAYS include country to prevent geocoding to wrong country
+                country_sfx = f", {store.get('_market_country','')}" if store.get('_market_country') else ""
+                queries = []
+                if name and city:    queries.append(f"{name}, {city}{country_sfx}")
+                if name and district:queries.append(f"{name}, {district}{country_sfx}")
+                if name and region:  queries.append(f"{name}, {region}{country_sfx}")
+                if name:             queries.append(f"{name}{country_sfx}")
+
+                def in_bbox(rlat, rlng):
+                    return (bbox_lat_min - lat_buf <= rlat <= bbox_lat_max + lat_buf and
+                            bbox_lng_min - lng_buf <= rlng <= bbox_lng_max + lng_buf)
+
+                for query in queries:
+                    # Strategy 1: Google Geocoding API with bounds restriction
+                    try:
+                        r = requests.get(
+                            "https://maps.googleapis.com/maps/api/geocode/json",
+                            params={"address": query,
+                                    "bounds": f"{bbox_lat_min},{bbox_lng_min}|{bbox_lat_max},{bbox_lng_max}",
+                                    "key": api_key},
+                            timeout=10
+                        )
+                        data = r.json()
+                        if data.get("status") == "OK":
+                            for res in data["results"]:
+                                loc = res.get("geometry",{}).get("location",{})
+                                rlat, rlng = loc.get("lat"), loc.get("lng")
+                                if rlat and rlng and in_bbox(rlat, rlng):
+                                    return round(rlat,6), round(rlng,6), {}
+                        time.sleep(0.05)
+                    except Exception:
+                        pass
+
+                    # Strategy 2: Google Places Text Search biased to market centre
+                    try:
+                        r = requests.get(
+                            "https://maps.googleapis.com/maps/api/place/textsearch/json",
+                            params={"query": query,
+                                    "location": f"{mkt_lat},{mkt_lng}",
+                                    "radius": "50000",
+                                    "key": api_key},
+                            timeout=10
+                        )
+                        data = r.json()
+                        if data.get("status") == "OK" and data.get("results"):
+                            for res in data["results"]:
+                                loc = res.get("geometry",{}).get("location",{})
+                                rlat, rlng = loc.get("lat"), loc.get("lng")
+                                if rlat and rlng and in_bbox(rlat, rlng):
+                                    google_data = {
                                         "place_id":     res.get("place_id",""),
                                         "rating":       float(res.get("rating",0) or 0),
                                         "review_count": int(res.get("user_ratings_total",0) or 0),
                                         "price_level":  int(res.get("price_level",0) or 0),
                                     }
-                                    break
-                    time.sleep(0.1)
-                except Exception:
-                    pass
+                                    return round(rlat,6), round(rlng,6), google_data
+                        time.sleep(0.05)
+                    except Exception:
+                        pass
+
+                return None, None, {}
+
+            for s in suspect_stores:
+                s["_market_country"] = market_country  # pass to try_regeocde
+                bad_lat = round(float(s.get("lat") or 0), 5)
+                bad_lng = round(float(s.get("lng") or 0), 5)
+                fixed_lat, fixed_lng, fixed_google_data = try_regeocde(
+                    s, api_key, mkt_lat, mkt_lng,
+                    bbox_lat_min, bbox_lat_max, bbox_lng_min, bbox_lng_max,
+                    lat_buf, lng_buf
+                )
                 if fixed_lat and fixed_lng:
-                    # Check if another portfolio store already has these exact coordinates
-                    # to avoid multiple stores being assigned the same location
-                    already_used = any(
-                        abs(p2.get("lat",0) - fixed_lat) < 0.0001 and
-                        abs(p2.get("lng",0) - fixed_lng) < 0.0001
-                        for p2 in portfolio if p2 is not s and p2.get("lat") and p2.get("lng")
-                    )
-                    if not already_used:
-                        s["lat"] = fixed_lat
-                        s["lng"] = fixed_lng
-                        s["geocode_suspect"]  = False
-                        s["geocode_fixed"]    = True
-                        s["original_lat"]     = bad_lat
-                        s["original_lng"]     = bad_lng
-                        # Apply Google data captured from text search
-                        for k, v in fixed_google_data.items():
-                            if v: s[k] = v
-                    else:
-                        # Duplicate coords — keep original and flag for manual fix
-                        s["geocode_suspect"] = True
-                        s["original_lat"]    = bad_lat
-                        s["original_lng"]    = bad_lng
+                    s["lat"] = fixed_lat
+                    s["lng"] = fixed_lng
+                    s["geocode_suspect"]  = False
+                    s["geocode_fixed"]    = True
+                    s["original_lat"]     = bad_lat
+                    s["original_lng"]     = bad_lng
+                    # Apply Google data captured from text search
+                    for k, v in fixed_google_data.items():
+                        if v: s[k] = v
                 else:
                     # Could not fix — null out bad coordinates so they don't
                     # cause false coverage matches or wrong map positions
@@ -1664,10 +1702,16 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 for field in GOOGLE_FIELDS:
                     if best_match.get(field) and not p.get(field):
                         p[field] = best_match[field]
+                # Always update rating/reviews from Google
                 if best_match.get("rating"):
                     p["rating"]       = best_match["rating"]
                 if best_match.get("review_count"):
                     p["review_count"] = best_match["review_count"]
+                # If store has no coordinates, borrow from matched scraped store
+                if not (p.get("lat") and p.get("lng")) and best_match.get("lat"):
+                    p["lat"]          = best_match["lat"]
+                    p["lng"]          = best_match["lng"]
+                    p["geocode_fixed"]= True
 
         # ── Fix suspect portfolio stores using scraped universe ───────────────
         # For portfolio stores still flagged as suspect, try name-match against
@@ -1677,12 +1721,12 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             status.info(f"Stage 4/{total_steps} — Attempting coordinate fix for {len(still_suspect)} suspect stores using scraped data...")
             coord_fixes = 0
             for p in still_suspect:
-                best_sim  = 0
+                best_sim   = 0
                 best_match = None
                 for u in universe:
                     if not (u.get("lat") and u.get("lng")): continue
                     sim = name_similarity(p.get("store_name",""), u.get("store_name",""))
-                    if sim > best_sim and sim >= 0.5:  # 50% name similarity minimum
+                    if sim > best_sim and sim >= 0.4:  # lowered to 40% for harder names
                         best_sim   = sim
                         best_match = u
                 if best_match:
@@ -1692,10 +1736,13 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     p["lng"]             = best_match["lng"]
                     p["geocode_suspect"] = False
                     p["geocode_fixed"]   = True
+                    # Copy Google data from matched scraped store
+                    for field in ["rating","review_count","price_level","place_id"]:
+                        if best_match.get(field):
+                            p[field] = best_match[field]
                     coord_fixes         += 1
                 else:
-                    # Could not fix via name match either — keep coords null
-                    # Store will appear in output without map position
+                    # Could not fix — null out so it doesn't place store in wrong location
                     p["geocode_fixed"]   = False
                     p["lat"]             = None
                     p["lng"]             = None
