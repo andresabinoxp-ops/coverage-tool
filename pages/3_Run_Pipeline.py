@@ -1486,27 +1486,48 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Stage 4: Gap match
         status.info(f"Stage 4/{total_steps} — Matching coverage gaps...")
 
-        # Read matching settings from Admin
-        match_cfg      = st.session_state.get("admin_matching", {})
-        base_radius    = match_cfg.get("base_radius_m",       100)
-        fuzzy_radius   = match_cfg.get("fuzzy_radius_m",      150)
-        fuzzy_thresh   = match_cfg.get("fuzzy_threshold_pct",  60) / 100
+        # Fixed matching thresholds — size-aware, no user config needed
+        NAME_SIM_THRESH = 0.75   # 75% bigram similarity required for fuzzy match
+
+        # Size-aware radius — larger stores have bigger physical footprint
+        # Large (hypermarket/supermarket): 200m base, 250m fuzzy
+        # Medium (supermarket): 100m base, 150m fuzzy
+        # Small/Occasional/Unknown: 50m base, 100m fuzzy
+        SIZE_RADIUS = {
+            "Large":      (200, 250),
+            "Medium":     (100, 150),
+            "Small":      (50,  100),
+            "Occasional": (50,  100),
+        }
+        DEFAULT_RADIUS = (50, 100)
+
+        # Large chain keywords — always use Large radius regardless of tier
+        LARGE_CHAINS = ["lulu","carrefour","hypermarket","hyper","mall","centre","center",
+                        "hypermart","spinneys","waitrose","union","giant","geant"]
 
         def name_similarity(a, b):
-            """Simple character overlap similarity between two store names."""
+            """Bigram similarity between two store names after stripping noise words."""
             a = str(a).lower().strip()
             b = str(b).lower().strip()
             if not a or not b: return 0.0
-            # Remove common words that add noise
-            for w in ["supermercado","super","mercado","hipermercado","hiper","atacado","atacadao","ltda","eireli","me "]:
+            for w in ["supermercado","super","mercado","hipermercado","hiper","atacado",
+                      "atacadao","ltda","eireli","me ","trading","est ","llc","co ","trd"]:
                 a = a.replace(w,""); b = b.replace(w,"")
             a = a.strip(); b = b.strip()
             if not a or not b: return 0.0
-            # Bigram similarity
             def bigrams(s): return set(s[i:i+2] for i in range(len(s)-1))
             ba, bb = bigrams(a), bigrams(b)
             if not ba or not bb: return 0.0
             return len(ba & bb) / max(len(ba | bb), 1)
+
+        def get_radii(store):
+            """Return (base_radius, fuzzy_radius) for a store based on size tier and name."""
+            name_lower = str(store.get("store_name","")).lower()
+            # Check for large chain keywords — always use large radius
+            if any(kw in name_lower for kw in LARGE_CHAINS):
+                return SIZE_RADIUS["Large"]
+            tier = store.get("size_tier","")
+            return SIZE_RADIUS.get(tier, DEFAULT_RADIUS)
 
         # Build lookup structures
         portfolio_place_ids = {p.get("place_id") for p in portfolio if p.get("place_id")}
@@ -1531,18 +1552,19 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 if (round(u["lat"],4), round(u["lng"],4)) in portfolio_coords:
                     matched = True
 
-            # Match 3 + 4: distance-based
+            # Match 3 + 4: size-aware distance matching
             if not matched:
+                base_r, fuzzy_r = get_radii(u)
                 for p in covered_p:
                     dist = haversine_m(u["lat"],u["lng"],p["lat"],p["lng"])
                     # Match 3: within base radius — always covered
-                    if dist <= base_radius:
+                    if dist <= base_r:
                         matched = True
                         break
-                    # Match 4: within fuzzy radius — only if names are similar enough
-                    if dist <= fuzzy_radius:
+                    # Match 4: within fuzzy radius — only if names similar enough
+                    if dist <= fuzzy_r:
                         sim = name_similarity(u.get("store_name",""), p.get("store_name",""))
-                        if sim >= fuzzy_thresh:
+                        if sim >= NAME_SIM_THRESH:
                             matched = True
                             break
 
