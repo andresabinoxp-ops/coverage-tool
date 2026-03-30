@@ -192,7 +192,7 @@ def calculate_estimate(enrich_count, enrich_scope):
     scrape_time       = scrape_calls * 0.35 + n_tiles * n_categories * (avg_pages-1) * 2
 
     # Geocoding
-    geocode_calls     = sum(1 for s in portfolio if not (s.get("lat") and s.get("lng"))) if portfolio else n_portfolio
+    geocode_calls     = n_portfolio  # estimate — actual count may be lower if stores have existing coordinates
     geocode_cost      = geocode_calls * PRICE_GEOCODE_PER_CALL
     geocode_time      = geocode_calls * 0.15
 
