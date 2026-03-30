@@ -409,7 +409,7 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 
 def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
     """
-    Calculate recommended rep count.
+    Calculate recommended rep count including travel time estimate.
     Uses plan_visits if available (post route-builder), else visits_per_month.
     Returns (recommended_reps, total_minutes_needed_per_month, minutes_per_rep_per_month).
     """
@@ -417,11 +417,11 @@ def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days
         return 1, 0.0, 0.0
 
     monthly_capacity = daily_minutes * working_days
+    n_stores = len(priority_stores)
 
     # Use plan_visits if route builder has already run, else visits_per_month
     has_plan = any(s.get("plan_visits") is not None for s in priority_stores)
     if has_plan:
-        # plan_visits is 2-month total — divide by 2 for monthly equivalent
         total_visit_time = sum(
             s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
             for s in priority_stores
@@ -433,7 +433,25 @@ def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days
             for s in priority_stores
         )
 
-    rec_reps = max(1, math.ceil(total_visit_time / monthly_capacity))
+    # Estimate travel time overhead based on geographic spread
+    # Calculate bounding box of all stores to estimate territory size
+    geo = [s for s in priority_stores if s.get("lat") and s.get("lng")]
+    if len(geo) > 1:
+        lat_span = max(s["lat"] for s in geo) - min(s["lat"] for s in geo)
+        lng_span = max(s["lng"] for s in geo) - min(s["lng"] for s in geo)
+        mid_lat  = sum(s["lat"] for s in geo) / len(geo)
+        area_km2 = lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid_lat))
+        # Average distance between consecutive stores ~ sqrt(area / stores) * 0.7
+        avg_dist_km    = math.sqrt(max(area_km2, 1) / max(n_stores, 1)) * 0.7
+        avg_travel_min = (avg_dist_km / max(avg_speed_kmh, 1)) * 60
+        # Total travel visits = total monthly visits across all stores
+        total_visits = sum(s.get("visits_per_month", 1) for s in priority_stores)
+        total_travel_time = avg_travel_min * total_visits
+    else:
+        total_travel_time = total_visit_time * 0.2  # 20% overhead if no geo data
+
+    total_minutes = total_visit_time + total_travel_time
+    rec_reps = max(1, math.ceil(total_minutes / monthly_capacity))
     return rec_reps, round(total_visit_time), round(monthly_capacity)
 
 
