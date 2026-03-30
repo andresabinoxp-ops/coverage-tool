@@ -1281,8 +1281,18 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         pf        = st.session_state.get("portfolio_df")
         portfolio = pf.to_dict("records") if pf is not None else []
         for s in portfolio:
+            # Preserve existing lat/lng from CSV before update
+            _existing_lat = s.get("lat")
+            _existing_lng = s.get("lng")
             s.update({"covered":True,"source":"portfolio","lat":None,"lng":None,
                       "rating":0.0,"review_count":0,"phone":"","opening_hours":"","website":""})
+            # Restore original coordinates if they existed
+            if _existing_lat is not None:
+                try:
+                    s["lat"] = float(_existing_lat)
+                    s["lng"] = float(_existing_lng)
+                except (TypeError, ValueError):
+                    pass
             if "category" not in s: s["category"] = cfg["categories"][0] if cfg["categories"] else "supermarket"
 
         radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
@@ -1340,9 +1350,13 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         lat_buf  = max(lat_span * 0.5, 2.0)
         lng_buf  = max(lng_span * 0.5, 2.0)
 
+        # Quality check runs on ALL portfolio stores — both newly geocoded
+        # AND stores that had existing coordinates in the CSV (which may also be wrong)
         suspect_stores = []
-        for s in needs_geocode:
-            if not (s.get("lat") and s.get("lng")): continue
+        for s in portfolio:
+            if not (s.get("lat") and s.get("lng")):
+                s["geocode_suspect"] = False
+                continue
             if not (bbox_lat_min - lat_buf <= s["lat"] <= bbox_lat_max + lat_buf and
                     bbox_lng_min - lng_buf <= s["lng"] <= bbox_lng_max + lng_buf):
                 s["geocode_suspect"] = True
