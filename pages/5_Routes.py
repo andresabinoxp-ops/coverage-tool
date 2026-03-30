@@ -167,22 +167,24 @@ if sel_month != "Full plan":
     idx = PLAN_MONTHS.index(sel_month) if sel_month in PLAN_MONTHS else -1
     sel_month_key = PLAN_MONTH_KEYS[idx] if idx >= 0 else None
 
-# Apply filters
-map_stores = [s for s in all_stores if s.get("lat") and s.get("lng")]
+# Apply filters — always start with routed stores only (plan_visits > 0)
+map_stores = [s for s in all_stores
+              if s.get("lat") and s.get("lng")
+              and s.get("plan_visits", 0) > 0]
 if sel_rep != "All reps":
     rep_num    = int(sel_rep.split()[1])
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
-# For month filter — only show stores that have visits in that month
+# Month filter — only stores with visits in that month
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
-elif sel_month == "Full plan":
-    map_stores = [s for s in map_stores if s.get("plan_visits",0) > 0]
-# For specific date filter
-if sel_day not in ("Full month", "All weeks") and sel_month_key:
-    map_stores = [s for s in map_stores if sel_day in parse_dates_val(s.get(f"{sel_month_key}_weeks", []))]
-elif sel_day not in ("Full month", "All weeks") and not sel_month_key:
-    # weekday filter for full year view
-    map_stores = [s for s in map_stores if s.get("assigned_day") == sel_day]
+# Week filter — match against week label stored in _weeks column
+if sel_day not in ("Full month", "All weeks", "") and sel_month_key:
+    map_stores = [s for s in map_stores
+                  if sel_day in parse_dates_val(s.get(f"{sel_month_key}_weeks", []))]
+elif sel_day not in ("Full month", "All weeks", "") and not sel_month_key:
+    # No month selected — filter by weekday name in assigned_day
+    map_stores = [s for s in map_stores
+                  if sel_day.split("-")[-1].strip() == s.get("assigned_day","").strip()]
 if not show_gaps:
     map_stores = [s for s in map_stores if s.get("coverage_status") != "gap"]
 if not show_covered:
@@ -274,17 +276,21 @@ st.caption("Each file includes store details, assigned day, visit dates, visit o
 mkt_safe = market.replace(" ","_").replace("-","_")
 
 def build_rep_df(stores, rep_id=None, day=None, month_key=None):
+    # Only include stores that are actually in the route plan
     filtered = [s for s in stores if s.get("rep_id",0) > 0]
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
-    if month_key and day and day not in ("Full month", "All weeks"):
-        # Filter by specific date — store must have this date in its monthly dates
-        filtered = [s for s in filtered if day in s.get(f"{month_key}_dates", [])]
+    if month_key and day and day not in ("Full month", "All weeks", ""):
+        # Filter by specific week label — e.g. "Week 1 - Monday"
+        # Week label is stored like ["Week 1 - Monday", "Week 3 - Monday"]
+        filtered = [s for s in filtered
+                    if day in parse_dates_val(s.get(f"{month_key}_weeks", []))]
     elif month_key:
         filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
-    elif day and day not in ("Full month", "All weeks"):
-        # Full year — filter by weekday name
-        filtered = [s for s in filtered if s.get("assigned_day") == day]
+    elif day and day not in ("Full month", "All weeks", ""):
+        # No month — filter by weekday in assigned_day
+        day_name = day.split("-")[-1].strip()
+        filtered = [s for s in filtered if s.get("assigned_day","").strip() == day_name]
     if not filtered:
         return pd.DataFrame()
     filtered = sorted(filtered, key=lambda x: (x.get("assigned_day",""), x.get("day_visit_order",99)))
