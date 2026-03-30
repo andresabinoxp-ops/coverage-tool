@@ -192,7 +192,7 @@ def calculate_estimate(enrich_count, enrich_scope):
     scrape_time       = scrape_calls * 0.35 + n_tiles * n_categories * (avg_pages-1) * 2
 
     # Geocoding
-    geocode_calls     = n_portfolio
+    geocode_calls     = sum(1 for s in portfolio if not (s.get("lat") and s.get("lng"))) if portfolio else n_portfolio
     geocode_cost      = geocode_calls * PRICE_GEOCODE_PER_CALL
     geocode_time      = geocode_calls * 0.15
 
@@ -268,10 +268,25 @@ def calculate_estimate(enrich_count, enrich_scope):
         "estimated_universe": estimated_universe,
     }
 
-def geocode_store(address, city, api_key):
+# Auto-detect sub-city and region column names
+DISTRICT_COLS = ["district","area","neighbourhood","neighborhood","bairro","zone","suburb","quarter"]
+REGION_COLS   = ["region","state","governorate","province","county","wilaya","emirate","prefecture"]
+
+def _get_location_field(store, col_list):
+    """Return first non-empty value from a list of possible column names."""
+    for col in col_list:
+        v = store.get(col,"")
+        if v and str(v).strip() and str(v).strip().lower() not in ("nan","none",""):
+            return str(v).strip()
+    return ""
+
+def geocode_store(address, city, api_key, district="", region=""):
+    """Geocode using address + optional district and region for better accuracy."""
     try:
+        parts = [p for p in [address, district, city, region] if p and p.strip()]
+        full_address = ", ".join(parts)
         r = requests.get(GEOCODE_URL,
-            params={"address":f"{address}, {city}","key":api_key}, timeout=10)
+            params={"address": full_address, "key": api_key}, timeout=10)
         data = r.json()
         if data.get("status") == "OK":
             loc = data["results"][0]["geometry"]["location"]
@@ -785,6 +800,9 @@ if portfolio_df is None:
             # Drop completely blank rows (empty Excel rows at end of file)
             df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
             df = df[df["store_name"].fillna("").str.strip() != ""].reset_index(drop=True)
+            # Ensure lat/lng columns exist (may be empty)
+            if "lat" not in df.columns: df["lat"] = None
+            if "lng" not in df.columns: df["lng"] = None
             missing = [c for c in ["store_name","address","city"] if c not in df.columns]
             if missing:
                 st.error(f"Missing columns: {missing}")
@@ -1224,15 +1242,40 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         run_start   = time.time()
 
         # Stage 1: Geocode
-        status.info(f"Stage 1/{total_steps} — Geocoding {len(portfolio)} portfolio stores...")
-        bar.progress(5)
+        # Skip stores that already have both lat and lng — trust existing coordinates
+        needs_geocode = []
+        has_coords    = []
         for s in portfolio:
-            lat,lng = geocode_store(s.get("address",""),s.get("city",""),api_key)
-            s["lat"],s["lng"] = lat,lng
+            try:
+                lat_val = float(s.get("lat","") or "")
+                lng_val = float(s.get("lng","") or "")
+                s["lat"] = lat_val
+                s["lng"] = lng_val
+                has_coords.append(s)
+            except (ValueError, TypeError):
+                s["lat"] = None
+                s["lng"] = None
+                needs_geocode.append(s)
+
+        if has_coords:
+            status.info(f"Stage 1/{total_steps} — {len(has_coords)} stores already have coordinates — skipping geocoding for those.")
+        if needs_geocode:
+            status.info(f"Stage 1/{total_steps} — Geocoding {len(needs_geocode)} stores...")
+        bar.progress(5)
+
+        for s in needs_geocode:
+            district = _get_location_field(s, DISTRICT_COLS)
+            region   = _get_location_field(s, REGION_COLS)
+            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key, district, region)
+            s["lat"], s["lng"] = lat, lng
             time.sleep(0.05)
+
         geocode_ok   = sum(1 for s in portfolio if s.get("lat") and s.get("lng"))
         geocode_fail = len(portfolio) - geocode_ok
-        status.info(f"Stage 1/{total_steps} — Geocoding complete: {geocode_ok} located, {geocode_fail} failed")
+        status.info(
+            f"Stage 1/{total_steps} — Complete: {len(has_coords)} had coordinates · "
+            f"{len(needs_geocode) - geocode_fail} geocoded · {geocode_fail} failed"
+        )
         bar.progress(15)
 
         # Stage 2: Scrape
