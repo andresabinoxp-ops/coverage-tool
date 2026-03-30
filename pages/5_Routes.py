@@ -64,16 +64,18 @@ m2_name = plan_months.get("month2", datetime.date(m2_year, m2_idx, 1).strftime("
 m1_key  = plan_months.get("m1_key", datetime.date(route_year, route_month1, 1).strftime("%b").lower())
 m2_key  = plan_months.get("m2_key", datetime.date(m2_year, m2_idx, 1).strftime("%b").lower())
 
-PLAN_MONTHS      = [m1_name, m2_name]
-PLAN_MONTH_KEYS  = [m1_key,  m2_key]
+PLAN_MONTHS      = plan_months.get("month_labels", [m1_name, m2_name])
+PLAN_MONTH_KEYS  = plan_months.get("month_keys",   [m1_key,  m2_key])
 MONTH_NAMES = ["January","February","March","April","May","June",
                "July","August","September","October","November","December"]
 MONTH_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 
+plan_period = plan_months.get("plan_period", len(PLAN_MONTHS))
+plan_label  = " + ".join(PLAN_MONTHS)
 st.markdown(f"""
 <div class="page-header">
     <h2>🗺️ Rep Routes</h2>
-    <p>Market: {market} &nbsp;·&nbsp; 2-month plan: {m1_name} + {m2_name}</p>
+    <p>Market: {market} &nbsp;·&nbsp; {plan_period}-month plan: {plan_label}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -128,12 +130,16 @@ def parse_dates_val(val):
     return [d.strip() for d in s.split(",") if d.strip()]
 
 def get_dates_for_month(stores, month_key):
-    """Get all unique visit dates for a given month key (e.g. 'jan')."""
-    dates = set()
+    """Get all unique week labels for a given month key (e.g. 'm1')."""
+    weeks = set()
     for s in stores:
-        for d in parse_dates_val(s.get(f"{month_key}_dates", [])):
-            if d: dates.add(d)
-    return ["All dates"] + sorted(dates)
+        for w in parse_dates_val(s.get(f"{month_key}_weeks", [])):
+            if w: weeks.add(w)
+    # Sort by week number
+    def week_sort(w):
+        try: return int(w.split("Week")[1].split("-")[0].strip())
+        except: return 99
+    return ["All weeks"] + sorted(weeks, key=week_sort)
 
 all_days = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
 
@@ -148,9 +154,9 @@ with col4:
     if sel_month != "Full plan" and sel_month in PLAN_MONTHS:
         _mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(sel_month)]
         _dates = get_dates_for_month(all_stores, _mkey)
-        sel_day = st.selectbox("Date", _dates)
+        sel_day = st.selectbox("Week", _dates)
     else:
-        sel_day = st.selectbox("Date", ["All dates"])
+        sel_day = st.selectbox("Week", ["All weeks"])
 with col5:
     show_gaps    = st.checkbox("Show gap stores",    value=True)
     show_covered = st.checkbox("Show covered stores",value=True)
@@ -172,9 +178,9 @@ if sel_month_key:
 elif sel_month == "Full plan":
     map_stores = [s for s in map_stores if s.get("plan_visits",0) > 0]
 # For specific date filter
-if sel_day not in ("Full month", "All dates") and sel_month_key:
-    map_stores = [s for s in map_stores if sel_day in parse_dates_val(s.get(f"{sel_month_key}_dates", []))]
-elif sel_day not in ("Full month", "All dates") and not sel_month_key:
+if sel_day not in ("Full month", "All weeks") and sel_month_key:
+    map_stores = [s for s in map_stores if sel_day in parse_dates_val(s.get(f"{sel_month_key}_weeks", []))]
+elif sel_day not in ("Full month", "All weeks") and not sel_month_key:
     # weekday filter for full year view
     map_stores = [s for s in map_stores if s.get("assigned_day") == sel_day]
 if not show_gaps:
@@ -226,18 +232,20 @@ st.markdown('<div class="section-title">Legend</div>', unsafe_allow_html=True)
 if colour_by == "Rep route":
     reps = sorted(set(s.get("rep_id",0) for s in map_stores if s.get("rep_id")))
     if reps:
-        cols = st.columns(min(len(reps),6))
-        # Universe = all stores for this rep regardless of map filter
-        all_rep_stores = {rep: [s for s in all_stores if s.get("rep_id")==rep] for rep in reps}
-        for i,rep in enumerate(reps[:6]):
-            rs        = [s for s in all_stores if s.get("rep_id")==rep and s.get("plan_visits",0)>0]
-            plan_n    = len(rs)
-            visits_mo = sum(s.get("visits_per_month",0) for s in rs)
-            c         = REP_COLORS[rep % len(REP_COLORS)]
-            hx        = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
-            cols[i].markdown(
-                f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                f'Plan stores: {plan_n} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                f'</div></div>',
-                unsafe_allow_html=True)
+        # Show all reps in rows of 5
+        n_per_row = 5
+        for row_start in range(0, len(reps), n_per_row):
+            row_reps = reps[row_start:row_start + n_per_row]
+            cols     = st.columns(len(row_reps))
+            for i, rep in enumerate(row_reps):
+                rs        = [s for s in all_stores if s.get("rep_id")==rep and s.get("plan_visits",0)>0]
+                plan_n    = len(rs)
+                visits_mo = sum(s.get("visits_per_month",0) for s in rs)
+                c         = REP_COLORS[rep % len(REP_COLORS)]
+                hx        = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+                cols[i].markdown(
+                    f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                    f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                    f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                    f'Plan stores: {plan_n} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                    f'</div></div>',
+                    unsafe_allow_html=True)
 elif colour_by == "Day of week":
     lc = st.columns(5)
     for i,(day,col) in enumerate(DAY_COLORS.items()):
@@ -269,12 +277,12 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
     filtered = [s for s in stores if s.get("rep_id",0) > 0]
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
-    if month_key and day and day not in ("Full month", "All dates"):
+    if month_key and day and day not in ("Full month", "All weeks"):
         # Filter by specific date — store must have this date in its monthly dates
         filtered = [s for s in filtered if day in s.get(f"{month_key}_dates", [])]
     elif month_key:
         filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
-    elif day and day not in ("Full month", "All dates"):
+    elif day and day not in ("Full month", "All weeks"):
         # Full year — filter by weekday name
         filtered = [s for s in filtered if s.get("assigned_day") == day]
     if not filtered:
@@ -305,7 +313,7 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
         }
         # Add only plan month columns
         for mk in PLAN_MONTH_KEYS:
-            row[f"{mk}_dates"]  = ", ".join(s.get(f"{mk}_dates", []))
+            row[f"{mk}_weeks"]  = ", ".join(s.get(f"{mk}_weeks", []))
             row[f"{mk}_visits"] = s.get(f"{mk}_visits", 0)
         row["plan_visits"] = s.get("plan_visits", 0)
         rows.append(row)
@@ -382,7 +390,7 @@ cfg_tbl   = st.session_state.get("market_config", {})
 daily_cap = cfg_tbl.get("daily_minutes", 480)
 
 # When a specific date is selected, sort by visit order — already within budget
-if not display_df.empty and tbl_day not in ("Full month", "All dates", "") and "visit_duration_min" in display_df.columns:
+if not display_df.empty and tbl_day not in ("Full month", "All weeks", "") and "visit_duration_min" in display_df.columns:
     display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
 if not display_df.empty:
@@ -392,11 +400,11 @@ if not display_df.empty:
                  "address","city","lat","lng"]
     # Add month columns if viewing a specific month
     if tbl_month_key:
-        month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
+        month_cols = [f"{tbl_month_key}_weeks", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
         # Full plan — show both month date and visit columns
-        base_cols = base_cols + [f"{mk}_dates" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
+        base_cols = base_cols + [f"{mk}_weeks" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
     show_cols = [c for c in base_cols if c in display_df.columns]
     rename_map = {
         "rep_id":"Rep","assigned_day":"Day","day_visit_order":"Visit Order",
@@ -406,7 +414,7 @@ if not display_df.empty:
         "rating":"Rating","review_count":"Reviews","phone":"Phone",
         "opening_hours":"Opening Hours","address":"Address","city":"City",
         "lat":"Latitude","lng":"Longitude",
-        **{f"{mk}_dates": f"{PLAN_MONTHS[i][:3]} Dates" for i,mk in enumerate(PLAN_MONTH_KEYS)},
+        **{f"{mk}_weeks": f"{PLAN_MONTHS[i][:3]} Dates" for i,mk in enumerate(PLAN_MONTH_KEYS)},
         **{f"{mk}_visits": f"{PLAN_MONTHS[i][:3]} Visits" for i,mk in enumerate(PLAN_MONTH_KEYS)},
         "plan_visits": "Plan Visits (total)",
     }
@@ -445,7 +453,7 @@ if not display_df.empty:
         _routed = display_df[display_df["plan_visits"] > 0] if "plan_visits" in display_df.columns else display_df
 
     if "visit_duration_min" in display_df.columns:
-        if tbl_day not in ("Full month", "All dates", "") and tbl_month != "Full plan":
+        if tbl_day not in ("Full month", "All weeks", "") and tbl_month != "Full plan":
             # Specific date selected — show time for that day's routed stores
             day_visit_time = int(_routed["visit_duration_min"].sum()) if not _routed.empty else 0
             m2.metric("Time for this day",
