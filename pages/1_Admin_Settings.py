@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-st.set_page_config(page_title="Admin - Coverage Tool", page_icon="🔐", layout="wide")
+st.set_page_config(page_title="Admin - Coverage Tool", page_icon=" ", layout="wide")
 
 st.markdown("""
 <style>
@@ -42,7 +42,10 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 
 st.markdown("""
 <div class="page-header">
-    <h2>🔐 Admin Settings</h2>
+
+
+
+    <h2>  Admin Settings</h2>
     <p>Configure global defaults for all markets — changes here apply to every new pipeline run</p>
 </div>
 """, unsafe_allow_html=True)
@@ -69,7 +72,7 @@ if not st.session_state["admin_authenticated"]:
             st.error("Wrong password.")
     st.stop()
 
-st.success("✅ Authenticated as Admin")
+st.success("  Authenticated as Admin")
 st.caption("Changes made here set the global defaults inherited by all markets.")
 
 def get_api_key():
@@ -89,15 +92,18 @@ def sec(number, title, desc, stage=""):
         unsafe_allow_html=True)
 
 def api_card(name, status, msg, fix=""):
+
+
+
     css    = {"ok":"api-ok","error":"api-err","warn":"api-warn"}
-    icons  = {"ok":"✅","error":"❌","warn":"⚠️"}
+    icons  = {"ok":" ","error":" ","warn":" "}
     colors = {"ok":"#1B5E20","error":"#B71C1C","warn":"#E65100"}
     fix_html = (f'<div style="background:#E3F2FD;border-radius:5px;padding:5px 10px;'
-                f'margin-top:5px;font-size:0.8rem;color:#0D47A1">🔧 {fix}</div>') if fix and status != "ok" else ""
+                f'margin-top:5px;font-size:0.8rem;color:#0D47A1">  {fix}</div>') if fix and status != "ok" else ""
     st.markdown(
         f'<div class="{css.get(status,"api-warn")}">'
         f'<span style="font-weight:700;color:{colors.get(status,"#555")}">'
-        f'{icons.get(status,"⚠️")} {name}</span>'
+        f'{icons.get(status," ")} {name}</span>'
         f'<span style="font-size:0.82rem;color:{colors.get(status,"#555")};margin-left:8px">{msg}</span>'
         f'{fix_html}</div>',
         unsafe_allow_html=True)
@@ -121,21 +127,24 @@ for sk,label in [("GOOGLE_MAPS_API_KEY","Google Maps API key"),("ADMIN_PASSWORD"
         val = st.secrets.get(sk,"")
         if val:
             m = val[:4]+"••••••••"+val[-4:] if len(val)>8 else "••••••••"
-            st.markdown(f'<div class="key-card"><span class="key-label">{label}</span><span class="key-set">✅ Set — {m}</span></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="key-card"><span class="key-label">{label}</span><span class="key-set">  Set — {m}</span></div>',unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="key-card"><span class="key-label">{label}</span><span class="key-unset">❌ Not set</span></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="key-card"><span class="key-label">{label}</span><span class="key-unset">  Not set</span></div>',unsafe_allow_html=True)
     except Exception:
-        st.markdown(f'<div class="key-card"><span class="key-label">{label}</span><span class="key-unset">❌ Not set</span></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="key-card"><span class="key-label">{label}</span><span class="key-unset">  Not set</span></div>',unsafe_allow_html=True)
 
 if st.session_state.get("session_api_key"):
     k = st.session_state["session_api_key"]
     m = k[:4]+"••••••••"+k[-4:]
-    st.markdown(f'<div class="key-card"><span class="key-label">Session key (this session only)</span><span class="key-set">✅ Active — {m}</span></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="key-card"><span class="key-label">Session key (this session only)</span><span class="key-set">  Active — {m}</span></div>',unsafe_allow_html=True)
 
 st.markdown("**Paste a new API key:**")
 st.caption("Saves for this session only. To make it permanent update GOOGLE_MAPS_API_KEY in Streamlit Secrets.")
 new_key = st.text_input("Google Maps API key", type="password", placeholder="AIza...", key="new_key_input")
 c1,c2 = st.columns([2,1])
+
+
+
 with c1:
     if st.button("Save for this session", type="primary", key="save_key_btn"):
         if new_key.startswith("AIza"):
@@ -155,7 +164,7 @@ api_key = get_api_key()
 if not api_key:
     st.warning("No API key set. Paste a key above or set GOOGLE_MAPS_API_KEY in Streamlit Secrets.")
 else:
-    if st.button("🔍 Run health check", type="primary", key="health_btn"):
+    if st.button("  Run health check", type="primary", key="health_btn"):
         with st.spinner("Checking APIs..."):
             results = {}
             d = test_api("https://maps.googleapis.com/maps/api/geocode/json",{"address":"Dubai, UAE","key":api_key})
@@ -179,10 +188,13 @@ else:
             fix = f"Enable in Google Cloud Console → APIs & Services → Library → search '{name.replace(' API','')}' → Enable." if status!="ok" else ""
             api_card(name,status,msg,fix)
         if all(s=="ok" for s,_ in st.session_state["api_health_cache"].values()):
-            st.success("✅ All APIs active — pipeline ready to run")
+            st.success("  All APIs active — pipeline ready to run")
         else:
             st.error("One or more APIs need to be enabled. See fix instructions above.")
     else:
+
+
+
         st.info("Click Run health check to verify all APIs are active.")
 
 with st.expander("How to set permanent Secrets + how to get a Google API key"):
@@ -214,13 +226,13 @@ st.markdown("**Group 1 — Current Coverage** (Rating · Reviews · Affluence ·
 st.caption("Default weights: 20 · 25 · 15 · 15 · 15 · 10")
 c1,c2 = st.columns(2)
 with c1:
-    w1_rating    = st.slider("⭐ Rating",         0,50,saved_w1.get("rating",20),   key="w1_rat")
-    w1_reviews   = st.slider("👥 Reviews",        0,50,saved_w1.get("reviews",25),  key="w1_rev")
-    w1_affluence = st.slider("💰 Affluence",      0,50,saved_w1.get("affluence",15),key="w1_aff")
+    w1_rating    = st.slider("  Rating",         0,50,saved_w1.get("rating",20),   key="w1_rat")
+    w1_reviews   = st.slider("  Reviews",        0,50,saved_w1.get("reviews",25),  key="w1_rev")
+    w1_affluence = st.slider("  Affluence",      0,50,saved_w1.get("affluence",15),key="w1_aff")
 with c2:
-    w1_poi       = st.slider("📍 Nearby POI",     0,50,saved_w1.get("poi",15),      key="w1_poi")
-    w1_sales     = st.slider("💵 Value Sales",    0,50,saved_w1.get("sales",15),    key="w1_sal")
-    w1_lines     = st.slider("📦 Lines per Store",0,50,saved_w1.get("lines",10),    key="w1_lin")
+    w1_poi       = st.slider("  Nearby POI",     0,50,saved_w1.get("poi",15),      key="w1_poi")
+    w1_sales     = st.slider("  Value Sales",    0,50,saved_w1.get("sales",15),    key="w1_sal")
+    w1_lines     = st.slider("  Lines per Store",0,50,saved_w1.get("lines",10),    key="w1_lin")
 w1_total = w1_rating+w1_reviews+w1_affluence+w1_poi+w1_sales+w1_lines
 if w1_total==100: st.success(f"Group 1 total: {w1_total}% ✓")
 else: st.error(f"Group 1 total: {w1_total}% — must equal 100%")
@@ -229,11 +241,14 @@ st.markdown("**Group 2 — Google Scraping** (Rating · Reviews · Affluence · 
 st.caption("Default weights: 25 · 25 · 25 · 25")
 c3,c4 = st.columns(2)
 with c3:
-    w2_rating    = st.slider("⭐ Rating",    0,50,saved_w2.get("rating",25),   key="w2_rat")
-    w2_reviews   = st.slider("👥 Reviews",   0,50,saved_w2.get("reviews",25),  key="w2_rev")
+    w2_rating    = st.slider("  Rating",    0,50,saved_w2.get("rating",25),   key="w2_rat")
+
+
+
+    w2_reviews   = st.slider("  Reviews",   0,50,saved_w2.get("reviews",25),  key="w2_rev")
 with c4:
-    w2_affluence = st.slider("💰 Affluence", 0,50,saved_w2.get("affluence",25),key="w2_aff")
-    w2_poi       = st.slider("📍 Nearby POI",0,50,saved_w2.get("poi",25),      key="w2_poi")
+    w2_affluence = st.slider("  Affluence", 0,50,saved_w2.get("affluence",25),key="w2_aff")
+    w2_poi       = st.slider("  Nearby POI",0,50,saved_w2.get("poi",25),      key="w2_poi")
 w2_total = w2_rating+w2_reviews+w2_affluence+w2_poi
 if w2_total==100: st.success(f"Group 2 total: {w2_total}% ✓")
 else: st.error(f"Group 2 total: {w2_total}% — must equal 100%")
@@ -246,7 +261,7 @@ if w1_total==100 and w2_total==100:
         st.session_state["admin_scoring_weights_gap"] = {
             "rating":w2_rating,"reviews":w2_reviews,
             "affluence":w2_affluence,"poi":w2_poi}
-        st.success("✅ Scoring weights saved for both groups.")
+        st.success("  Scoring weights saved for both groups.")
 
 # ── SECTION 3: STORE SIZE & VISIT BENCHMARKS ──────────────────────────────────
 st.markdown("---")
@@ -277,6 +292,9 @@ saved_bench = st.session_state.get("admin_visit_benchmarks",{
 })
 st.markdown("**Default visit benchmarks per tier:**")
 new_bench = {}
+
+
+
 bc1,bc2,bc3 = st.columns(3)
 for col,tier,label,default_v,default_d in [
     (bc1,"large","Large",4,40),
@@ -306,7 +324,7 @@ if split_total==100:
             "medium_visits":new_bench["medium"]["visits_month"],"medium_duration":new_bench["medium"]["duration_min"],
             "small_visits":new_bench["small"]["visits_month"],"small_duration":new_bench["small"]["duration_min"],
         }
-        st.success("✅ Size splits and visit benchmarks saved.")
+        st.success("  Size splits and visit benchmarks saved.")
 
 # ── SECTION 4: REP PLANNING DEFAULTS ─────────────────────────────────────────
 st.markdown("---")
@@ -324,6 +342,9 @@ c1,c2,c3,c4 = st.columns(4)
 with c1:
     minutes_day  = st.number_input("Total working day (min)",   min_value=240,max_value=600,step=30,value=saved_rep.get("minutes_per_day",480),
         help="Full working day including travel and breaks. Default 480 = 8 hours.")
+
+
+
     st.caption(f"{minutes_day//60}h {minutes_day%60}min total day")
 with c2:
     break_mins   = st.number_input("Break time (min/day)",      min_value=0,  max_value=120,step=15,value=saved_rep.get("break_minutes",30),
@@ -366,11 +387,67 @@ if st.button("Save rep planning defaults", type="primary", key="save_rep"):
         "min_utilisation_pct": min_util,
         "store_select_pct":    store_select_pct,
     }
-    st.success("✅ Rep planning defaults saved.")
+    st.success("  Rep planning defaults saved.")
 
-# ── SECTION 5: APP ACCESS ─────────────────────────────────────────────────────
+# ── SECTION 5: ENRICHMENT SETTINGS ───────────────────────────────────────────
 st.markdown("---")
-sec("5","App Access","Manage admin session and password.")
+sec("5","Enrichment Settings",
+
+
+
+    "Control which optional enrichment steps run during the pipeline. "
+    "Place Details fetches price level, phone and opening hours. "
+    "Nearby POI counts points of interest around each store for the affluence and POI score signals.",
+    "Stage 7/8 — Enrichment")
+
+saved_enrich = st.session_state.get("admin_enrichment", {
+    "run_place_details": True,
+    "run_poi":           True,
+    "poi_radius_m":      500,
+})
+
+col_e1, col_e2, col_e3 = st.columns(3)
+with col_e1:
+    run_place_details = st.toggle(
+        "  Place Details enrichment",
+        value=saved_enrich.get("run_place_details", True),
+        help="Fetches phone, opening hours, website and price level (affluence) for all stores. Costs ~$0.017/store."
+    )
+with col_e2:
+    run_poi = st.toggle(
+        "  Nearby POI enrichment",
+        value=saved_enrich.get("run_poi", True),
+        help="Counts nearby points of interest within the radius below. Used in POI scoring signal. Costs ~$0.032/call."
+    )
+with col_e3:
+    poi_radius_m = st.number_input(
+        "POI search radius (metres)",
+        min_value=100, max_value=2000,
+        value=saved_enrich.get("poi_radius_m", 500),
+        step=100,
+        help="Search radius for counting nearby POIs. 500m = ~5 min walk."
+    )
+
+if st.button("Save enrichment settings", type="primary", key="save_enrich"):
+    st.session_state["admin_enrichment"] = {
+        "run_place_details": run_place_details,
+        "run_poi":           run_poi,
+        "poi_radius_m":      poi_radius_m,
+    }
+    st.success("  Enrichment settings saved.")
+else:
+    # Apply immediately to session state even without saving
+    st.session_state["admin_enrichment"] = {
+        "run_place_details": run_place_details,
+        "run_poi":           run_poi,
+        "poi_radius_m":      poi_radius_m,
+    }
+
+
+
+# ── SECTION 6: APP ACCESS ─────────────────────────────────────────────────────
+st.markdown("---")
+sec("6","App Access","Manage admin session and password.")
 
 with st.expander("How to change the admin password"):
     st.markdown("""
@@ -380,6 +457,6 @@ with st.expander("How to change the admin password"):
     """)
 
 st.markdown("---")
-if st.button("🔒 Log out"):
+if st.button("  Log out"):
     st.session_state["admin_authenticated"] = False
     st.rerun()
