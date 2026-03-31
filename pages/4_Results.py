@@ -315,10 +315,15 @@ with col1:
     _m1k = plan_months_sess.get("m1_key","")
     _m2k = plan_months_sess.get("m2_key","")
     _all_months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+    # Always keep scoring signals in output CSV
+    _always_keep = {"price_level","poi_count","rating","review_count","score",
+                    "coverage_status","size_tier","visits_per_month","rep_id",
+                    "assigned_day","plan_visits","lat","lng","source","covered"}
     _keep_month_cols = {f"{_m1k}_dates","m1_dates",f"{_m1k}_visits",f"{_m2k}_dates","m2_dates",f"{_m2k}_visits","plan_visits"}
     _drop_cols = [c for c in (pd.DataFrame(all_stores).columns if all_stores else [])
                   if any(c.startswith(f"{m}_") for m in _all_months)
-                  and c not in _keep_month_cols]
+                  and c not in _keep_month_cols
+                  and c not in _always_keep]
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
     st.download_button("  Full scored universe CSV",
         _clean_df.reset_index(drop=True).to_csv(index=False),
@@ -334,12 +339,13 @@ with col3:
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
              "visits_per_month","rep_id","coverage_status","category"]}}
         for s in all_stores if s.get("lat") and s.get("lng")
+
+
+
     ]
     st.download_button("  Routes GeoJSON",
         json.dumps({"type":"FeatureCollection","features":features}, indent=2),
         f"rep_routes_{mkt_safe}.geojson", "application/json")
-
-
 
 st.markdown("---")
 st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
