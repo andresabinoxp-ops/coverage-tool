@@ -1857,8 +1857,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             for s in stores:
                 s["_norm_score"] = s.get("score",0) / mx
 
-        group1 = [s for s in priority_all if (s.get("annual_sales_usd") or 0) > 0]
-        group2 = [s for s in priority_all if (s.get("annual_sales_usd") or 0) <= 0]
+        def _safe_sales(s):
+            try: return float(s.get("annual_sales_usd") or 0)
+            except (ValueError, TypeError): return 0.0
+        group1 = [s for s in priority_all if _safe_sales(s) > 0]
+        group2 = [s for s in priority_all if _safe_sales(s) <= 0]
         _normalise_group(group1)
         _normalise_group(group2)
 
