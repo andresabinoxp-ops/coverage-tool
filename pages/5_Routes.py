@@ -4,7 +4,7 @@ import pandas as pd
 import json
 import datetime
 
-st.set_page_config(page_title="Routes - Coverage Tool", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Routes - Coverage Tool", page_icon=" ", layout="wide")
 
 st.markdown("""
 <style>
@@ -43,6 +43,8 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
+
+
 if not st.session_state.get("run_results"):
     st.warning("No results yet. Run the pipeline first.")
     st.stop()
@@ -74,7 +76,7 @@ plan_period = plan_months.get("plan_period", len(PLAN_MONTHS))
 plan_label  = " + ".join(PLAN_MONTHS)
 st.markdown(f"""
 <div class="page-header">
-    <h2>🗺️ Rep Routes</h2>
+    <h2>  Rep Routes</h2>
     <p>Market: {market} &nbsp;·&nbsp; {plan_period}-month plan: {plan_label}</p>
 </div>
 """, unsafe_allow_html=True)
@@ -89,6 +91,9 @@ DAY_COLORS = {
     "Wednesday": "#E65100",
     "Thursday":  "#6A1B9A",
     "Friday":    "#00695C",
+
+
+
 }
 STATUS_COLORS = {"covered":[46,125,50,200],"gap":[198,40,40,220]}
 SIZE_COLORS   = {"Large":[46,125,50,220],"Medium":[21,101,192,220],"Small":[245,127,23,220]}
@@ -136,6 +141,9 @@ def get_dates_for_month(stores, month_key):
         for w in parse_dates_val(s.get(f"{month_key}_weeks", [])):
             if w: weeks.add(w)
     # Sort by week number
+
+
+
     def week_sort(w):
         try: return int(w.split("Week")[1].split("-")[0].strip())
         except: return 99
@@ -183,6 +191,9 @@ if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
 # Week filter — match against week label stored in _weeks column
 if sel_day not in ("Full month", "All weeks", "") and sel_month_key:
+
+
+
     map_stores = [s for s in map_stores
                   if sel_day in parse_dates_val(s.get(f"{sel_month_key}_weeks", []))]
 elif sel_day not in ("Full month", "All weeks", "") and not sel_month_key:
@@ -230,6 +241,9 @@ try:
         st.info("No stores match the current filters.")
 except ImportError:
     if map_data:
+
+
+
         df_map = pd.DataFrame(map_data)
         st.map(df_map.rename(columns={"lng":"lon"})[["lat","lon"]])
 
@@ -276,6 +290,8 @@ st.markdown("---")
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-title">Download rep route files</div>', unsafe_allow_html=True)
 st.caption("Each file includes store details, assigned day, visit dates, visit order and coordinates.")
+
+
 
 mkt_safe = market.replace(" ","_").replace("-","_")
 
@@ -324,6 +340,9 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
         }
         # Add only plan month columns
         for mk in PLAN_MONTH_KEYS:
+
+
+
             row[f"{mk}_weeks"]  = ", ".join(s.get(f"{mk}_weeks", []))
             row[f"{mk}_visits"] = s.get(f"{mk}_visits", 0)
         row["plan_visits"] = s.get("plan_visits", 0)
@@ -333,7 +352,7 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
 if all_reps:
     all_df = build_rep_df(all_stores)
     if not all_df.empty:
-        st.download_button("⬇️ Download all reps — full month CSV",
+        st.download_button("  Download all reps — full month CSV",
             all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
 
     st.markdown("**Individual rep files:**")
@@ -353,7 +372,7 @@ if all_reps:
                 <div style="font-weight:700;color:#1A2B4A">Rep {rep}</div>
                 <div style="font-size:0.78rem;color:#6B7280">{len(rep_df)} stores · {tv:.0f} visits/mo</div>
             </div>""", unsafe_allow_html=True)
-            st.download_button(f"⬇️ Rep {rep} CSV",
+            st.download_button(f"  Rep {rep} CSV",
                 rep_df.to_csv(index=False), f"rep_{rep}_{mkt_safe}.csv", "text/csv", key=f"dl_rep_{rep}")
 
 st.markdown("---")
@@ -371,6 +390,9 @@ with col_d:
     if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
         _tbl_mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
         _tbl_dates = get_dates_for_month(all_stores, _tbl_mkey)
+
+
+
         tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
     else:
         tbl_day    = st.selectbox("Day", all_days, key="tbl_day")
@@ -418,6 +440,9 @@ if not display_df.empty:
         base_cols = base_cols + [f"{mk}_weeks" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
     # Deduplicate show_cols — preserve order, remove duplicates
     seen = set()
+
+
+
     show_cols = []
     for c in base_cols:
         if c in display_df.columns and c not in seen:
@@ -465,6 +490,9 @@ if not display_df.empty:
     monthly_cap_total = effective_daily * work_days * max(n_reps_in_view, 1)
 
     m1,m2,m3,m4 = st.columns(4)
+
+
+
     m1.metric("Stores in view", len(display_df))
 
     # Always calculate time from RECOMMENDED stores only (plan_visits > 0)
@@ -478,13 +506,19 @@ if not display_df.empty:
         if tbl_day not in ("Full month", "All weeks", "") and tbl_month != "Full plan":
             # Specific date selected — show time for that day's routed stores
             day_visit_time = int(_routed["visit_duration_min"].sum()) if not _routed.empty else 0
+            # Per Jaimin doc: 110% max daily cap including travel and break
+            max_daily_110 = round(effective_daily * 1.10)
             m2.metric("Time for this day",
                 f"{day_visit_time} min",
-                delta=f"Daily budget: {effective_daily} min (excl. {break_mins} min break)",
-                delta_color="inverse" if day_visit_time > daily_cap else "off",
-                help=f"Routed stores only. Should be ≤ {daily_cap} min.")
-            m3.metric("Budget status",
-                "✅ Within budget" if day_visit_time <= effective_daily else f"⚠️ Over by {day_visit_time - effective_daily} min")
+                delta=f"Daily target: {effective_daily} min · 110% max: {max_daily_110} min",
+                delta_color="inverse" if day_visit_time > max_daily_110 else "off",
+                help=f"Visit time only (no travel). Target ≤ {effective_daily} min, hard cap ≤ {max_daily_110} min (110%).")
+            if day_visit_time <= effective_daily:
+                m3.metric("Budget status", "  Within target")
+            elif day_visit_time <= max_daily_110:
+                m3.metric("Budget status", f"  {day_visit_time - effective_daily} min over target (within 110% cap)")
+            else:
+                m3.metric("Budget status", f"  Over 110% cap by {day_visit_time - max_daily_110} min")
         else:
             # Full plan/month view — show monthly from routed stores only
             if "visits_per_month" in _routed.columns and not _routed.empty:
@@ -507,6 +541,8 @@ if not display_df.empty:
     else:
         m2.metric("—","—"); m3.metric("—","—")
 
+
+
     m4.metric("Gap stores in view", len(display_df[display_df["coverage_status"]=="gap"]) if "coverage_status" in display_df.columns else 0)
 else:
     st.info("No stores for this selection.")
@@ -518,6 +554,6 @@ features = [{"type":"Feature",
     "properties":{k:s.get(k) for k in ["store_name","score","size_tier","visits_per_month",
         "assigned_day","day_visit_order","visit_dates","rep_id","coverage_status","category"]}}
     for s in all_stores if s.get("lat") and s.get("lng")]
-st.download_button("⬇️ Full routes GeoJSON",
+st.download_button("  Full routes GeoJSON",
     json.dumps({"type":"FeatureCollection","features":features}, indent=2),
     f"rep_routes_{mkt_safe}.geojson","application/json")
