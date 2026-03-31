@@ -836,17 +836,13 @@ else:
             "visit_benchmarks":          visit_benchmarks,
             "plan_period":             max(1, round(1/min(min(v.get("large_visits",4), v.get("medium_visits",2), v.get("small_visits",1)) for v in visit_benchmarks.values())) if visit_benchmarks else 1),
             "size_percentiles":           admin_defaults,
-            "weights": {
-                "rating":     w_rating    / 100,
-                "reviews":    w_reviews   / 100,
-                "affluence":  w_affluence / 100,
+            "weights": {k: v/100 for k,v in st.session_state.get("admin_scoring_weights",
+                {"rating":20,"reviews":25,"affluence":15,"poi":15,"sales":15,"lines":10}).items()},
+            "weights_gap": {k: v/100 for k,v in st.session_state.get("admin_scoring_weights_gap",
+                {"rating":25,"reviews":25,"affluence":25,"poi":25}).items()},
 
 
 
-                "poi":        w_poi       / 100,
-                "sales":      w_sales     / 100,
-                "lines":      w_lines     / 100,
-            },
         }
         st.markdown(f"""
         <div style="background:#E8F5E9;border:1.5px solid #66BB6A;border-left:5px solid #2E7D32;
