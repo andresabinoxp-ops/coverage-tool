@@ -411,8 +411,7 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
     """
     Calculate recommended rep count including geographic travel time estimate.
-    Uses visits_per_month (pre-route) always — plan_visits is only reliable post-route
-    and at that point we use it separately for utilisation reporting.
+    Uses visits_per_month (pre-route) — reliable estimate before daily budget cuts.
     Returns (recommended_reps, total_minutes_needed_per_month, minutes_per_rep_per_month).
     """
     if not priority_stores:
@@ -421,32 +420,39 @@ def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days
     monthly_capacity = daily_minutes * working_days
     n_stores = len(priority_stores)
 
-    # Always use visits_per_month for rep count estimation
-    # plan_visits under-counts because it reflects stores already cut by budget
-    # — that creates a circular dependency (fewer reps → more cuts → fewer plan_visits → fewer reps)
+    # Total monthly visit time across all priority stores
     total_visit_time = sum(
         s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
         for s in priority_stores
     )
 
-    # Estimate travel time based on geographic spread of stores
+    # Travel time estimate based on geographic spread
+    # Per-territory estimate: once clustered, each rep covers area/reps
+    # We iterate to convergence: start with 1 rep, estimate travel, get reps, repeat
     geo = [s for s in priority_stores if s.get("lat") and s.get("lng")]
     if len(geo) > 1:
         lat_span = max(s["lat"] for s in geo) - min(s["lat"] for s in geo)
         lng_span = max(s["lng"] for s in geo) - min(s["lng"] for s in geo)
         mid_lat  = sum(s["lat"] for s in geo) / len(geo)
-        area_km2 = lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid_lat))
-        # Average inter-store distance ~ sqrt(area / stores) × 0.7 (empirical factor)
-        avg_dist_km    = math.sqrt(max(area_km2, 1) / max(n_stores, 1)) * 0.7
-        avg_travel_min = (avg_dist_km / max(avg_speed_kmh, 1)) * 60
-        total_visits   = sum(s.get("visits_per_month", 1) for s in priority_stores)
-        total_travel   = avg_travel_min * total_visits
-    else:
-        total_travel = total_visit_time * 0.2  # 20% overhead if no geo data
+        total_area_km2 = max(lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid_lat)), 1)
+        total_monthly_visits = sum(s.get("visits_per_month", 1) for s in priority_stores)
 
-    total_minutes = total_visit_time + total_travel
-    rec_reps = max(1, math.ceil(total_minutes / monthly_capacity))
-    return rec_reps, round(total_minutes), round(monthly_capacity)
+        # Iterative: estimate reps → use reps to recalculate per-territory travel
+        est_reps = max(1, math.ceil(total_visit_time / monthly_capacity))
+        for _ in range(3):  # 3 iterations converges quickly
+            territory_area  = total_area_km2 / est_reps
+            stores_per_rep  = max(n_stores / est_reps, 1)
+            avg_dist_km     = math.sqrt(territory_area / stores_per_rep) * 0.7
+            avg_travel_min  = (avg_dist_km / max(avg_speed_kmh, 1)) * 60
+            total_travel    = avg_travel_min * total_monthly_visits
+            total_minutes   = total_visit_time + total_travel
+            est_reps        = max(1, math.ceil(total_minutes / monthly_capacity))
+    else:
+        total_travel  = total_visit_time * 0.2
+        total_minutes = total_visit_time + total_travel
+        est_reps      = max(1, math.ceil(total_minutes / monthly_capacity))
+
+    return est_reps, round(total_visit_time), round(monthly_capacity)
 
 
 def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percentiles):
@@ -1220,8 +1226,12 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                     s["day_visit_order"] = (i // 5) + 1
 
         WEEK_LABELS_DRY = ["Week 1","Week 2","Week 3","Week 4"]
-        def _pick_weeks_d(vpm):
-            if vpm >= 4: return WEEK_LABELS_DRY
+        WEEK5_DAYS_DRY = {"Monday","Tuesday","Wednesday"}
+        def _pick_weeks_d(vpm, day=""):
+            if vpm >= 4:
+                weeks = WEEK_LABELS_DRY[:]
+                if day in WEEK5_DAYS_DRY: weeks.append("Week 5")
+                return weeks
             if vpm >= 2: return [WEEK_LABELS_DRY[0], WEEK_LABELS_DRY[2]]
             if vpm >= 1: return [WEEK_LABELS_DRY[1]]
             return []
@@ -1237,7 +1247,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 s["plan_visits"] = 0; continue
             day = s["assigned_day"]; vpm = s.get("visits_per_month",1)
             if vpm >= 1:
-                weeks = _pick_weeks_d(vpm)
+                weeks = _pick_weeks_d(vpm, day)
                 for mk in plan_keys_d:
                     s[f"{mk}_weeks"]  = [f"{w} - {day}" for w in weeks]
                     s[f"{mk}_visits"] = len(weeks)
@@ -1820,19 +1830,50 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         bar.progress(72)
 
         # Stage 6: Routes + Time-Based Rep Planning
-        # Route universe = ALL scored stores (covered + gap) with a size tier and valid coordinates
-        # Gap stores in the route = new distribution points for the rep to develop
-        priority = [s for s in all_stores if s.get("size_tier") in ("Large","Medium","Small") and s.get("lat") and s.get("lng")]
         rep_recommendation = None
-
         rep_mode      = cfg.get("rep_mode","fixed")
         daily_minutes = cfg.get("daily_minutes", 480)
         working_days  = cfg.get("working_days", 22)
         avg_speed     = cfg.get("avg_speed_kmh", 30)
         break_minutes = cfg.get("break_minutes",
             st.session_state.get("admin_rep_defaults",{}).get("break_minutes", 30))
-        # Effective daily capacity = total day minus break time
         effective_daily = daily_minutes - break_minutes
+
+        # ── Two-group store selection (Jaimin doc) ────────────────────────────
+        # All scored stores with valid coords and size tier
+        priority_all = [s for s in all_stores
+                        if s.get("size_tier") in ("Large","Medium","Small")
+                        and s.get("lat") and s.get("lng")
+                        and s.get("score", 0) > 0]
+        if len(priority_all) < 5:
+            priority_all = [s for s in all_stores
+                            if s.get("size_tier") in ("Large","Medium","Small")
+                            and s.get("lat") and s.get("lng")]
+
+        # Group 1: stores WITH internal sales data | Group 2: without
+        def _normalise_group(stores):
+            if not stores: return
+            mx = max(s.get("score",0) for s in stores) or 1
+            for s in stores:
+                s["_norm_score"] = s.get("score",0) / mx
+
+        group1 = [s for s in priority_all if (s.get("annual_sales_usd") or 0) > 0]
+        group2 = [s for s in priority_all if (s.get("annual_sales_usd") or 0) <= 0]
+        _normalise_group(group1)
+        _normalise_group(group2)
+
+        if rep_mode == "recommended":
+            # Recommended mode: top X% by normalised score from each group
+            # Default 55% per Jaimin doc — configurable in Admin Settings
+            _store_pct = st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 55)
+            sel_pct = _store_pct / 100
+            def _top_pct(stores, pct):
+                srt = sorted(stores, key=lambda x: x.get("_norm_score",0), reverse=True)
+                return srt[:max(1, round(len(srt)*pct))]
+            priority = _top_pct(group1, sel_pct) + _top_pct(group2, sel_pct)
+        else:
+            # Fixed mode: all priority stores — rep capacity is the constraint
+            priority = priority_all
         current_reps  = cfg.get("rep_count", 0)
 
         if rep_mode == "recommended":
@@ -1988,8 +2029,15 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         # ── Build dynamic plan period route plan ─────────────────────────────
         # Plan period = 1 / min(visits_per_month) across all tiers
-        all_freqs   = [s.get("visits_per_month",1) for s in all_stores if s.get("visits_per_month",0) > 0]
-        min_freq    = min(all_freqs) if all_freqs else 1
+        # Plan period driven by lowest visit frequency set in benchmarks
+        # e.g. Small=1/mo → 1 month, Small=0.5/mo → 2 months, Small=0.33/mo → 3 months
+        _bench      = st.session_state.get("admin_benchmarks", {})
+        _freqs      = [
+            float(_bench.get("large_visits",  4)),
+            float(_bench.get("medium_visits", 2)),
+            float(_bench.get("small_visits",  1)),
+        ]
+        min_freq    = min(f for f in _freqs if f > 0)
         plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
 
         # Plan months = abstract labels: m1, m2, m3...
@@ -2021,13 +2069,21 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         # WEEK LABELS: 4 weeks per month
         WEEK_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
+        # Jaimin doc: Week 5 applies to Mon/Tue/Wed only (29th/30th/31st pattern)
+        WEEK5_DAYS  = {"Monday", "Tuesday", "Wednesday"}
 
-        def pick_weeks(vpm):
-            """Pick which weeks to visit based on visits_per_month."""
-            if vpm >= 4:   return WEEK_LABELS          # weekly — all 4 weeks
-            if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly — Week 1 + 3
-            if vpm >= 1:   return [WEEK_LABELS[1]]     # monthly — Week 2
-            return []  # sub-monthly handled separately
+        def pick_weeks(vpm, day=""):
+            """Pick which weeks to visit based on visits_per_month.
+            Week 5 included for weekly stores on Mon/Tue/Wed per Jaimin doc."""
+            if vpm >= 4:
+                # Weekly — all 4 weeks + Week 5 if day gets it
+                weeks = WEEK_LABELS[:]
+                if day in WEEK5_DAYS:
+                    weeks.append("Week 5")
+                return weeks
+            if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly Week 1+3
+            if vpm >= 1:   return [WEEK_LABELS[1]]                   # monthly Week 2
+            return []
 
         # Initialise all month columns
         for s in all_stores:
@@ -2050,7 +2106,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
             if vpm >= 1:
                 # Visited every month — assign weeks in each plan month
-                weeks = pick_weeks(vpm)
+                weeks = pick_weeks(vpm, day)
                 for mk in plan_month_keys:
                     s[f"{mk}_weeks"]  = [f"{w} - {day}" for w in weeks]
                     s[f"{mk}_visits"] = len(weeks)
@@ -2101,8 +2157,10 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 )
 
             # Apply 60% utilisation threshold — remove under-utilised reps
+            # Jaimin doc: 60% min per day, 80% min monthly, 110% max per day
             min_util_pct  = cfg.get("min_utilisation_pct",
-                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
+                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 80))
+            max_util_pct  = 110  # daily cap — never exceed 110% including travel
             min_util_mins = final_monthly_cap * min_util_pct / 100
 
             under_util_reps = [rid for rid, t in rep_time_map.items() if t < min_util_mins]
