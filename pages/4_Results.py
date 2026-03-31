@@ -55,33 +55,53 @@ cfg        = st.session_state.get("market_config", {})
 st.markdown(f"**Market:** {market}")
 
 # ── KEY METRICS ───────────────────────────────────────────────────────────────
-st.markdown('<div class="section-title">Market overview</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Results Output</div>', unsafe_allow_html=True)
 
-total_universe  = len(all_stores)
-currently_covered = sum(1 for s in all_stores if s.get("covered"))
-total_gaps      = len(gap_stores)
-cov_pct         = round(currently_covered / max(total_universe, 1) * 100, 1)
+total_universe    = len(all_stores)
+current_coverage  = sum(1 for s in all_stores if s.get("covered"))
+total_gaps        = len(gap_stores)
 
 # Route universe = stores ACTUALLY in the route plan (plan_visits > 0)
-# Excludes stores assigned to a rep but dropped by daily budget
-route_stores    = [s for s in all_stores if s.get("plan_visits", 0) > 0]
-new_stores      = [s for s in route_stores if not s.get("covered")]
-monthly_visits  = sum(s.get("visits_per_month", 0) for s in route_stores)
-annual_visits   = sum(s.get("annual_visits",   0) for s in route_stores)
+route_stores      = [s for s in all_stores if s.get("plan_visits", 0) > 0]
+proposed_coverage = len(route_stores)
+proposed_rate     = round(proposed_coverage / max(total_universe, 1) * 100, 1)
+monthly_visits    = sum(s.get("visits_per_month", 0) for s in route_stores)
 
-cols = st.columns(5)
+# Stores removed from original coverage (current coverage not in route plan)
+removed_stores    = [s for s in all_stores if s.get("covered") and s.get("plan_visits",0) == 0]
+# New stores added from gap list (gap stores now in route plan)
+new_added_stores  = [s for s in route_stores if not s.get("covered")]
+
+cols = st.columns(3)
 for col, val, label, color in [
-    (cols[0], f"{total_universe:,}",    "Total universe",        "#1565C0"),
-    (cols[1], f"{currently_covered:,}", "Currently covered",     "#2E7D32"),
-    (cols[2], f"{total_gaps:,}",        "Gap stores",            "#C62828"),
-    (cols[3], f"{cov_pct}%",            "Coverage rate",         "#1565C0"),
-    (cols[4], f"{monthly_visits:,.0f}", "Planned visits / month","#6A1B9A"),
+    (cols[0], f"{total_universe:,}",    "Total Universe",    "#1565C0"),
+    (cols[1], f"{current_coverage:,}",  "Current Coverage",  "#2E7D32"),
+    (cols[2], f"{proposed_coverage:,}", "Proposed Coverage", "#1A2B4A"),
 ]:
     col.markdown(f"""
     <div class="kpi-card" style="border-top-color:{color}">
         <div class="kpi-value" style="color:{color}">{val}</div>
         <div class="kpi-sub">{label}</div>
     </div>""", unsafe_allow_html=True)
+
+cols2 = st.columns(3)
+for col, val, label, color in [
+    (cols2[0], f"{proposed_rate}%",          "Proposed Coverage Rate",              "#1565C0"),
+    (cols2[1], f"{len(removed_stores):,}",   "Stores Removed from Original Coverage","#C62828"),
+    (cols2[2], f"{len(new_added_stores):,}", "New Stores Added from Gap List",      "#2E7D32"),
+]:
+    col.markdown(f"""
+    <div class="kpi-card" style="border-top-color:{color}">
+        <div class="kpi-value" style="color:{color}">{val}</div>
+        <div class="kpi-sub">{label}</div>
+    </div>""", unsafe_allow_html=True)
+
+col_pv = st.columns(1)[0]
+col_pv.markdown(f"""
+<div class="kpi-card" style="border-top-color:#6A1B9A">
+    <div class="kpi-value" style="color:#6A1B9A">{monthly_visits:,.0f}</div>
+    <div class="kpi-sub">Planned Visits / Month</div>
+</div>""", unsafe_allow_html=True)
 
 st.markdown("")
 
@@ -94,34 +114,11 @@ if geo_summary:
         st.warning(
             f"📍 Geocoding: {ok} stores located successfully · "
             f"{fail} stores failed (no lat/lng) — these are treated as gaps since their location could not be confirmed. "
-            "Check addresses in your portfolio CSV."
+            "Check addresses in your Current Coverage CSV."
         )
     else:
-        st.success(f"📍 Geocoding: all {ok} portfolio stores located successfully.")
+        st.success(f"📍 Geocoding: all {ok} Current Coverage stores located successfully.")
 
-# ── SIZE DISTRIBUTION ─────────────────────────────────────────────────────────
-st.markdown('<div class="section-title">Store size distribution</div>', unsafe_allow_html=True)
-
-size_colors = {"Large":"#2E7D32","Medium":"#1565C0","Small":"#F57F17"}
-fc = st.columns(3)
-for i, tier in enumerate(["Large","Medium","Small"]):
-    tier_stores = [s for s in all_stores if s.get("size_tier") == tier]
-    cnt     = len(tier_stores)
-    covered = sum(1 for s in tier_stores if s.get("covered"))
-    gaps_t  = cnt - covered
-    vpm     = sum(s.get("visits_per_month",0) for s in tier_stores)
-    col     = size_colors[tier]
-    fc[i].markdown(f"""
-    <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-top:4px solid {col};
-    border-radius:8px;padding:1rem;text-align:center">
-        <div style="font-size:1.6rem;font-weight:800;color:#1A2B4A">{cnt:,}</div>
-        <div style="font-size:0.78rem;color:#6B7280;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">{tier}</div>
-        <div style="font-size:0.75rem;color:#9E9E9E;margin-top:4px">
-            {covered} covered · {gaps_t} gaps · {vpm:.0f} visits/mo
-        </div>
-    </div>""", unsafe_allow_html=True)
-
-st.markdown("---")
 
 # ── REP PLANNING PANEL ────────────────────────────────────────────────────────
 rep_rec = res.get("rep_recommendation")
@@ -163,12 +160,13 @@ if rep_rec:
             help="Enter current rep count in Configure to see comparison.")
 
     # Calculate actual utilisation from plan_visits (what was actually routed)
-    # This is the true utilisation — not the pre-route estimate
     actual_plan_time = sum(
         s.get("plan_visits",0) * s.get("visit_duration_min",25)
-        for s in all_stores if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0
+        for s in all_stores if s.get("plan_visits",0) > 0
     )
-    actual_monthly   = actual_plan_time / max(plan_period, 1)  # monthly equivalent
+    # plan_visits is already the TOTAL across the full plan period
+    # monthly equivalent = total / plan_period
+    actual_monthly   = actual_plan_time / max(plan_period, 1)
     total_capacity   = rec_reps * monthly_cap if rec_reps > 0 else monthly_cap
 
     if total_capacity > 0 and actual_monthly > 0 and rec_reps > 0:
@@ -230,7 +228,7 @@ if rep_rec:
 
     if rep_rows:
         rdf      = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        plan_cap = monthly_cap * _plan_pp
+        plan_cap = monthly_cap * max(_plan_pp, 1)
         t_col    = f"Time needed — {_plan_pp}mo (min)"
         c_col    = f"Capacity — {_plan_pp}mo (min)"
         rdf[t_col]          = rdf["Time needed (min)"].round(0).astype(int)
