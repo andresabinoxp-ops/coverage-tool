@@ -351,7 +351,7 @@ def fetch_place_details(place_id, api_key):
     try:
         r = requests.get(PLACE_DETAIL_URL,
             params={"place_id":place_id,
-                    "fields":"formatted_phone_number,opening_hours,website,formatted_address",
+                    "fields":"formatted_phone_number,opening_hours,website,formatted_address,price_level",
                     "key":api_key},
             timeout=10)
         data = r.json()
@@ -868,19 +868,19 @@ else:
 st.markdown("---")
 
 # ── STEP 1: PORTFOLIO UPLOAD ──────────────────────────────────────────────────
-st.markdown('<div class="section-title">1. Portfolio CSV</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">1. Current Coverage CSV</div>', unsafe_allow_html=True)
 st.markdown("Required: `store_name`, `address`, `city` | Optional: `store_id`, `category`, `annual_sales_usd`, `lines_per_store`")
 
 portfolio_df = st.session_state.get("portfolio_df")
 if portfolio_df is not None:
-    st.success(f"  Using portfolio from Configure — {len(portfolio_df)} stores")
+    st.success(f"  Current Coverage loaded from Configure — {len(portfolio_df)} stores")
     st.dataframe(portfolio_df.head(3), use_container_width=True)
     if st.checkbox("Upload a different file"):
         portfolio_df = None
         st.session_state["portfolio_df"] = None
 
 if portfolio_df is None:
-    up = st.file_uploader("Upload portfolio CSV", type=["csv"])
+    up = st.file_uploader("Upload Current Coverage CSV", type=["csv"])
     if up:
         try:
             # Try multiple encodings — handles UTF-8, Latin-1, Arabic Windows, etc.
@@ -924,58 +924,29 @@ sample = pd.DataFrame([
     {"store_id":"S001","store_name":"Carrefour Express","address":"Qurum","city":"Muscat","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
     {"store_id":"S002","store_name":"Lulu Hypermarket","address":"Al Khuwair","city":"Muscat","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
 ])
-st.download_button("  Download sample CSV", sample.to_csv(index=False), "sample_portfolio.csv", "text/csv")
+st.download_button("  Download sample CSV", sample.to_csv(index=False), "current_coverage_sample.csv", "text/csv")
 
 st.markdown("---")
 
 # ── STEP 2: ENRICHMENT CONFIG ─────────────────────────────────────────────────
-st.markdown('<div class="section-title">2. Phone & opening hours enrichment (optional)</div>', unsafe_allow_html=True)
-st.caption("Configure enrichment before running — cost is included in the pre-flight estimate below.")
+st.markdown('<div class="section-title">2. Place Details enrichment</div>', unsafe_allow_html=True)
+st.caption("Runs automatically for all scraped stores — fetches phone, opening hours, price level and website.")
 
-enrich_scope_label = st.radio(
-    "Which stores to enrich with phone and opening hours",
+# Enrichment always runs for all stores — mandatory to get price_level for affluence scoring
+enrich_scope = "all"
 
 
 
-    options=["None — skip enrichment",
-             "Top N stores by score",
-             "All gap stores (uncovered only)",
-             "All scraped stores (full universe)"],
-    index=0,
-    horizontal=True,
-)
+st.session_state["enrich_scope"] = enrich_scope
 
-enrich_scope_map = {
-    "None — skip enrichment":           "none",
-    "Top N stores by score":            "top_n",
-    "All gap stores (uncovered only)":  "gaps_only",
-    "All scraped stores (full universe)": "all",
-}
-enrich_scope = enrich_scope_map[enrich_scope_label]
-
-# Estimated universe for slider max
+# Estimated universe for cost calculation
 radius_m_est, n_tiles_est = smart_tile_radius(
     cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
 )
 est_universe = max(50, n_tiles_est * len(cfg["categories"]) * 15)
-
-enrich_count = 0
-if enrich_scope in ("top_n", "gaps_only", "all"):
-    if enrich_scope == "top_n":
-        enrich_count = st.slider(
-            "Number of top stores to enrich",
-            min_value=10,
-            max_value=min(est_universe, 2000),
-            value=min(50, est_universe),
-            step=10,
-            help="Stores are ranked by score. Highest-scoring stores are enriched first."
-        )
-    elif enrich_scope == "gaps_only":
-        enrich_count = min(est_universe, 2000)
-        st.caption(f"Will enrich all gap stores found during scraping (estimated ~{round(enrich_count*0.6):,} stores — 60% of universe are typically gaps).")
-    else:  # all
-        enrich_count = min(est_universe, 2000)
-        st.caption(f"Will enrich all {enrich_count:,} estimated scraped stores. See cost below before proceeding.")
+enrich_count = min(est_universe, 2000)
+st.info(f"  Place Details will run for all scraped stores (~{enrich_count:,} estimated). "
+        "This fetches phone, opening hours and price level — required for affluence scoring.")
 
 st.markdown("---")
 
@@ -984,9 +955,6 @@ st.markdown("---")
 st.info("  Nearby POI enrichment runs automatically for all stores as part of the pipeline.")
 
 st.markdown('<div class="section-title">3. Pre-flight — full cost & time estimate</div>', unsafe_allow_html=True)
-
-
-
 st.caption("Calculated from your market area, categories, portfolio size and enrichment selection.")
 
 est          = calculate_estimate(enrich_count, enrich_scope)
@@ -1016,6 +984,9 @@ if est["area_km2"] > 100000:
             Your selected coverage area is <strong>~{est['area_km2']:,} km²</strong> —
             this is a full country or large region. Scraping this area would take
             <strong>{time_display}</strong> and cost approximately
+
+
+
             <strong>${est['total_cost']:.2f}</strong> in API credits.
         </div>
         <div class="suggestion-box">
@@ -1034,9 +1005,6 @@ else:
 
     # Two headline metrics
     mc1, mc2 = st.columns(2)
-
-
-
     mc1.metric("Total estimated time",       time_display)
     mc2.metric("Total estimated API cost",   "$" + str(round(est["total_cost"], 2)))
 
@@ -1066,6 +1034,8 @@ else:
     st.dataframe(bdf, use_container_width=True, hide_index=True,
         column_config={"Cost ($)": st.column_config.NumberColumn("Cost ($)", format="$%.2f")})
 
+
+
     st.caption(
         "Coverage area: ~" + str(est["area_km2"]) + " km²"
         " · ~" + str(est["estimated_universe"]) + " stores estimated"
@@ -1084,9 +1054,6 @@ if est["colour"] != "green":
 - Select specific cities or districts instead of a full country or region
 - Reduce scraping categories to 2-3 most important
 - Or use **Dry Run** below to test without using any credits
-
-
-
     """)
 
 st.markdown("---")
@@ -1116,6 +1083,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         pf   = st.session_state.get("portfolio_df")
         base = pf.to_dict("records") if pf is not None else [
             {"store_id":"S001","store_name":"Carrefour Express","address":"Qurum","city":"Muscat","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
+
+
+
             {"store_id":"S002","store_name":"Lulu Hypermarket","address":"Al Khuwair","city":"Muscat","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
         ]
         all_stores = []
@@ -1134,9 +1104,6 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         for row in base:
             sc = random.randint(50,100)
-
-
-
             all_stores.append({
                 "store_id":row.get("store_id","S0"),"store_name":row.get("store_name","Store"),
                 "address":row.get("address",""),"city":row.get("city",""),
@@ -1166,6 +1133,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 "price_level":random.choice([0,1,1,2,2,3]),
                 "business_status":"Active",
                 "annual_sales_usd":0.0,"lines_per_store":0,
+
+
+
                 "covered":False,"source":"scraped","score":sc,
                 "size_tier":"","visits_per_month":0,"visit_duration_min":0,"visit_frequency":"","calls_per_month":0,
                 "rep_id":0,"coverage_status":"gap",
@@ -1184,9 +1154,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             s["visit_frequency"]    = tier
             if tier == "Large":
                 s["rep_id"] = random.randint(1, cfg["rep_count"])
-
-
-
             elif tier == "Medium":
                 s["rep_id"] = random.randint(1, cfg["rep_count"])
             else:
@@ -1216,6 +1183,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 "current_reps":         cfg.get("rep_count",0),
                 "shortfall":            rec_reps - cfg.get("rep_count",0),
                 "zone_centres":         [],
+
+
+
             }
         else:
             monthly_cap = daily_mins * work_days
@@ -1234,9 +1204,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         min_freq_d    = min(all_freqs_d) if all_freqs_d else 1
         plan_period_d = max(1, round(1/min_freq_d)) if min_freq_d < 1 else 1
         plan_keys_d   = [f"m{i+1}" for i in range(plan_period_d)]
-
-
-
         plan_labels_d = [f"Month {i+1}" for i in range(plan_period_d)]
 
         dry_city_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
@@ -1266,6 +1233,9 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         for s in all_stores:
             for mk in plan_keys_d:
+
+
+
                 s[f"{mk}_weeks"]  = []
                 s[f"{mk}_visits"] = 0
             s["plan_visits"] = 0
@@ -1284,9 +1254,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 total_v = max(1, round(vpm * plan_period_d))
                 order   = s.get("day_visit_order",1); vc = 0
                 for i, mk in enumerate(plan_keys_d):
-
-
-
                     if vc >= total_v: break
                     if (order+i) % plan_period_d == 0 or (i==len(plan_keys_d)-1 and vc==0):
                         s[f"{mk}_weeks"]  = [f"Week 2 - {day}"]
@@ -1316,6 +1283,8 @@ if st.button("  Run Coverage Agent", type="primary"):
         st.session_state["last_market"] = cfg["market_name"]
         status.success(f"  Dry run complete — {len(all_stores)} stores generated. Open Results or Routes in the sidebar.")
 
+
+
     # ── LIVE RUN ──────────────────────────────────────────────────────────────
     else:
         api_key   = get_api_key()
@@ -1334,9 +1303,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 # Validate range — zero coords are invalid
                 if s["lat"] == 0.0: s["lat"] = None
                 if s["lng"] == 0.0: s["lng"] = None
-
-
-
             except (TypeError, ValueError):
                 s["lat"] = None
                 s["lng"] = None
@@ -1367,6 +1333,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["lng"] = None
                 needs_geocode.append(s)
 
+
+
         if has_coords:
             status.info(f"Stage 1/{total_steps} — {len(has_coords)} stores already have coordinates — skipping geocoding for those.")
         if needs_geocode:
@@ -1384,9 +1352,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         # ── Geocoding quality check — ALL portfolio stores ──────────────────────
         # Checks BOTH newly geocoded AND pre-existing coordinates
         # because original CSV coords may also be wrong (e.g. geocoded to wrong city)
-
-
-
         bbox_lat_min = cfg.get("lat_min", -90)
         bbox_lat_max = cfg.get("lat_max",  90)
         bbox_lng_min = cfg.get("lng_min", -180)
@@ -1416,6 +1381,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         geocode_suspect = len(suspect_stores)
 
         msg = (
+
+
+
             f"Stage 1/{total_steps} — Complete: {len(has_coords)} had coordinates · "
             f"{geocode_ok} geocoded correctly · {geocode_fail} failed"
         )
@@ -1434,9 +1402,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 def _s(v): return str(v).strip() if v and str(v) not in ("nan","None","") else ""
                 name    = _s(store.get("store_name",""))
                 city    = _s(store.get("city","")) or _s(store.get("address",""))
-
-
-
                 district= _s(store.get("district",""))
                 region  = _s(store.get("region",""))
 
@@ -1466,6 +1431,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                         data = r.json()
                         if data.get("status") == "OK":
                             for res in data["results"]:
+
+
+
                                 loc = res.get("geometry",{}).get("location",{})
                                 rlat, rlng = loc.get("lat"), loc.get("lng")
                                 if rlat and rlng and in_bbox(rlat, rlng):
@@ -1484,9 +1452,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                                     "key": api_key},
                             timeout=10
                         )
-
-
-
                         data = r.json()
                         if data.get("status") == "OK" and data.get("results"):
                             for res in data["results"]:
@@ -1516,6 +1481,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     lat_buf, lng_buf
                 )
                 if fixed_lat and fixed_lng:
+
+
+
                     s["lat"] = fixed_lat
                     s["lng"] = fixed_lng
                     s["geocode_suspect"]  = False
@@ -1534,8 +1502,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     s["lat"]              = None
                     s["lng"]              = None
                 st.session_state["_geocode_suspect_stores"].append(s)
-
-
 
         bar.progress(15)
 
@@ -1565,6 +1531,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                         vparts    = [p.strip() for p in vicinity.split(",") if p.strip()]
                         # Use last part of vicinity as city if it looks like a place name
                         # Fall back to configured market city only if vicinity has 1 part or is empty
+
+
+
                         if len(vparts) >= 2:
                             store_city    = vparts[-1]   # last part = city/area
                             store_address = ", ".join(vparts[:-1])  # everything before = street address
@@ -1583,9 +1552,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                             "address":store_address,"city":store_city,
                             "region":cfg.get("city",""),  # configured market area = region
                             "lat":loc.get("lat"),"lng":loc.get("lng"),
-
-
-
                             "rating":float(place.get("rating",0) or 0),
                             "review_count":int(place.get("user_ratings_total",0) or 0),
                             "price_level":int(place.get("price_level",0) or 0),
@@ -1615,6 +1581,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         max_rev   = max((_safe_num(s.get("review_count",0))    for s in all_stores), default=0) or 1
         max_sales = max((_safe_num(s.get("annual_sales_usd",0)) for s in portfolio), default=0) or 1
         max_lines = max((_safe_num(s.get("lines_per_store",0))  for s in portfolio), default=0) or 1
+
+
+
         max_poi   = max((_safe_num(s.get("poi_count",0))         for s in all_stores), default=0) or 1
         max_rev   = max_rev   if max_rev   > 0 else 1
         max_sales = max_sales if max_sales > 0 else 1
@@ -1633,8 +1602,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             return {k: v/tot for k,v in d.items()}
         wcc  = _w({k: _safe_num(v) for k,v in weights_cc.items()})
         wgap = _w({k: _safe_num(v) for k,v in weights_gap.items()})
-
-
 
         def _score_store(s):
             try:
@@ -1664,6 +1631,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 if not math.isfinite(raw): return 0
                 return min(100, max(0, round(raw * 100)))
             except Exception:
+
+
+
                 return 0
         for s in all_stores:
             s["score"] = _score_store(s)
@@ -1682,9 +1652,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         SIZE_RADIUS = {
             "Large":      (200, 250),
             "Medium":     (100, 150),
-
-
-
             "Small":      (50,  100),
             "Occasional": (50,  100),
         }
@@ -1714,6 +1681,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             name_lower = str(store.get("store_name","")).lower()
             # Check for large chain keywords — always use large radius
             if any(kw in name_lower for kw in LARGE_CHAINS):
+
+
+
                 return SIZE_RADIUS["Large"]
             tier = store.get("size_tier","")
             return SIZE_RADIUS.get(tier, DEFAULT_RADIUS)
@@ -1731,8 +1701,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 continue
 
             matched = False
-
-
 
             # Match 1: same place_id — definitively the same store
             if u.get("place_id") and u["place_id"] in portfolio_place_ids:
@@ -1764,6 +1732,8 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         for p in portfolio: p["coverage_status"] = "covered"
 
+
+
         # ── Remove covered scraped stores from all_stores ─────────────────────
         # A scraped store marked "covered" means the portfolio already has it.
         # Keeping both creates duplicate rows with different scores/data.
@@ -1780,8 +1750,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         # to prevent wrong stores getting each other's Google data
         GOOGLE_FIELDS = ["rating","review_count","price_level",
                          "phone","opening_hours","website","business_status"]
-
-
 
         def _tok_sim(a, b):
             noise = {"trading","est","llc","co","ltd","trd","al","the","-","&",
@@ -1812,6 +1780,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                     elif dist <= 300: score += 2.0
                     elif dist <= 500: score += 1.0
 
+
+
                 # Name similarity score
                 sim = _tok_sim(p_name, u.get("store_name",""))
                 if sim >= 0.5: score += sim * 3   # strong weight on name
@@ -1830,9 +1800,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     p["rating"]       = best_match["rating"]
                 if best_match.get("review_count"):
                     p["review_count"] = best_match["review_count"]
-
-
-
                 # Copy place_id ONLY if strong name match — prevents wrong assignment
                 # and only if this place_id hasn't been claimed by another portfolio store
                 u_pid = best_match.get("place_id","")
@@ -1862,6 +1829,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             for p in no_rating_port:
                 try:
                     _s = lambda v: str(v).strip() if v and str(v) not in ("nan","None","") else ""
+
+
+
                     name   = _s(p.get("store_name",""))
                     city   = _s(p.get("city","")) or _s(p.get("address",""))
                     query  = f"{name} {city}".strip() if city else name
@@ -1880,9 +1850,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                             loc = res.get("geometry",{}).get("location",{})
                             rlat, rlng = loc.get("lat"), loc.get("lng")
                             if not (rlat and rlng): continue
-
-
-
                             # Only use if result is within 2km of the portfolio store
                             if haversine_m(p["lat"],p["lng"],rlat,rlng) > 2000:
                                 continue
@@ -1912,6 +1879,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 except Exception:
                     pass
             if fetched:
+
+
+
                 status.info(f"Stage 4/{total_steps} — Fetched Google data for {fetched} portfolio stores via direct lookup.")
 
         # ── Fix suspect portfolio stores using scraped universe ───────────────
@@ -1930,9 +1900,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     sim = name_similarity(p.get("store_name",""), u.get("store_name",""))
                     if sim < 0.4: continue
                     # Combine name similarity with proximity if suspect store has coords
-
-
-
                     score = sim
                     if p.get("lat") and p.get("lng"):
                         dist = haversine_m(float(p["lat"]), float(p["lng"]),
@@ -1962,6 +1929,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     p["geocode_fixed"]   = False
                     p["lat"]             = None
                     p["lng"]             = None
+
+
+
             if coord_fixes:
                 st.success(f"  Fixed coordinates for {coord_fixes} store(s) using scraped data match.")
 
@@ -1979,8 +1949,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         if n_fixed:   msg += f" ·  {n_fixed} coords auto-fixed"
         if n_suspect: msg += f" ·  {n_suspect} coords still suspect"
         status.info(msg)
-
-
 
         # Show consolidated geocoding correction report now that Stage 4 fixes are done
         all_suspect = st.session_state.get("_geocode_suspect_stores", [])
@@ -2011,6 +1979,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     f"To fix: add correct **lat** and **lng** columns to your portfolio CSV. "
                     f"Open Google Maps → find the store → right-click the pin → 'What's here?' to get coordinates."
                 )
+
+
+
             with st.expander(f"  Geocoding correction report ({len(report_rows)} stores)", expanded=bool(unfixed)):
                 st.dataframe(pd.DataFrame(report_rows), use_container_width=True, hide_index=True)
                 st.caption(
@@ -2029,9 +2000,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         cat_percentiles   = build_category_percentiles(all_stores)
         for s in all_stores:
             tier, visits, duration = assign_size_tier(s, cat_percentiles, visit_benchmarks, size_percentiles)
-
-
-
             s["size_tier"]          = tier
             s["visits_per_month"]   = visits
             s["visit_duration_min"] = duration
@@ -2061,6 +2029,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         group_gap = [s for s in priority_all if s.get("source") != "portfolio"]
 
         # Normalise each group independently 0-1
+
+
+
         def _normalise_group(stores):
             if not stores: return
             mx = max(s.get("score",0) for s in stores) or 1
@@ -2079,9 +2050,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             n_select = max(1, round(len(combined_sorted) * _store_pct / 100))
             priority = combined_sorted[:n_select]
         else:
-
-
-
             # Fixed mode: all scored stores — rep capacity is the constraint
             priority = priority_all
 
@@ -2111,6 +2079,9 @@ if st.button("  Run Coverage Agent", type="primary"):
 
                 for zone in range(rec_reps):
                     zone_stores = [priority[i] for i in range(len(priority)) if zone_labels[i] == zone]
+
+
+
                     if zone_stores:
                         centre_lat    = sum(s["lat"] for s in zone_stores) / len(zone_stores)
                         centre_lng    = sum(s["lng"] for s in zone_stores) / len(zone_stores)
@@ -2129,9 +2100,6 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             # Apply minimum utilisation threshold
             # Only remove zones below 40% — avoids removing valid reps in sparse markets
-
-
-
             # 60% and 80% are targets that route optimisation should aim for,
             # but removing zones pushes stores onto other reps causing over-capacity
             min_util_pct   = 40
@@ -2161,6 +2129,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                     elif s.get("rep_id") in removed_ids:
                         s["rep_id"] = list(kept_ids)[0] if kept_ids else 0
 
+
+
             rep_recommendation = {
                 "mode":                "recommended",
                 "total_minutes_needed": total_mins,
@@ -2179,9 +2149,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         else:
             # Fixed mode — cluster into configured rep count
             rep_count = max(1, cfg.get("rep_count", 1))
-
-
-
             status.info(f"Stage 6/{total_steps} — Allocating {rep_count} rep routes (time-based workload)...")
             if priority:
                 pts    = [(s["lat"],s["lng"]) for s in priority]
@@ -2211,6 +2178,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                         })
 
                 # Apply minimum utilisation threshold in fixed mode too
+
+
+
                 min_util_pct  = 40  # only remove truly under-utilised reps
                 min_util_mins  = daily_minutes * working_days * min_util_pct / 100
                 kept_zones_f   = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
@@ -2229,9 +2199,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                                     s["lat"], s["lng"],
                                     kept_centroids_f[zid][0], kept_centroids_f[zid][1]
                                 )
-
-
-
                             )
                             s["rep_id"] = nearest_zone
                         elif s.get("rep_id") in under_ids:
@@ -2261,6 +2228,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         # e.g. Small=1/mo → 1 month, Small=0.5/mo → 2 months, Small=0.33/mo → 3 months
         _bench      = st.session_state.get("admin_benchmarks", {})
         _freqs      = [
+
+
+
             float(_bench.get("large_visits",  4)),
             float(_bench.get("medium_visits", 2)),
             float(_bench.get("small_visits",  1)),
@@ -2279,8 +2249,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
         status.info(f"Stage 6b — Building {plan_period}-month route plan for {len(all_rep_ids)} reps...")
-
-
 
         # Clear ALL route fields BEFORE building routes — prevents stale data from previous runs
         for s in all_stores:
@@ -2310,6 +2278,9 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # WEEK LABELS: 4 weeks per month
         WEEK_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
+
+
+
         def pick_weeks(vpm):
             """Pick which weeks to visit based on visits_per_month.
             Abstract plan — 4 weeks per month, no Week 5 (no real calendar dates)."""
@@ -2328,8 +2299,6 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             day = s["assigned_day"]
             vpm = s.get("visits_per_month", 1)
-
-
 
             if vpm >= 1:
                 # Visited every month — assign weeks in each plan month
@@ -2359,6 +2328,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["day_visit_order"] = 0
                 s["plan_visits"]     = 0
                 for mk in plan_month_keys:
+
+
+
                     s[f"{mk}_weeks"]  = []
                     s[f"{mk}_visits"] = 0
 
@@ -2377,9 +2349,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         # Build per-rep daily time map
         def rep_day_time(stores_list, rep, day):
             return sum(s.get("visit_duration_min",25)
-
-
-
                        for s in stores_list
                        if s.get("rep_id")==rep and s.get("assigned_day")==day
                        and s.get("plan_visits",0) > 0)
@@ -2409,6 +2378,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     for day in WEEKDAYS:
                         used = rep_day_time(all_stores, rid, day)
                         remaining = effective_cap_110 - used
+
+
+
                         if remaining >= visit_t and remaining > best_remaining:
                             best_remaining = remaining
                             best_rep = rid
@@ -2427,9 +2399,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                             s[f"{mk}_visits"] = len(wks)
                             s["plan_visits"]  = len(wks) * plan_period
                     elif vpm > 0:
-
-
-
                         s[f"{plan_month_keys[0]}_weeks"]  = [f"Week 2 - {day_n}"]
                         s[f"{plan_month_keys[0]}_visits"] = 1
                         s["plan_visits"] = 1
@@ -2459,6 +2428,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                                 s["assigned_day"] = other_day
                                 day_used -= vt
                                 found = True
+
+
+
                                 break
                         if found: break
 
@@ -2477,9 +2449,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             kept_reps = list(rep_time_map.keys())
 
                     # Update rep_recommendation
-
-
-
             if rep_recommendation:
                 rep_recommendation["total_minutes_needed"] = round(final_total_mins)
                 rep_recommendation["monthly_cap_per_rep"]  = round(final_monthly_cap)
@@ -2509,6 +2478,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 candidates = sorted(
                     [s for s in all_stores if s.get("coverage_status")=="gap" and s.get("place_id","")],
                     key=lambda x: x.get("score",0), reverse=True
+
+
+
                 )[:enrich_count]
             else:  # all
                 candidates = [s for s in all_stores if s.get("place_id","")][:enrich_count]
@@ -2527,9 +2499,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     store["opening_hours"] = " | ".join(wt) if wt else ""
                     if result.get("formatted_address"):
                         store["full_address"] = result["formatted_address"]
-
-
-
+                    # Capture price_level from Place Details — not returned by Nearby Search
+                    if result.get("price_level") is not None:
+                        store["price_level"] = int(result["price_level"])
                     enriched += 1
                 else:
                     failed += 1
@@ -2556,6 +2528,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             elif enrich_poi == "gaps_only":
                 poi_candidates = [s for s in all_stores if s.get("coverage_status")=="gap" and s.get("lat") and s.get("lng")]
             else:
+
+
+
                 poi_candidates = [s for s in all_stores if s.get("lat") and s.get("lng")]
 
             poi_enriched = 0
@@ -2577,8 +2552,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     f"{i+1}/{len(poi_candidates)} stores |  {fmt_time(rem).replace('~','')} remaining"
                 )
                 time.sleep(0.05)
-
-
 
             # Re-score with POI data
             max_poi = max((s.get("poi_count",0) for s in all_stores), default=1) or 1
@@ -2605,6 +2578,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         covered_n   = sum(1 for s in all_stores if s.get("covered"))
         actual_time = fmt_time(time.time()-run_start).replace("~","")
         actual_cost = (
+
+
+
             round(len(portfolio)*PRICE_GEOCODE_PER_CALL +
                   len(universe)/15*PRICE_NEARBY_PER_CALL +
                   (enriched if enrich_scope != "none" else 0)*PRICE_DETAILS_PER_CALL, 2)
@@ -2626,7 +2602,4 @@ if st.button("  Run Coverage Agent", type="primary"):
             f"  Pipeline complete in {actual_time} · actual cost ~${actual_cost:.2f} · "
             f"{len(all_stores):,} stores scored · {len(gap_stores):,} gaps found{enrich_msg}. "
             f"Open Results in the sidebar."
-
-
-
         )
