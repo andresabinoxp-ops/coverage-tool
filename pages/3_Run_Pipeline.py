@@ -2062,6 +2062,15 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         status.info(f"Stage 6b — Building {plan_period}-month route plan for {len(all_rep_ids)} reps...")
 
+        # Clear ALL route fields BEFORE building routes — prevents stale data from previous runs
+        for s in all_stores:
+            s["assigned_day"]    = ""
+            s["day_visit_order"] = 0
+            for mk in plan_month_keys:
+                s[f"{mk}_weeks"]  = []
+                s[f"{mk}_visits"] = 0
+            s["plan_visits"] = 0
+
         # Build day assignments — establishes fixed weekday per store
         for rep_id in all_rep_ids:
             try:
@@ -2096,16 +2105,6 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly Week 1+3
             if vpm >= 1:   return [WEEK_LABELS[1]]                   # monthly Week 2
             return []
-
-        # Clear route fields on ALL stores before building routes
-        # This ensures no stale assigned_day/plan_visits from previous runs
-        for s in all_stores:
-            s["assigned_day"]    = ""
-            s["day_visit_order"] = 0
-            for mk in plan_month_keys:
-                s[f"{mk}_weeks"]  = []
-                s[f"{mk}_visits"] = 0
-            s["plan_visits"] = 0
 
         # Assign weeks — only stores with a valid assigned_day AND valid size tier
         for s in all_stores:
