@@ -167,10 +167,14 @@ if sel_month != "Full plan":
     idx = PLAN_MONTHS.index(sel_month) if sel_month in PLAN_MONTHS else -1
     sel_month_key = PLAN_MONTH_KEYS[idx] if idx >= 0 else None
 
-# Apply filters — always start with routed stores only (plan_visits > 0)
-map_stores = [s for s in all_stores
-              if s.get("lat") and s.get("lng")
-              and s.get("plan_visits", 0) > 0]
+# Map base filter respects route_filter selection
+_map_route_filter = st.session_state.get("tbl_route_filter", "Recommended stores")
+if _map_route_filter == "Recommended stores":
+    map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) > 0]
+elif _map_route_filter == "Not in route":
+    map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) == 0]
+else:
+    map_stores = [s for s in all_stores if s.get("lat") and s.get("lng")]
 if sel_rep != "All reps":
     rep_num    = int(sel_rep.split()[1])
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
@@ -276,8 +280,9 @@ st.caption("Each file includes store details, assigned day, visit dates, visit o
 mkt_safe = market.replace(" ","_").replace("-","_")
 
 def build_rep_df(stores, rep_id=None, day=None, month_key=None):
-    # Only include stores that are actually in the route plan
-    filtered = [s for s in stores if s.get("rep_id",0) > 0]
+    # For "Not in route" / "All stores" views, include all stores passed in
+    # rep_id filter only applied when a specific rep is selected
+    filtered = list(stores)
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
     if month_key and day and day not in ("Full month", "All weeks", ""):
