@@ -2235,9 +2235,19 @@ if st.button("  Run Coverage Agent", type="primary"):
         min_freq    = min(f for f in _freqs if f > 0)
         plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
 
-        # Plan period driven by lowest frequency (no real calendar — abstract labels)
+        # Build real calendar months from user-selected start month in Configure
+        _start_year  = int(cfg.get("route_year",  datetime.date.today().year))
+        _start_month = int(cfg.get("route_month", datetime.date.today().month))
+
+        plan_months_ym = []
+        for i in range(plan_period):
+            mo = (_start_month - 1 + i) % 12 + 1
+            yr = _start_year + ((_start_month - 1 + i) // 12)
+            plan_months_ym.append((yr, mo))
+
         plan_month_keys   = [f"m{i+1}" for i in range(plan_period)]
-        plan_month_labels = [f"Month {i+1}" for i in range(plan_period)]
+        plan_month_labels = [datetime.date(yr, mo, 1).strftime("%B %Y")
+                             for yr, mo in plan_months_ym]
 
         city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
@@ -2266,6 +2276,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             except Exception as e:
                 status.warning(f"Route building warning for Rep {rep_id}: {e} — continuing...")
                 for i, s in enumerate([s for s in all_stores
+
+
+
                         if s.get("rep_id")==rep_id
                         and s.get("size_tier") in ("Large","Medium","Small")]):
                     s["assigned_day"]    = WEEKDAYS[i % 5]
@@ -2276,9 +2289,6 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         def pick_weeks(vpm):
             if vpm >= 4: return WEEK_LABELS           # weekly: all 4
-
-
-
             if vpm >= 2: return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly: W1+W3
             if vpm >= 1: return [WEEK_LABELS[1]]      # monthly: W2
             return []
@@ -2316,18 +2326,18 @@ if st.button("  Run Coverage Agent", type="primary"):
         for s in all_stores:
             if not s.get("assigned_day") or s.get("size_tier") not in ("Large","Medium","Small"):
                 s["assigned_day"]    = ""
+
+
+
                 s["day_visit_order"] = 0
                 s["plan_visits"]     = 0
                 for mk in plan_month_keys:
-                    s[f"{mk}_weeks"]  = []
+                    s[f"{mk}_dates"]  = []
                     s[f"{mk}_visits"] = 0
 
         # Store plan metadata
         st.session_state["route_plan_months"] = {
             "plan_period":   plan_period,
-
-
-
             "month_keys":    plan_month_keys,
             "month_labels":  plan_month_labels,
             "months_ym":     plan_months_ym,
@@ -2365,6 +2375,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             for s in dropped:
                 visit_t = s.get("visit_duration_min", 25)
                 # Find rep+day combo with most remaining capacity under 110%
+
+
+
                 best_rep, best_day, best_remaining = None, None, -1
                 for rid in all_rep_ids_post:
                     for day in WEEKDAYS:
@@ -2375,9 +2388,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                             best_rep = rid
                             best_day = day
                 if best_rep and best_day:
-
-
-
                     s["rep_id"]          = best_rep
                     s["assigned_day"]    = best_day
                     s["day_visit_order"] = 99
@@ -2415,6 +2425,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                         if other_rid == rid: continue
                         for other_day in WEEKDAYS:
                             used_other = rep_day_time(all_stores, other_rid, other_day)
+
+
+
                             if effective_cap_110 - used_other >= vt:
                                 s["rep_id"]       = other_rid
                                 s["assigned_day"] = other_day
@@ -2425,9 +2438,6 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # ── Final metrics recalculation ──────────────────────────────────────────
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
-
-
-
         if routed_stores:
             _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
                 routed_stores, effective_daily, working_days, avg_speed
@@ -2465,6 +2475,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 candidates = sorted(
                     [s for s in all_stores if s.get("place_id","")],
                     key=lambda x: x.get("score",0), reverse=True
+
+
+
                 )[:enrich_count]
             elif enrich_scope == "gaps_only":
                 candidates = sorted(
@@ -2475,9 +2488,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 candidates = [s for s in all_stores if s.get("place_id","")][:enrich_count]
 
             enriched = 0
-
-
-
             failed   = 0
             enrich_start = time.time()
 
@@ -2515,6 +2525,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             if enrich_poi == "top_n":
                 poi_candidates = sorted(
                     [s for s in all_stores if s.get("lat") and s.get("lng")],
+
+
+
                     key=lambda x: x.get("score",0), reverse=True
                 )[:st.session_state.get("poi_count", 100)]
             elif enrich_poi == "gaps_only":
@@ -2525,9 +2538,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             poi_enriched = 0
             poi_start    = time.time()
             for i, store in enumerate(poi_candidates):
-
-
-
                 try:
                     r = requests.get(PLACES_URL,
                         params={"location":f"{store['lat']},{store['lng']}",
@@ -2565,6 +2575,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                 )*100))
             status.info(f"Stage {poi_stage}/{total_steps} — POI enrichment complete. Scores updated.")
 
+
+
         # Package results
         gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)
         covered_n   = sum(1 for s in all_stores if s.get("covered"))
@@ -2574,8 +2586,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                   len(universe)/15*PRICE_NEARBY_PER_CALL +
                   (enriched if enrich_scope != "none" else 0)*PRICE_DETAILS_PER_CALL, 2)
         )
-
-
 
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
