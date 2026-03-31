@@ -1203,7 +1203,7 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Dry run — abstract plan period from frequencies
         all_freqs_d   = [s.get("visits_per_month",1) for s in all_stores if s.get("visits_per_month",0)>0]
         min_freq_d    = min(all_freqs_d) if all_freqs_d else 1
-        plan_period_d = max(1, round(1/min_freq_d)) if min_freq_d < 1 else 1
+        plan_period_d = max(2, round(1/min_freq_d)) if min_freq_d < 1 else 2
         plan_keys_d   = [f"m{i+1}" for i in range(plan_period_d)]
         plan_labels_d = [f"Month {i+1}" for i in range(plan_period_d)]
 
@@ -1913,8 +1913,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         })
 
             # Apply minimum utilisation threshold
-            min_util_pct = cfg.get("min_utilisation_pct",
-                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
+            # Use 60% as the hard removal threshold (per Jaimin doc: 60% min per day)
+            # 80% is a target utilisation not a hard cut — reps between 60-80% are kept
+            min_util_pct   = 60
             min_util_mins  = monthly_cap * min_util_pct / 100
             kept_zones     = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
             removed_zones  = [z for z in zone_centres if z.get("time_needed_min",0) <  min_util_mins]
@@ -2041,7 +2042,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             float(_bench.get("small_visits",  1)),
         ]
         min_freq    = min(f for f in _freqs if f > 0)
-        plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
+        # Plan period = 1/min_freq, minimum 2 months for proper scheduling
+        # e.g. Small=1/mo → 2mo plan, Small=0.5/mo → 2mo, Small=0.33/mo → 3mo
+        plan_period = max(2, round(1 / min_freq)) if min_freq < 1 else 2
 
         # Plan months = abstract labels: m1, m2, m3...
         plan_month_keys    = [f"m{i+1}" for i in range(plan_period)]
@@ -2088,8 +2091,11 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
             if vpm >= 1:   return [WEEK_LABELS[1]]                   # monthly Week 2
             return []
 
-        # Initialise all month columns
+        # Clear route fields on ALL stores before building routes
+        # This ensures no stale assigned_day/plan_visits from previous runs
         for s in all_stores:
+            s["assigned_day"]    = ""
+            s["day_visit_order"] = 0
             for mk in plan_month_keys:
                 s[f"{mk}_weeks"]  = []
                 s[f"{mk}_visits"] = 0
