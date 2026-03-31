@@ -1227,10 +1227,10 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         WEEK_LABELS_DRY = ["Week 1","Week 2","Week 3","Week 4"]
         WEEK5_DAYS_DRY = {"Monday","Tuesday","Wednesday"}
-        def _pick_weeks_d(vpm, day=""):
+        def _pick_weeks_d(vpm, day="", is_first_month=False):
             if vpm >= 4:
                 weeks = WEEK_LABELS_DRY[:]
-                if day in WEEK5_DAYS_DRY: weeks.append("Week 5")
+                if is_first_month and day in WEEK5_DAYS_DRY: weeks.append("Week 5")
                 return weeks
             if vpm >= 2: return [WEEK_LABELS_DRY[0], WEEK_LABELS_DRY[2]]
             if vpm >= 1: return [WEEK_LABELS_DRY[1]]
@@ -1247,8 +1247,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 s["plan_visits"] = 0; continue
             day = s["assigned_day"]; vpm = s.get("visits_per_month",1)
             if vpm >= 1:
-                weeks = _pick_weeks_d(vpm, day)
-                for mk in plan_keys_d:
+                for mk_i, mk in enumerate(plan_keys_d):
+                    weeks = _pick_weeks_d(vpm, day, is_first_month=(mk_i == 0))
                     s[f"{mk}_weeks"]  = [f"{w} - {day}" for w in weeks]
                     s[f"{mk}_visits"] = len(weeks)
                     s["plan_visits"] += len(weeks)
@@ -2093,17 +2093,18 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         # Jaimin doc: Week 5 applies to Mon/Tue/Wed only (29th/30th/31st pattern)
         WEEK5_DAYS  = {"Monday", "Tuesday", "Wednesday"}
 
-        def pick_weeks(vpm, day=""):
+        def pick_weeks(vpm, day="", is_first_month=False):
             """Pick which weeks to visit based on visits_per_month.
-            Week 5 included for weekly stores on Mon/Tue/Wed per Jaimin doc."""
+            Week 5 applies to Mon/Tue/Wed but ONLY in Month 1 (not every month)
+            to avoid inflating plan_visits beyond capacity."""
             if vpm >= 4:
-                # Weekly — all 4 weeks + Week 5 if day gets it
                 weeks = WEEK_LABELS[:]
-                if day in WEEK5_DAYS:
+                # Week 5 only in first month for Mon/Tue/Wed per Jaimin doc
+                if is_first_month and day in WEEK5_DAYS:
                     weeks.append("Week 5")
                 return weeks
-            if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly Week 1+3
-            if vpm >= 1:   return [WEEK_LABELS[1]]                   # monthly Week 2
+            if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]
+            if vpm >= 1:   return [WEEK_LABELS[1]]
             return []
 
         # Assign weeks — only stores with a valid assigned_day AND valid size tier
@@ -2119,8 +2120,8 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
             if vpm >= 1:
                 # Visited every month — assign weeks in each plan month
-                weeks = pick_weeks(vpm, day)
-                for mk in plan_month_keys:
+                for mi, mk in enumerate(plan_month_keys):
+                    weeks = pick_weeks(vpm, day, is_first_month=(mi == 0))
                     s[f"{mk}_weeks"]  = [f"{w} - {day}" for w in weeks]
                     s[f"{mk}_visits"] = len(weeks)
                     s["plan_visits"] += len(weeks)
