@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import datetime
 
-st.set_page_config(page_title="Results - Coverage Tool", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Results - Coverage Tool", page_icon=" ", layout="wide")
 
 st.markdown("""
 <style>
@@ -37,10 +37,12 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 
 st.markdown("""
 <div class="page-header">
-    <h2>📊 Results</h2>
+    <h2>  Results</h2>
     <p>Scored store universe, coverage analysis and rep planning</p>
 </div>
 """, unsafe_allow_html=True)
+
+
 
 if not st.session_state.get("run_results"):
     st.warning("No results yet. Run the pipeline first.")
@@ -89,6 +91,9 @@ for col, val, label, color in [
     (cols2[0], f"{proposed_rate}%",          "Proposed Coverage Rate",              "#1565C0"),
     (cols2[1], f"{len(removed_stores):,}",   "Stores Removed from Original Coverage","#C62828"),
     (cols2[2], f"{len(new_added_stores):,}", "New Stores Added from Gap List",      "#2E7D32"),
+
+
+
 ]:
     col.markdown(f"""
     <div class="kpi-card" style="border-top-color:{color}">
@@ -112,13 +117,12 @@ if geo_summary:
     fail= geo_summary.get("failed", 0)
     if fail > 0:
         st.warning(
-            f"📍 Geocoding: {ok} stores located successfully · "
+            f"  Geocoding: {ok} stores located successfully · "
             f"{fail} stores failed (no lat/lng) — these are treated as gaps since their location could not be confirmed. "
             "Check addresses in your Current Coverage CSV."
         )
     else:
-        st.success(f"📍 Geocoding: all {ok} Current Coverage stores located successfully.")
-
+        st.success(f"  Geocoding: all {ok} Current Coverage stores located successfully.")
 
 # ── REP PLANNING PANEL ────────────────────────────────────────────────────────
 rep_rec = res.get("rep_recommendation")
@@ -135,6 +139,8 @@ if rep_rec:
     work_days   = rep_rec.get("working_days", 22)
     speed       = rep_rec.get("avg_speed_kmh", 30)
     break_mins  = rep_rec.get("break_minutes", 30)
+
+
 
     # 2-month plan capacity
     plan_months_sess = st.session_state.get("route_plan_months", {})
@@ -183,13 +189,16 @@ if rep_rec:
         util_cur = round(time_per_cur_rep / max(monthly_cap,1) * 100)
         if shortfall > 0:
             st.error(
-                f"⚠️ {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
+
+
+
+                f"  {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
                 f"With {cur_reps} reps, each would need "
                 f"{time_per_cur_rep:,.0f} min/month ({util_cur}% utilisation) — over capacity."
             )
         elif shortfall < 0:
             st.success(
-                f"✅ {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
+                f"  {abs(shortfall)} rep{'s' if abs(shortfall)!=1 else ''} to spare. "
                 f"Your {cur_reps} reps handle this market at "
                 f"{time_per_cur_rep:,.0f} min/month each ({util_cur}% utilisation)."
             )
@@ -230,6 +239,9 @@ if rep_rec:
         rdf      = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
         plan_cap = monthly_cap * max(_plan_pp, 1)
         t_col    = f"Time needed — {_plan_pp}mo (min)"
+
+
+
         c_col    = f"Capacity — {_plan_pp}mo (min)"
         rdf[t_col]          = rdf["Time needed (min)"].round(0).astype(int)
         rdf[c_col]          = plan_cap
@@ -266,12 +278,26 @@ st.caption("Uncovered stores ranked by score — these are candidate new distrib
 high_gaps = [s for s in gap_stores if s.get("score", 0) >= 40]
 if high_gaps:
     gdf   = pd.DataFrame(high_gaps[:50])
+    # Show price_level and poi_count alongside rating/reviews — key scoring signals
     gcols = [c for c in ["store_name","category","score","size_tier",
-                          "visits_per_month","rating","review_count","address","city"] if c in gdf.columns]
+                          "rating","review_count","price_level","poi_count",
+                          "visits_per_month","address","city"] if c in gdf.columns]
     gdf   = gdf[gcols].sort_values("score", ascending=False).reset_index(drop=True)
-    gdf.columns = [c.replace("_"," ").title() for c in gdf.columns]
+    rename = {
+        "store_name":"Store","category":"Category","score":"Score","size_tier":"Size",
+        "rating":"Rating","review_count":"Reviews","price_level":"Price Level",
+        "poi_count":"Nearby POI","visits_per_month":"Visits/Mo",
+        "address":"Address","city":"City"
+    }
+
+
+
+    gdf   = gdf.rename(columns={c:rename.get(c,c) for c in gdf.columns})
     st.dataframe(gdf, use_container_width=True, height=320,
-        column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100)})
+        column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                       "Rating": st.column_config.NumberColumn("Rating", format="%.1f"),
+                       "Price Level": st.column_config.NumberColumn("Price Level (%)", format="%d"),
+                       "Nearby POI": st.column_config.NumberColumn("Nearby POI")})
 else:
     st.info("No gap stores with score above 40.")
 
@@ -294,11 +320,11 @@ with col1:
                   if any(c.startswith(f"{m}_") for m in _all_months)
                   and c not in _keep_month_cols]
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
-    st.download_button("📄 Full scored universe CSV",
+    st.download_button("  Full scored universe CSV",
         _clean_df.reset_index(drop=True).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
-    st.download_button("🎯 Gap report CSV",
+    st.download_button("  Gap report CSV",
         pd.DataFrame(gap_stores).reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
@@ -309,14 +335,16 @@ with col3:
              "visits_per_month","rep_id","coverage_status","category"]}}
         for s in all_stores if s.get("lat") and s.get("lng")
     ]
-    st.download_button("🗺 Routes GeoJSON",
+    st.download_button("  Routes GeoJSON",
         json.dumps({"type":"FeatureCollection","features":features}, indent=2),
         f"rep_routes_{mkt_safe}.geojson", "application/json")
+
+
 
 st.markdown("---")
 st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
 st.caption("Download this file and upload it to the Dashboard page to view results anytime.")
-st.download_button("⬇️ Download stores snapshot (upload to Dashboard)",
+st.download_button("  Download stores snapshot (upload to Dashboard)",
     _clean_df.reset_index(drop=True).to_csv(index=False),
     f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
 st.info("Upload the stores CSV to the Dashboard page. Admin manages the market library from there.")
