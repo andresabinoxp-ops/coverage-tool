@@ -236,21 +236,18 @@ sec("3","Store Size & Visit Benchmarks",
     "Also set default visit frequency and duration per tier. Markets can override per-category in Configure.",
     "Stage 5 — Frequency")
 
-saved_splits = st.session_state.get("admin_size_splits",{"large":20,"medium":40,"small":30,"occasional":10})
+saved_splits = st.session_state.get("admin_size_splits",{"large":20,"medium":40,"small":40})
 st.markdown("**Percentile splits:**")
-st.caption("Set Occasional to 0% to disable — all bottom stores will fall into Small tier.")
-c1,c2,c3,c4 = st.columns(4)
+st.caption("Splits must sum to 100%. Small frequency drives the plan period — e.g. 0.5 visits/month = 2-month plan.")
+c1,c2,c3 = st.columns(3)
 with c1:
-    pct_large      = st.number_input("Large — top %",        min_value=5, max_value=50,step=5,value=saved_splits.get("large",20))
+    pct_large  = st.number_input("Large — top %",   min_value=5, max_value=50,step=5,value=saved_splits.get("large",20))
 with c2:
-    pct_medium     = st.number_input("Medium — next %",      min_value=10,max_value=70,step=5,value=saved_splits.get("medium",40))
+    pct_medium = st.number_input("Medium — next %", min_value=10,max_value=70,step=5,value=saved_splits.get("medium",40))
 with c3:
-    pct_small      = st.number_input("Small — next %",       min_value=5, max_value=60,step=5,value=saved_splits.get("small",30))
-with c4:
-    pct_occasional = st.number_input("Occasional — bottom %",min_value=0, max_value=30,step=5,value=saved_splits.get("occasional",10),
-        help="0.5 visits/month — visited once in the 2-month route plan. Set to 0 to disable.")
+    pct_small  = st.number_input("Small — bottom %",min_value=5, max_value=70,step=5,value=saved_splits.get("small",40))
 
-split_total = pct_large+pct_medium+pct_small+pct_occasional
+split_total = pct_large+pct_medium+pct_small
 if split_total==100: st.success(f"Total: {split_total}% — valid ✓")
 else: st.error(f"Total: {split_total}% — must equal 100%")
 
@@ -261,32 +258,31 @@ saved_bench = st.session_state.get("admin_visit_benchmarks",{
 })
 st.markdown("**Default visit benchmarks per tier:**")
 new_bench = {}
-bc1,bc2,bc3,bc4 = st.columns(4)
-for col,tier,label,locked in [
-    (bc1,"large","Large",False),(bc2,"medium","Medium",False),
-    (bc3,"small","Small",False),(bc4,"occasional","Occasional",True)]:
+bc1,bc2,bc3 = st.columns(3)
+for col,tier,label,default_v,default_d in [
+    (bc1,"large","Large",4,40),
+    (bc2,"medium","Medium",2,25),
+    (bc3,"small","Small",1,15)]:
     with col:
         st.markdown(f"**{label}**")
-        if locked:
-            st.info("0.5 visits/month — locked")
-            d = st.number_input("Duration (min)", min_value=5,max_value=120,
-                value=saved_bench.get(tier,{}).get("duration_min",15), key=f"d_{tier}")
-            new_bench[tier] = {"visits_month":0.5,"duration_min":d}
-            st.caption(f"1 visit per 2-month plan · {d} min/visit")
+        v = st.number_input("Visits/month", min_value=0.25,max_value=12.0,step=0.25,
+            value=float(saved_bench.get(tier,{}).get("visits_month",default_v)),key=f"v_{tier}",
+            help="Use decimals for less-than-monthly frequency: 0.5 = every 2 months, 0.33 = every 3 months")
+        d = st.number_input("Duration (min)", min_value=5,max_value=120,
+            value=saved_bench.get(tier,{}).get("duration_min",default_d),key=f"d_{tier}")
+        new_bench[tier] = {"visits_month":v,"duration_min":d}
+        if v >= 1:
+            st.caption(f"{v:.0f}x/month · {d} min · {v*d:.0f} min/store/month")
         else:
-            v = st.number_input("Visits/month", min_value=1,max_value=12,
-                value=saved_bench.get(tier,{}).get("visits_month",1 if tier=="small" else (2 if tier=="medium" else 4)),key=f"v_{tier}")
-            d = st.number_input("Duration (min)", min_value=5,max_value=120,
-                value=saved_bench.get(tier,{}).get("duration_min",15),key=f"d_{tier}")
-            new_bench[tier] = {"visits_month":v,"duration_min":d}
-            st.caption(f"{v} × {d} min = {v*d} min/store/month")
+            plan_mo = round(1/v)
+            st.caption(f"1 visit every {plan_mo} months · {d} min/visit")
 
 if split_total==100:
     if st.button("Save size & visit benchmarks", type="primary", key="save_bench"):
-        st.session_state["admin_size_splits"]      = {"large":pct_large,"medium":pct_medium,"small":pct_small,"occasional":pct_occasional}
+        st.session_state["admin_size_splits"]      = {"large":pct_large,"medium":pct_medium,"small":pct_small}
         st.session_state["admin_visit_benchmarks"] = new_bench
         st.session_state["admin_benchmarks"]       = {
-            "large_pct":pct_large,"medium_pct":pct_medium,"small_pct":pct_small,"occasional_pct":pct_occasional,
+            "large_pct":pct_large,"medium_pct":pct_medium,"small_pct":pct_small,
             "large_visits":new_bench["large"]["visits_month"],"large_duration":new_bench["large"]["duration_min"],
             "medium_visits":new_bench["medium"]["visits_month"],"medium_duration":new_bench["medium"]["duration_min"],
             "small_visits":new_bench["small"]["visits_month"],"small_duration":new_bench["small"]["duration_min"],
@@ -321,18 +317,26 @@ with c4:
     working_days = st.number_input("Working days per month",    min_value=15, max_value=26, step=1, value=saved_rep.get("working_days",22))
     st.caption(f"Capacity: {(minutes_day-break_mins)*working_days:,} min/rep/month")
 
-st.markdown("**Minimum utilisation threshold:**")
+st.markdown("**Utilisation thresholds:**")
+st.caption("Per Jaimin doc: 60% min daily · 80% min monthly · 110% max daily")
 min_util = st.slider(
-    "Minimum % of monthly capacity a rep must be assigned to justify their existence",
-    min_value=20,max_value=90,value=saved_rep.get("min_utilisation_pct",60),step=5,
-    help="Applies in both Recommended and Fixed modes. Under-utilised reps have their stores redistributed."
+    "Minimum monthly utilisation % (reps below this are removed)",
+    min_value=20, max_value=90, value=saved_rep.get("min_utilisation_pct", 80), step=5,
+    help="Recommended: 80% monthly minimum per Jaimin doc."
 )
 min_minutes = round(minutes_day * working_days * min_util / 100)
 st.caption(
-    f"At {min_util}% threshold: a rep needs at least {min_minutes:,} min/month of work "
-    f"(out of {minutes_day*working_days:,} min capacity) to be assigned. "
-    "Below this their stores go to the nearest rep."
+    f"At {min_util}% threshold: a rep needs at least {min_minutes:,} min/month "
+    f"(out of {minutes_day*working_days:,} min capacity). Below this their stores go to nearest rep."
 )
+
+st.markdown("**Store selection (Recommended mode only):**")
+store_select_pct = st.slider(
+    "Top % of stores to include",
+    min_value=30, max_value=100, value=saved_rep.get("store_select_pct", 55), step=5,
+    help="In Recommended mode: top X% by normalised score (Group 1 = with sales data, Group 2 = without — normalised separately). Default 55% per Jaimin doc."
+)
+st.caption("Fixed mode always includes all stores.")
 
 if st.button("Save rep planning defaults", type="primary", key="save_rep"):
     st.session_state["admin_rep_defaults"] = {
@@ -341,6 +345,7 @@ if st.button("Save rep planning defaults", type="primary", key="save_rep"):
         "travel_speed_kmh":    travel_speed,
         "working_days":        working_days,
         "min_utilisation_pct": min_util,
+        "store_select_pct":    store_select_pct,
     }
     st.success("✅ Rep planning defaults saved.")
 
