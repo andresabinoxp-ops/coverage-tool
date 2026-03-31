@@ -411,7 +411,13 @@ if not display_df.empty:
     else:
         # Full plan — show both month date and visit columns
         base_cols = base_cols + [f"{mk}_weeks" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
-    show_cols = [c for c in base_cols if c in display_df.columns]
+    # Deduplicate show_cols — preserve order, remove duplicates
+    seen = set()
+    show_cols = []
+    for c in base_cols:
+        if c in display_df.columns and c not in seen:
+            show_cols.append(c)
+            seen.add(c)
     rename_map = {
         "rep_id":"Rep","assigned_day":"Day","day_visit_order":"Visit Order",
         "store_name":"Store","category":"Category","size_tier":"Size",
@@ -420,11 +426,16 @@ if not display_df.empty:
         "rating":"Rating","review_count":"Reviews","phone":"Phone",
         "opening_hours":"Opening Hours","address":"Address","city":"City",
         "lat":"Latitude","lng":"Longitude",
-        **{f"{mk}_weeks": f"{PLAN_MONTHS[i][:3]} Dates" for i,mk in enumerate(PLAN_MONTH_KEYS)},
-        **{f"{mk}_visits": f"{PLAN_MONTHS[i][:3]} Visits" for i,mk in enumerate(PLAN_MONTH_KEYS)},
         "plan_visits": "Plan Visits (total)",
     }
+    # Add month column renames using full label names to avoid 3-char collision
+    for i, mk in enumerate(PLAN_MONTH_KEYS):
+        lbl = PLAN_MONTHS[i] if i < len(PLAN_MONTHS) else f"Month {i+1}"
+        rename_map[f"{mk}_weeks"]  = f"{lbl} Weeks"
+        rename_map[f"{mk}_visits"] = f"{lbl} Visits"
     df_show = display_df[show_cols].rename(columns=rename_map)
+    # Final dedup safeguard
+    df_show = df_show.loc[:, ~df_show.columns.duplicated()]
     st.dataframe(df_show, use_container_width=True, height=460,
         column_config={
             "Score":    st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
