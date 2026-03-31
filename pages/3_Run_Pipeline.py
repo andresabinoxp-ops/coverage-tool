@@ -1867,7 +1867,6 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
 
         if rep_mode == "recommended":
             # Recommended mode: top X% by normalised score from each group
-            # Default 55% per Jaimin doc — configurable in Admin Settings
             _store_pct = st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 55)
             sel_pct = _store_pct / 100
             def _top_pct(stores, pct):
@@ -1877,6 +1876,13 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
         else:
             # Fixed mode: all priority stores — rep capacity is the constraint
             priority = priority_all
+
+        # Safety: if priority is empty fall back to all scored stores with coords
+        if not priority:
+            priority = priority_all
+        if not priority:
+            priority = [s for s in all_stores if s.get("lat") and s.get("lng")
+                        and s.get("size_tier") in ("Large","Medium","Small")]
         current_reps  = cfg.get("rep_count", 0)
 
         if rep_mode == "recommended":
@@ -2101,10 +2107,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                 s[f"{mk}_visits"] = 0
             s["plan_visits"] = 0
 
-        # Assign weeks per store per month — ONLY priority stores with assigned_day AND size_tier
-        # This prevents universe/scraped stores with no tier from getting plan_visits > 0
+        # Assign weeks — only stores with a valid assigned_day AND valid size tier
         for s in all_stores:
-            if not s.get("assigned_day"):
+            if not s.get("assigned_day") or s.get("assigned_day") == "":
                 continue
             if s.get("size_tier") not in ("Large","Medium","Small"):
                 s["plan_visits"] = 0
@@ -2134,9 +2139,9 @@ if st.button("🚀 Run Coverage Agent", type="primary"):
                         s["plan_visits"] += 1
                         visit_count      += 1
 
-        # Clear stores not in route — no assigned_day OR no valid size tier
+        # Clear stores not in route — empty/missing assigned_day OR no valid size tier
         for s in all_stores:
-            if "assigned_day" not in s or s.get("size_tier") not in ("Large","Medium","Small"):
+            if not s.get("assigned_day") or s.get("size_tier") not in ("Large","Medium","Small"):
                 s["assigned_day"]    = ""
                 s["day_visit_order"] = 0
                 s["plan_visits"]     = 0
