@@ -785,46 +785,14 @@ else:
 
 st.markdown("---")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-st.subheader("8. Scoring weights")
-st.caption("Weights are set in Admin Settings. Two groups: Current Coverage (6 signals) and Google Scraping (4 signals). Shown here for reference.")
-
-
-
-# Read from Admin Settings session state
-_w1 = st.session_state.get("admin_scoring_weights",
-    {"rating":20,"reviews":25,"affluence":15,"poi":15,"sales":15,"lines":10})
-_w2 = st.session_state.get("admin_scoring_weights_gap",
-    {"rating":25,"reviews":25,"affluence":25,"poi":25})
-
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("**Group 1 — Current Coverage**")
-    st.markdown(f"Rating **{_w1.get('rating',20)}%** · Reviews **{_w1.get('reviews',25)}%** · Affluence **{_w1.get('affluence',15)}%**")
-    st.markdown(f"Nearby POI **{_w1.get('poi',15)}%** · Sales **{_w1.get('sales',15)}%** · Lines **{_w1.get('lines',10)}%**")
-with col2:
-    st.markdown("**Group 2 — Google Scraping**")
-    st.markdown(f"Rating **{_w2.get('rating',25)}%** · Reviews **{_w2.get('reviews',25)}%**")
-    st.markdown(f"Affluence **{_w2.get('affluence',25)}%** · Nearby POI **{_w2.get('poi',25)}%**")
-st.info("To change weights → go to **Admin Settings → Section 2**")
-
-# Use admin weights for validation
-w_rating    = _w1.get("rating",20)
-w_reviews   = _w1.get("reviews",25)
-w_affluence = _w1.get("affluence",15)
-w_poi       = _w1.get("poi",15)
-w_sales     = _w1.get("sales",15)
-w_lines     = _w1.get("lines",10)
-total = w_rating + w_reviews + w_affluence + w_poi + w_sales + w_lines
-
-st.markdown("---")
-
-# ─────────────────────────────────────────────────────────────────────────────
+total = 100  # weights managed in Admin Settings
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 8: SAVE
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+
 st.subheader("9. Save configuration")
 
 # Validation checks
@@ -834,14 +802,11 @@ if not st.session_state.get("country_name"):
 if not final_bbox:
     issues.append("Add at least one city or region.")
 if total != 100:
-    issues.append("Fix scoring weights to equal 100% in Step 7.")
+    pass  # weights managed in Admin Settings
 if not final_categories:
     issues.append("Select at least one scraping category.")
 
 if issues:
-
-
-
     for issue in issues:
         st.warning(issue)
 else:
@@ -875,6 +840,9 @@ else:
                 "rating":     w_rating    / 100,
                 "reviews":    w_reviews   / 100,
                 "affluence":  w_affluence / 100,
+
+
+
                 "poi":        w_poi       / 100,
                 "sales":      w_sales     / 100,
                 "lines":      w_lines     / 100,
@@ -888,10 +856,7 @@ else:
             </div>
             <div style="color:#2E7D32;font-size:0.87rem">
                 Market area, scoring weights, categories and frequency thresholds have been saved.
-                Go to <strong>Run Pipeline</strong> in the sidebar to upload your portfolio and start the agent.
-
-
-
+                Go to <strong>Run Pipeline</strong> in the sidebar to upload your Current Coverage CSV and start the pipeline.
             </div>
         </div>
         """, unsafe_allow_html=True)
