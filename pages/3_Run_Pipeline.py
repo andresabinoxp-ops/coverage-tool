@@ -2358,131 +2358,27 @@ if st.button("  Run Coverage Agent", type="primary"):
                                 break
                         if found: break
 
-        # ── Recalculate using plan_visits and apply 60% utilisation threshold ──
+        # ── Final metrics recalculation ──────────────────────────────────────────
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
         if routed_stores:
             _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
                 routed_stores, effective_daily, working_days, avg_speed
             )
-
-            # Recalculate utilisation per rep using plan_visits
             rep_time_map = {}
             for s in routed_stores:
                 rid = s.get("rep_id", 0)
                 rep_time_map[rid] = rep_time_map.get(rid, 0) + (
                     s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
                 )
+            kept_reps = list(rep_time_map.keys())
 
-            # Apply 60% utilisation threshold — remove under-utilised reps
-            # Jaimin doc: 60% min per day, 80% min monthly, 110% max per day
-            min_util_pct  = cfg.get("min_utilisation_pct",
-
-
-
-                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 80))
-            max_util_pct  = 110  # daily cap — never exceed 110% including travel
-            min_util_mins = final_monthly_cap * min_util_pct / 100
-
-            under_util_reps = [rid for rid, t in rep_time_map.items() if t < min_util_mins]
-            kept_reps       = [rid for rid, t in rep_time_map.items() if t >= min_util_mins]
-
-            if under_util_reps and kept_reps:
-                status.info(f"Stage 6b — {len(under_util_reps)} rep(s) below {min_util_pct}% utilisation — redistributing stores...")
-                # Build centroids for kept reps
-                kept_centroids = {}
-                for rid in kept_reps:
-                    rs = [s for s in routed_stores if s.get("rep_id") == rid]
-                    if rs:
-                        kept_centroids[rid] = (
-                            sum(s["lat"] for s in rs if s.get("lat")) / max(sum(1 for s in rs if s.get("lat")),1),
-                            sum(s["lng"] for s in rs if s.get("lng")) / max(sum(1 for s in rs if s.get("lng")),1),
-                        )
-                # Reassign stores from under-utilised reps to nearest kept rep
-                for s in all_stores:
-                    if s.get("rep_id") in under_util_reps:
-                        if s.get("lat") and s.get("lng") and kept_centroids:
-                            nearest = min(kept_centroids.keys(),
-                                key=lambda r: haversine_m(s["lat"],s["lng"],kept_centroids[r][0],kept_centroids[r][1]))
-                            s["rep_id"] = nearest
-                        elif kept_reps:
-                            s["rep_id"] = kept_reps[0]
-
-                # Check if any kept rep is now over 100% capacity — if so rebalance
-                # Build rep time map after redistribution
-                rep_time_after = {}
-                for s in all_stores:
-                    rid = s.get("rep_id",0)
-                    if rid and s.get("plan_visits",0) > 0:
-                        rep_time_after[rid] = rep_time_after.get(rid,0) + (
-                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
-                        )
-
-                over_cap_reps = {rid for rid,t in rep_time_after.items() if t > final_monthly_cap}
-                if over_cap_reps:
-                    for over_rid in over_cap_reps:
-                        # Get stores for this rep sorted by score ascending (lowest first to move)
-                        rep_stores_sorted = sorted(
-                            [s for s in all_stores if s.get("rep_id")==over_rid and s.get("plan_visits",0)>0],
-                            key=lambda x: x.get("score",0)
-                        )
-                        rep_t = rep_time_after.get(over_rid, 0)
-
-
-
-                        for s in rep_stores_sorted:
-                            if rep_t <= final_monthly_cap:
-                                break
-                            s_t = s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
-                            # Find another kept rep with capacity — not the over-capacity one
-                            candidates = {r:t for r,t in rep_time_after.items()
-                                          if r != over_rid and r in kept_reps and t + s_t <= final_monthly_cap}
-                            if candidates:
-                                best_r = min(candidates.keys(), key=lambda r: candidates[r])
-                                s["rep_id"] = best_r
-                                rep_time_after[best_r] = rep_time_after.get(best_r,0) + s_t
-                                rep_t -= s_t
-                                rep_time_after[over_rid] = rep_t
-
-                # Final utilisation check — catch any reps still below threshold after rebalancing
-                rep_time_final = {}
-                for s in all_stores:
-                    rid = s.get("rep_id",0)
-                    if rid and s.get("plan_visits",0) > 0:
-                        rep_time_final[rid] = rep_time_final.get(rid,0) + (
-                            s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
-                        )
-                still_under = [rid for rid,t in rep_time_final.items() if t < min_util_mins]
-                still_kept  = [rid for rid,t in rep_time_final.items() if t >= min_util_mins]
-                if still_under and still_kept:
-                    still_centroids = {}
-                    for rid in still_kept:
-                        rs = [s for s in all_stores if s.get("rep_id")==rid and s.get("lat") and s.get("lng")]
-                        if rs:
-                            still_centroids[rid] = (
-                                sum(s["lat"] for s in rs)/len(rs),
-                                sum(s["lng"] for s in rs)/len(rs)
-                            )
-                    for s in all_stores:
-                        if s.get("rep_id") in still_under:
-                            if s.get("lat") and s.get("lng") and still_centroids:
-                                nearest = min(still_centroids.keys(),
-                                    key=lambda r: haversine_m(s["lat"],s["lng"],still_centroids[r][0],still_centroids[r][1]))
-                                s["rep_id"] = nearest
-                            elif still_kept:
-                                s["rep_id"] = still_kept[0]
-
-                # Recalculate after redistribution
-                routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
-                _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
-                    routed_stores, effective_daily, working_days, avg_speed
-                )
-
-
-
-            # Update rep_recommendation
+                    # Update rep_recommendation
             if rep_recommendation:
                 rep_recommendation["total_minutes_needed"] = round(final_total_mins)
                 rep_recommendation["monthly_cap_per_rep"]  = round(final_monthly_cap)
+
+
+
                 rep_recommendation["recommended_reps"]     = len(kept_reps) if kept_reps else len(rep_time_map)
                 # Update zone_centres utilisation
                 for z in rep_recommendation.get("zone_centres", []):
@@ -2525,14 +2421,13 @@ if st.button("  Run Coverage Agent", type="primary"):
                     oh = result.get("opening_hours",{})
                     wt = oh.get("weekday_text",[])
                     store["opening_hours"] = " | ".join(wt) if wt else ""
-
-
-
                     if result.get("formatted_address"):
                         store["full_address"] = result["formatted_address"]
                     enriched += 1
                 else:
                     failed += 1
+
+
 
                 pct = 80 + int((i+1)/max(len(candidates),1)*17)
                 rem = (time.time()-enrich_start)/(i+1)*(len(candidates)-i-1) if i>0 else 0
@@ -2575,14 +2470,14 @@ if st.button("  Run Coverage Agent", type="primary"):
                 status.info(
                     f"Stage {poi_stage}/{total_steps} — POI enrichment... "
                     f"{i+1}/{len(poi_candidates)} stores |  {fmt_time(rem).replace('~','')} remaining"
-
-
-
                 )
                 time.sleep(0.05)
 
             # Re-score with POI data
             max_poi = max((s.get("poi_count",0) for s in all_stores), default=1) or 1
+
+
+
             w       = cfg["weights"]
             for s in all_stores:
                 poi_n  = math.log1p(s.get("poi_count",0))/math.log1p(max_poi) if max_poi > 1 else 0.0
@@ -2625,9 +2520,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         enrich_msg = f" · {enriched} stores enriched with phone & hours" if enrich_scope != "none" else ""
         status.success(
             f"  Pipeline complete in {actual_time} · actual cost ~${actual_cost:.2f} · "
-
-
-
             f"{len(all_stores):,} stores scored · {len(gap_stores):,} gaps found{enrich_msg}. "
             f"Open Results in the sidebar."
         )
