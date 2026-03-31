@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="Configure - Coverage Tool", page_icon="⚙️", layout="wide")
+st.set_page_config(page_title="Configure - Coverage Tool", page_icon=" ", layout="wide")
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -26,7 +26,7 @@ div.stButton > button:hover { background: #2563C0; }
 
 st.markdown("""
 <div class="page-header">
-    <h1>⚙️ Configure Market</h1>
+    <h1>  Configure Market</h1>
     <p>Set up market location, scoring weights and pipeline parameters</p>
 </div>
 """, unsafe_allow_html=True)
@@ -41,6 +41,8 @@ def get_api_key():
         return key if key else None
     except Exception:
         return None
+
+
 
 def geocode_lookup(query, api_key):
     """Returns list of results from Google Geocoding API for a query."""
@@ -89,6 +91,9 @@ def extract_bbox(result):
         if lng_span < min_buf * 2:
             mid_lng  = (lng_min + lng_max) / 2
             lng_min  = mid_lng - min_buf
+
+
+
             lng_max  = mid_lng + min_buf
         return (round(lat_min,4), round(lat_max,4), round(lng_min,4), round(lng_max,4))
 
@@ -123,7 +128,6 @@ def search_location(query, api_key, restrict_type=None):
             options.append((full_address, bbox))
     return options
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY MAP & TIERS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -136,6 +140,9 @@ CATEGORY_MAP = {
     "mini market":            "convenience_store",
     "pharmacy":               "pharmacy",
     "chemist":                "pharmacy",
+
+
+
     "drugstore":              "pharmacy",
     "gas station":            "gas_station",
     "petrol station":         "gas_station",
@@ -183,6 +190,9 @@ if "city_entries" not in st.session_state or st.session_state["city_entries"] is
 # STEP 1: PORTFOLIO UPLOAD
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
+
+
+
 st.subheader("1. Upload your Current Coverage CSV")
 st.markdown("""
 Required columns: `store_name`, `address`, `city`
@@ -230,6 +240,9 @@ if uploaded:
             st.dataframe(df.head(5), use_container_width=True)
 
             if "category" in df.columns:
+
+
+
                 raw_cats = df["category"].dropna().str.lower().str.strip().unique().tolist()
                 detected_categories = raw_cats
                 mapped = set()
@@ -257,7 +270,7 @@ if uploaded:
 # Template download
 st.markdown("""
 <div style="background:#F0F4FF;border:1px solid #C7D7F5;border-radius:8px;padding:1rem 1.2rem;margin-bottom:0.8rem;font-size:0.85rem;line-height:1.7">
-<strong>📋 Template column guide</strong><br><br>
+<strong>  Template column guide</strong><br><br>
 <strong>Required columns:</strong><br>
 • <code>store_name</code> — the store name as you know it<br>
 • <code>address</code> — street address (e.g. "Rua das Flores, 123")<br>
@@ -277,10 +290,13 @@ st.markdown("""
 sample = pd.DataFrame([
     {"store_id":"S001","store_name":"Carrefour Express","address":"Av. Conselheiro Aguiar, 2500","city":"Recife","district":"Boa Viagem","region":"Pernambuco","lat":"","lng":"","category":"supermarket","annual_sales_usd":125000,"lines_per_store":54},
     {"store_id":"S002","store_name":"Atacadão Recife",  "address":"Av. Caxangá, 2900",          "city":"Recife","district":"Iputinga",  "region":"Pernambuco","lat":"","lng":"","category":"hypermarket","annual_sales_usd":210000,"lines_per_store":72},
+
+
+
     {"store_id":"S003","store_name":"Farmácia Pague Menos","address":"Rua da Aurora, 500",      "city":"Recife","district":"Boa Vista", "region":"Pernambuco","lat":"","lng":"","category":"pharmacy",   "annual_sales_usd":22000, "lines_per_store":12},
     {"store_id":"S004","store_name":"Posto Ipiranga",   "address":"Av. Agamenon Magalhães, 100","city":"Recife","district":"Derby",     "region":"Pernambuco","lat":"","lng":"","category":"gas station","annual_sales_usd":18000, "lines_per_store":8},
 ])
-st.download_button("⬇️ Download current_coverage_template", sample.to_csv(index=False), "current_coverage_template.csv", "text/csv")
+st.download_button("  Download current_coverage_template", sample.to_csv(index=False), "current_coverage_template.csv", "text/csv")
 
 st.markdown("---")
 
@@ -324,6 +340,9 @@ if search_country_btn and country_input:
                 country_result = country_results[0]
 
             if country_result:
+
+
+
                 bbox = extract_bbox(country_result)
                 name = extract_component(country_result, "country") or country_input
                 st.session_state["country_name"]    = name
@@ -371,6 +390,9 @@ else:
 
     if add_region_btn and region_input:
         if not api_key:
+
+
+
             st.error("Cannot search — API key not set.")
         else:
             with st.spinner(f"Searching for {region_input}..."):
@@ -395,7 +417,7 @@ else:
         for i, entry in enumerate(st.session_state["region_entries"]):
             col_a, col_b = st.columns([5, 1])
             with col_a:
-                st.write(f"📍 {entry['name']}")
+                st.write(f"  {entry['name']}")
             with col_b:
                 if st.button("Remove", key=f"remove_region_{i}"):
                     st.session_state["region_entries"].pop(i)
@@ -418,6 +440,9 @@ else:
 
     col1, col2 = st.columns([3, 1])
     with col1:
+
+
+
         city_input = st.text_input(
             "Type city or area name",
             placeholder="e.g. Muscat, Salalah, Sohar, Al Seeb...",
@@ -447,7 +472,7 @@ else:
                 elif "administrative_area_level_2" in types: type_label = "Governorate/County"
                 elif "locality" in types: type_label = "City"
                 elif "postal_town" in types: type_label = "Town"
-                elif "country" in types: type_label = "⚠️ Country (too broad — try a more specific name)"
+                elif "country" in types: type_label = "  Country (too broad — try a more specific name)"
                 full_name = r.get("formatted_address", city_input)
                 existing_names = [e["name"] for e in st.session_state["city_entries"]]
                 if name in existing_names:
@@ -465,12 +490,15 @@ else:
                 )
 
     # Show added cities
+
+
+
     if st.session_state["city_entries"]:
         st.markdown("**Added cities:**")
         for i, entry in enumerate(st.session_state["city_entries"]):
             col_a, col_b = st.columns([5, 1])
             with col_a:
-                st.write(f"🏙️ {entry['name']}")
+                st.write(f"  {entry['name']}")
             with col_b:
                 if st.button("Remove", key=f"remove_city_{i}"):
                     st.session_state["city_entries"].pop(i)
@@ -512,6 +540,9 @@ st.subheader("5. Market details")
 
 country_name = st.session_state.get("country_name", "")
 col1, col2 = st.columns(2)
+
+
+
 with col1:
     market_name = st.text_input("Market name", value=f"{country_name} - {final_scope}" if final_scope else country_name)
 with col2:
@@ -523,7 +554,7 @@ with col2:
 
 import datetime as _dt
 st.info(
-    "📅 **Route plan period is set automatically** by the lowest visit frequency across your tiers. "
+    "  **Route plan period is set automatically** by the lowest visit frequency across your tiers. "
     "Example: if Small = 0.5 visits/month → 2-month plan (Month 1 + Month 2). "
     "If Small = 0.33 → 3-month plan. Routes use Month 1, Month 2 etc — no fixed calendar dates."
 )
@@ -559,6 +590,9 @@ if rep_mode == "Fixed — I know how many reps I have":
             help="Full working day including travel and breaks.")
     with col2:
         break_minutes = st.number_input("Break time (min/day)",    min_value=0,   max_value=120, value=30,
+
+
+
             help="Lunch and rest breaks deducted from selling time.")
     with col3:
         working_days  = st.number_input("Working days per month",  min_value=15,  max_value=26,  value=22)
@@ -606,6 +640,9 @@ else:
     st.markdown("**Current headcount (optional)**")
     st.caption("Only used to compare against the recommendation — does not affect the calculation. Leave at 0 if unknown.")
     rep_count = st.number_input(
+
+
+
         "How many reps do you currently have?",
         min_value=0, max_value=200, value=0,
         help="Enter 0 to skip comparison. If you enter a number the Results page will show whether you are over or under-resourced."
@@ -653,6 +690,9 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("7. Visit benchmarks per category")
 st.caption("""
+
+
+
 Set how many times per month a rep should visit each store size tier, and how long each visit takes.
 Store size is determined by score percentile within each category — e.g. top 20% of pharmacies = Large pharmacy.
 Defaults come from Admin Settings. You can adjust per category here.
@@ -700,6 +740,9 @@ if final_categories:
         cat_label = cat.replace("_"," ").title()
         c0,c1,c2,c3,c4,c5,c6 = st.columns([2,1,1,1,1,1,1])
         with c0:
+
+
+
             st.markdown(f"<div style='padding-top:8px;font-weight:600'>{cat_label}</div>", unsafe_allow_html=True)
         with c1:
             lv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
@@ -732,7 +775,7 @@ if final_categories:
         plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
         month_labels = [f"Month {i+1}" for i in range(plan_period)]
         st.info(
-            f"📅 **Plan period: {plan_period} month{'s' if plan_period > 1 else ''}** "
+            f"  **Plan period: {plan_period} month{'s' if plan_period > 1 else ''}** "
             f"({' + '.join(month_labels)}) — "
             f"driven by minimum frequency {min_freq}/month across tiers"
         )
@@ -744,26 +787,36 @@ st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
-st.subheader("8. Scoring weights — must sum to 100%")
-st.caption("Each store receives a score 0-100 based on six signals. Gap stores score 0 on sales and lines. Affluence uses Google price level. POI requires optional enrichment after run.")
+st.subheader("8. Scoring weights")
+st.caption("Weights are set in Admin Settings. Two groups: Current Coverage (6 signals) and Google Scraping (4 signals). Shown here for reference.")
+
+
+
+# Read from Admin Settings session state
+_w1 = st.session_state.get("admin_scoring_weights",
+    {"rating":20,"reviews":25,"affluence":15,"poi":15,"sales":15,"lines":10})
+_w2 = st.session_state.get("admin_scoring_weights_gap",
+    {"rating":25,"reviews":25,"affluence":25,"poi":25})
 
 col1, col2 = st.columns(2)
 with col1:
-    w_rating    = st.slider("Rating — Google star rating (0-5)",       0, 50, 20)
-    w_reviews   = st.slider("Reviews — footfall proxy (log-normalised)",0, 50, 25)
-    w_affluence = st.slider("Affluence — Google price level (0-4)",    0, 50, 10,
-        help="Higher price level = more premium store. Google captures this automatically during scraping.")
+    st.markdown("**Group 1 — Current Coverage**")
+    st.markdown(f"Rating **{_w1.get('rating',20)}%** · Reviews **{_w1.get('reviews',25)}%** · Affluence **{_w1.get('affluence',15)}%**")
+    st.markdown(f"Nearby POI **{_w1.get('poi',15)}%** · Sales **{_w1.get('sales',15)}%** · Lines **{_w1.get('lines',10)}%**")
 with col2:
-    w_poi   = st.slider("Nearby POI — location quality (optional enrichment)", 0, 50, 15,
-        help="Count of points of interest within radius. Requires POI enrichment step after pipeline run. Scores 0 if enrichment not run.")
-    w_sales = st.slider("Current sales — your revenue at this store",  0, 50, 15)
-    w_lines = st.slider("Lines per store — SKUs you sell there",       0, 50, 15)
+    st.markdown("**Group 2 — Google Scraping**")
+    st.markdown(f"Rating **{_w2.get('rating',25)}%** · Reviews **{_w2.get('reviews',25)}%**")
+    st.markdown(f"Affluence **{_w2.get('affluence',25)}%** · Nearby POI **{_w2.get('poi',25)}%**")
+st.info("To change weights → go to **Admin Settings → Section 2**")
 
+# Use admin weights for validation
+w_rating    = _w1.get("rating",20)
+w_reviews   = _w1.get("reviews",25)
+w_affluence = _w1.get("affluence",15)
+w_poi       = _w1.get("poi",15)
+w_sales     = _w1.get("sales",15)
+w_lines     = _w1.get("lines",10)
 total = w_rating + w_reviews + w_affluence + w_poi + w_sales + w_lines
-if total == 100:
-    st.success(f"Total: {total}% — valid")
-else:
-    st.error(f"Total: {total}% — must equal exactly 100%")
 
 st.markdown("---")
 
@@ -786,6 +839,9 @@ if not final_categories:
     issues.append("Select at least one scraping category.")
 
 if issues:
+
+
+
     for issue in issues:
         st.warning(issue)
 else:
@@ -828,11 +884,14 @@ else:
         <div style="background:#E8F5E9;border:1.5px solid #66BB6A;border-left:5px solid #2E7D32;
         border-radius:8px;padding:1rem 1.4rem;margin:0.5rem 0">
             <div style="font-weight:700;color:#1B5E20;font-size:1rem;margin-bottom:4px">
-                ✅ Configuration saved — {market_name}
+                 Configuration saved — {market_name}
             </div>
             <div style="color:#2E7D32;font-size:0.87rem">
                 Market area, scoring weights, categories and frequency thresholds have been saved.
                 Go to <strong>Run Pipeline</strong> in the sidebar to upload your portfolio and start the agent.
+
+
+
             </div>
         </div>
         """, unsafe_allow_html=True)
