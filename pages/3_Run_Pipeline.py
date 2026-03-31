@@ -2265,6 +2265,100 @@ if st.button("  Run Coverage Agent", type="primary"):
             "month_keys":   plan_month_keys,
             "month_labels": plan_month_labels,
         }
+        # ── Post-route rebalancing ─────────────────────────────────────────────
+        # Some stores were dropped by daily budget — try to redistribute them
+        # to underloaded reps, and enforce 110% daily cap per Jaimin doc
+
+        effective_cap_110 = effective_daily * 1.10  # 110% daily max
+
+        # Build per-rep daily time map
+        def rep_day_time(stores_list, rep, day):
+            return sum(s.get("visit_duration_min",25)
+                       for s in stores_list
+                       if s.get("rep_id")==rep and s.get("assigned_day")==day
+                       and s.get("plan_visits",0) > 0)
+
+        def rep_monthly_time(stores_list, rep):
+            return sum(s.get("plan_visits",0) * s.get("visit_duration_min",25)
+
+
+
+                       for s in stores_list
+                       if s.get("rep_id")==rep and s.get("plan_visits",0)>0)
+
+        # Find stores dropped by daily budget — assigned_day="" but rep_id>0
+        dropped = [s for s in all_stores
+                   if s.get("rep_id",0) > 0
+                   and not s.get("assigned_day","")
+                   and s.get("size_tier") in ("Large","Medium","Small")
+                   and s.get("lat") and s.get("lng")]
+
+        all_rep_ids_post = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0)>0))
+
+        if dropped and all_rep_ids_post:
+            # Sort dropped by score desc — try to place highest-priority first
+            dropped.sort(key=lambda x: x.get("score",0), reverse=True)
+            for s in dropped:
+                visit_t = s.get("visit_duration_min", 25)
+                # Find rep+day combo with most remaining capacity under 110%
+                best_rep, best_day, best_remaining = None, None, -1
+                for rid in all_rep_ids_post:
+                    for day in WEEKDAYS:
+                        used = rep_day_time(all_stores, rid, day)
+                        remaining = effective_cap_110 - used
+                        if remaining >= visit_t and remaining > best_remaining:
+                            best_remaining = remaining
+                            best_rep = rid
+                            best_day = day
+                if best_rep and best_day:
+                    s["rep_id"]          = best_rep
+                    s["assigned_day"]    = best_day
+                    s["day_visit_order"] = 99
+                    # Assign plan weeks
+                    vpm   = s.get("visits_per_month", 1)
+                    day_n = best_day
+                    if vpm >= 1:
+                        wks = pick_weeks(vpm)
+                        for mk in plan_month_keys:
+                            s[f"{mk}_weeks"]  = [f"{w} - {day_n}" for w in wks]
+                            s[f"{mk}_visits"] = len(wks)
+                            s["plan_visits"]  = len(wks) * plan_period
+                    elif vpm > 0:
+                        s[f"{plan_month_keys[0]}_weeks"]  = [f"Week 2 - {day_n}"]
+                        s[f"{plan_month_keys[0]}_visits"] = 1
+                        s["plan_visits"] = 1
+
+        # Enforce 110% daily cap — move excess stores to other reps
+        for rid in all_rep_ids_post:
+
+
+
+            for day in WEEKDAYS:
+                day_stores = [s for s in all_stores
+                              if s.get("rep_id")==rid
+                              and s.get("assigned_day")==day
+                              and s.get("plan_visits",0)>0]
+                # Sort by score asc — move lowest-score excess first
+                day_stores_sorted = sorted(day_stores, key=lambda x: x.get("score",0))
+                day_used = sum(s.get("visit_duration_min",25) for s in day_stores_sorted)
+                for s in day_stores_sorted:
+                    if day_used <= effective_cap_110:
+                        break
+                    vt = s.get("visit_duration_min", 25)
+                    # Find another rep+day with capacity
+                    found = False
+                    for other_rid in all_rep_ids_post:
+                        if other_rid == rid: continue
+                        for other_day in WEEKDAYS:
+                            used_other = rep_day_time(all_stores, other_rid, other_day)
+                            if effective_cap_110 - used_other >= vt:
+                                s["rep_id"]       = other_rid
+                                s["assigned_day"] = other_day
+                                day_used -= vt
+                                found = True
+                                break
+                        if found: break
+
         # ── Recalculate using plan_visits and apply 60% utilisation threshold ──
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
         if routed_stores:
@@ -2280,14 +2374,14 @@ if st.button("  Run Coverage Agent", type="primary"):
                     s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
                 )
 
-
-
             # Apply 60% utilisation threshold — remove under-utilised reps
             # Jaimin doc: 60% min per day, 80% min monthly, 110% max per day
             min_util_pct  = cfg.get("min_utilisation_pct",
                 st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 80))
             max_util_pct  = 110  # daily cap — never exceed 110% including travel
             min_util_mins = final_monthly_cap * min_util_pct / 100
+
+
 
             under_util_reps = [rid for rid, t in rep_time_map.items() if t < min_util_mins]
             kept_reps       = [rid for rid, t in rep_time_map.items() if t >= min_util_mins]
@@ -2329,15 +2423,15 @@ if st.button("  Run Coverage Agent", type="primary"):
                         # Get stores for this rep sorted by score ascending (lowest first to move)
                         rep_stores_sorted = sorted(
                             [s for s in all_stores if s.get("rep_id")==over_rid and s.get("plan_visits",0)>0],
-
-
-
                             key=lambda x: x.get("score",0)
                         )
                         rep_t = rep_time_after.get(over_rid, 0)
                         for s in rep_stores_sorted:
                             if rep_t <= final_monthly_cap:
                                 break
+
+
+
                             s_t = s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
                             # Find another kept rep with capacity — not the over-capacity one
                             candidates = {r:t for r,t in rep_time_after.items()
@@ -2379,15 +2473,15 @@ if st.button("  Run Coverage Agent", type="primary"):
 
                 # Recalculate after redistribution
                 routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
-
-
-
                 _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
                     routed_stores, effective_daily, working_days, avg_speed
                 )
 
             # Update rep_recommendation
             if rep_recommendation:
+
+
+
                 rep_recommendation["total_minutes_needed"] = round(final_total_mins)
                 rep_recommendation["monthly_cap_per_rep"]  = round(final_monthly_cap)
                 rep_recommendation["recommended_reps"]     = len(kept_reps) if kept_reps else len(rep_time_map)
@@ -2429,15 +2523,15 @@ if st.button("  Run Coverage Agent", type="primary"):
                 if result:
                     store["phone"]   = result.get("formatted_phone_number","")
                     store["website"] = result.get("website","")
-
-
-
                     oh = result.get("opening_hours",{})
                     wt = oh.get("weekday_text",[])
                     store["opening_hours"] = " | ".join(wt) if wt else ""
                     if result.get("formatted_address"):
                         store["full_address"] = result["formatted_address"]
                     enriched += 1
+
+
+
                 else:
                     failed += 1
 
@@ -2479,14 +2573,13 @@ if st.button("  Run Coverage Agent", type="primary"):
                 except Exception:
                     store["poi_count"] = 0
                 rem = (time.time()-poi_start)/(i+1)*(len(poi_candidates)-i-1) if i>0 else 0
-
-
-
                 status.info(
                     f"Stage {poi_stage}/{total_steps} — POI enrichment... "
                     f"{i+1}/{len(poi_candidates)} stores |  {fmt_time(rem).replace('~','')} remaining"
                 )
                 time.sleep(0.05)
+
+
 
             # Re-score with POI data
             max_poi = max((s.get("poi_count",0) for s in all_stores), default=1) or 1
@@ -2528,8 +2621,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         }
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
-
-
 
         enrich_msg = f" · {enriched} stores enriched with phone & hours" if enrich_scope != "none" else ""
         status.success(
