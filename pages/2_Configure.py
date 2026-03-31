@@ -183,7 +183,7 @@ if "city_entries" not in st.session_state or st.session_state["city_entries"] is
 # STEP 1: PORTFOLIO UPLOAD
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.subheader("1. Upload your portfolio CSV")
+st.subheader("1. Upload your Current Coverage CSV")
 st.markdown("""
 Required columns: `store_name`, `address`, `city`
 Optional columns: `store_id`, `category`, `annual_sales_usd`, `lines_per_store`
@@ -191,7 +191,7 @@ Optional columns: `store_id`, `category`, `annual_sales_usd`, `lines_per_store`
 The app reads the `category` column and automatically sets the scraping categories to match.
 """)
 
-uploaded = st.file_uploader("Upload portfolio CSV", type=["csv"], key="config_upload")
+uploaded = st.file_uploader("Upload Current Coverage CSV", type=["csv"], key="config_upload")
 portfolio_df       = None
 detected_categories = []
 google_categories  = []
@@ -244,7 +244,7 @@ if uploaded:
                                 break
                 google_categories = list(mapped)
                 if google_categories:
-                    st.info(f"Portfolio categories: **{', '.join(detected_categories)}**  →  Will scrape: **{', '.join(google_categories)}**")
+                    st.info(f"Current Coverage categories: **{', '.join(detected_categories)}**  →  Will scrape: **{', '.join(google_categories)}**")
                 else:
                     st.warning("Could not match categories automatically. Select them manually in Step 4.")
             else:
@@ -280,7 +280,7 @@ sample = pd.DataFrame([
     {"store_id":"S003","store_name":"Farmácia Pague Menos","address":"Rua da Aurora, 500",      "city":"Recife","district":"Boa Vista", "region":"Pernambuco","lat":"","lng":"","category":"pharmacy",   "annual_sales_usd":22000, "lines_per_store":12},
     {"store_id":"S004","store_name":"Posto Ipiranga",   "address":"Av. Agamenon Magalhães, 100","city":"Recife","district":"Derby",     "region":"Pernambuco","lat":"","lng":"","category":"gas station","annual_sales_usd":18000, "lines_per_store":8},
 ])
-st.download_button("⬇️ Download portfolio template", sample.to_csv(index=False), "portfolio_template.csv", "text/csv")
+st.download_button("⬇️ Download current_coverage_template", sample.to_csv(index=False), "current_coverage_template.csv", "text/csv")
 
 st.markdown("---")
 
@@ -798,6 +798,7 @@ else:
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
             "city":                    final_scope,
+            "country_name":            st.session_state.get("country_name",""),
             "lat_min":                 lat_min,
             "lat_max":                 lat_max,
             "lng_min":                 lng_min,
