@@ -560,6 +560,29 @@ st.info(
 )
 
 st.markdown("---")
+st.subheader("5a. Route plan start month")
+st.caption("The plan period length is set automatically by the lowest visit frequency. Select which month the plan starts from.")
+
+import datetime as _dt
+_today = _dt.date.today()
+_col_m, _col_y = st.columns(2)
+with _col_m:
+    route_month = st.selectbox(
+        "Start month",
+        options=list(range(1, 13)),
+        index=_today.month - 1,
+        format_func=lambda m: _dt.date(2025, m, 1).strftime("%B"),
+        key="route_month_sel"
+    )
+with _col_y:
+    route_year = st.number_input(
+        "Start year",
+        min_value=2024, max_value=2030,
+        value=_today.year,
+        key="route_year_sel"
+    )
+
+st.markdown("---")
 st.subheader("5b. Rep planning mode")
 st.caption("Choose how you want to handle rep allocation — fixed headcount or let the agent recommend.")
 
@@ -567,6 +590,9 @@ rep_mode = st.radio(
     "Rep planning approach",
     options=["Fixed — I know how many reps I have",
              "Recommended — tell me how many reps I need"],
+
+
+
     index=0,
     horizontal=True,
 )
@@ -590,9 +616,6 @@ if rep_mode == "Fixed — I know how many reps I have":
             help="Full working day including travel and breaks.")
     with col2:
         break_minutes = st.number_input("Break time (min/day)",    min_value=0,   max_value=120, value=30,
-
-
-
             help="Lunch and rest breaks deducted from selling time.")
     with col3:
         working_days  = st.number_input("Working days per month",  min_value=15,  max_value=26,  value=22)
@@ -617,6 +640,9 @@ else:
             "Break time (min/day)", min_value=0, max_value=120, value=30,
             help="Lunch and rest breaks. Deducted from daily capacity."
         )
+
+
+
     with col3:
         working_days = st.number_input(
             "Working days per month", min_value=15, max_value=26, value=22,
@@ -640,9 +666,6 @@ else:
     st.markdown("**Current headcount (optional)**")
     st.caption("Only used to compare against the recommendation — does not affect the calculation. Leave at 0 if unknown.")
     rep_count = st.number_input(
-
-
-
         "How many reps do you currently have?",
         min_value=0, max_value=200, value=0,
         help="Enter 0 to skip comparison. If you enter a number the Results page will show whether you are over or under-resourced."
@@ -667,6 +690,9 @@ if google_categories:
                               "liquor_store","grocery_or_supermarket","hypermarket"]
                  if c not in google_categories],
         default=[]
+
+
+
     )
     final_categories = google_categories + extra
 else:
@@ -690,9 +716,6 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("7. Visit benchmarks per category")
 st.caption("""
-
-
-
 Set how many times per month a rep should visit each store size tier, and how long each visit takes.
 Store size is determined by score percentile within each category — e.g. top 20% of pharmacies = Large pharmacy.
 Defaults come from Admin Settings. You can adjust per category here.
@@ -717,6 +740,9 @@ Current splits: <strong>Large = top {large_pct}%</strong> &nbsp;·&nbsp;
 """.format(
     large_pct=admin_defaults["large_pct"],
     medium_pct=admin_defaults["medium_pct"],
+
+
+
     small_pct=admin_defaults["small_pct"],
 ), unsafe_allow_html=True)
 
@@ -740,9 +766,6 @@ if final_categories:
         cat_label = cat.replace("_"," ").title()
         c0,c1,c2,c3,c4,c5,c6 = st.columns([2,1,1,1,1,1,1])
         with c0:
-
-
-
             st.markdown(f"<div style='padding-top:8px;font-weight:600'>{cat_label}</div>", unsafe_allow_html=True)
         with c1:
             lv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
@@ -767,6 +790,9 @@ if final_categories:
             "medium_visits": mv, "medium_duration": int(md),
             "small_visits": sv, "small_duration": int(sd),
         }
+
+
+
         _all_min_freq.append(min(lv, mv, sv))
 
     # Calculate and display plan period from minimum frequency
@@ -790,9 +816,6 @@ total = 100  # weights managed in Admin Settings
 # STEP 8: SAVE
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-
 st.subheader("9. Save configuration")
 
 # Validation checks
@@ -817,6 +840,9 @@ else:
             "country":                 st.session_state["country_name"],
             
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
+
+
+
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
             "city":                    final_scope,
             "country_name":            st.session_state.get("country_name",""),
@@ -836,13 +862,12 @@ else:
             "visit_benchmarks":          visit_benchmarks,
             "plan_period":             max(1, round(1/min(min(v.get("large_visits",4), v.get("medium_visits",2), v.get("small_visits",1)) for v in visit_benchmarks.values())) if visit_benchmarks else 1),
             "size_percentiles":           admin_defaults,
+            "route_month": int(route_month),
+            "route_year":  int(route_year),
             "weights": {k: v/100 for k,v in st.session_state.get("admin_scoring_weights",
                 {"rating":20,"reviews":25,"affluence":15,"poi":15,"sales":15,"lines":10}).items()},
             "weights_gap": {k: v/100 for k,v in st.session_state.get("admin_scoring_weights_gap",
                 {"rating":25,"reviews":25,"affluence":25,"poi":25}).items()},
-
-
-
         }
         st.markdown(f"""
         <div style="background:#E8F5E9;border:1.5px solid #66BB6A;border-left:5px solid #2E7D32;
