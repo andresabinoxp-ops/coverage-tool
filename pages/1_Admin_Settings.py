@@ -200,34 +200,53 @@ Save — app restarts in ~30 seconds.
 # ── SECTION 2: SCORING MODEL DEFAULTS ────────────────────────────────────────
 st.markdown("---")
 sec("2","Scoring Model Defaults",
-    "Set the default weights for the 6-signal store scoring formula. "
-    "Each store gets a score 0-100. Weights must sum to 100%. "
-    "Gap stores score 0 on Sales and Lines — their potential is what the model identifies as opportunity.",
+    "Two separate scoring groups. Group 1 = Current Coverage (has internal sales data). "
+    "Group 2 = Google Scraping (gap stores, no internal data). "
+    "After scoring each group separately, all stores are combined for routing.",
     "Stage 3 — Scoring")
 
-saved_w = st.session_state.get("admin_scoring_weights",
+saved_w1 = st.session_state.get("admin_scoring_weights",
     {"rating":20,"reviews":25,"affluence":15,"poi":15,"sales":15,"lines":10})
+saved_w2 = st.session_state.get("admin_scoring_weights_gap",
+    {"rating":25,"reviews":25,"affluence":25,"poi":25})
 
+st.markdown("**Group 1 — Current Coverage** (Rating · Reviews · Affluence · Nearby POI · Lines per Store · Value Sales)")
+st.caption("Default weights: 20 · 25 · 15 · 15 · 15 · 10")
 c1,c2 = st.columns(2)
 with c1:
-    w_rating    = st.slider("⭐ Rating — Google star rating",         0,50,saved_w.get("rating",20))
-    w_reviews   = st.slider("👥 Reviews — footfall proxy",           0,50,saved_w.get("reviews",25))
-    w_affluence = st.slider("💰 Affluence — Google price level 1–4", 0,50,saved_w.get("affluence",15))
+    w1_rating    = st.slider("⭐ Rating",         0,50,saved_w1.get("rating",20),   key="w1_rat")
+    w1_reviews   = st.slider("👥 Reviews",        0,50,saved_w1.get("reviews",25),  key="w1_rev")
+    w1_affluence = st.slider("💰 Affluence",      0,50,saved_w1.get("affluence",15),key="w1_aff")
 with c2:
-    w_poi       = st.slider("📍 Nearby POI — location quality",      0,50,saved_w.get("poi",15))
-    w_sales     = st.slider("💵 Current sales — your revenue",       0,50,saved_w.get("sales",15))
-    w_lines     = st.slider("📦 Lines per store — SKU breadth",      0,50,saved_w.get("lines",10))
+    w1_poi       = st.slider("📍 Nearby POI",     0,50,saved_w1.get("poi",15),      key="w1_poi")
+    w1_sales     = st.slider("💵 Value Sales",    0,50,saved_w1.get("sales",15),    key="w1_sal")
+    w1_lines     = st.slider("📦 Lines per Store",0,50,saved_w1.get("lines",10),    key="w1_lin")
+w1_total = w1_rating+w1_reviews+w1_affluence+w1_poi+w1_sales+w1_lines
+if w1_total==100: st.success(f"Group 1 total: {w1_total}% ✓")
+else: st.error(f"Group 1 total: {w1_total}% — must equal 100%")
 
-w_total = w_rating+w_reviews+w_affluence+w_poi+w_sales+w_lines
-if w_total==100:
-    st.success(f"Total: {w_total}% — valid ✓")
+st.markdown("**Group 2 — Google Scraping** (Rating · Reviews · Affluence · Nearby POI only)")
+st.caption("Default weights: 25 · 25 · 25 · 25")
+c3,c4 = st.columns(2)
+with c3:
+    w2_rating    = st.slider("⭐ Rating",    0,50,saved_w2.get("rating",25),   key="w2_rat")
+    w2_reviews   = st.slider("👥 Reviews",   0,50,saved_w2.get("reviews",25),  key="w2_rev")
+with c4:
+    w2_affluence = st.slider("💰 Affluence", 0,50,saved_w2.get("affluence",25),key="w2_aff")
+    w2_poi       = st.slider("📍 Nearby POI",0,50,saved_w2.get("poi",25),      key="w2_poi")
+w2_total = w2_rating+w2_reviews+w2_affluence+w2_poi
+if w2_total==100: st.success(f"Group 2 total: {w2_total}% ✓")
+else: st.error(f"Group 2 total: {w2_total}% — must equal 100%")
+
+if w1_total==100 and w2_total==100:
     if st.button("Save scoring weights", type="primary", key="save_weights"):
         st.session_state["admin_scoring_weights"] = {
-            "rating":w_rating,"reviews":w_reviews,"affluence":w_affluence,
-            "poi":w_poi,"sales":w_sales,"lines":w_lines}
-        st.success("✅ Scoring weights saved.")
-else:
-    st.error(f"Total: {w_total}% — must equal exactly 100%")
+            "rating":w1_rating,"reviews":w1_reviews,"affluence":w1_affluence,
+            "poi":w1_poi,"sales":w1_sales,"lines":w1_lines}
+        st.session_state["admin_scoring_weights_gap"] = {
+            "rating":w2_rating,"reviews":w2_reviews,
+            "affluence":w2_affluence,"poi":w2_poi}
+        st.success("✅ Scoring weights saved for both groups.")
 
 # ── SECTION 3: STORE SIZE & VISIT BENCHMARKS ──────────────────────────────────
 st.markdown("---")
