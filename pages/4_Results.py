@@ -354,14 +354,21 @@ with col1:
 
     # Reorder columns so scoring signals are grouped together
     _always_exclude = {"calls_per_month", "visit_frequency"}
+    # Also always drop abstract week labels — replaced by real dates
+    _always_exclude.update({c for c in (pd.DataFrame(all_stores).columns if all_stores else [])
+                            if c.endswith("_weeks")})
 
     def _reorder_cols(df):
+        # Build dynamic date/visit columns for each plan month
+        _date_visit_cols = []
+        for mk in ([_m1k] if _m1k else []) + ([_m2k] if _m2k else []):
+            _date_visit_cols += [f"{mk}_dates", f"{mk}_visits"]
         priority = ["store_id","store_name","address","city","district","region",
                     "lat","lng","category","source","covered","coverage_status",
                     "rating","review_count","price_level","poi_count",
                     "score","size_tier","visits_per_month","visit_duration_min",
                     "annual_sales_usd","lines_per_store","rep_id","assigned_day",
-                    "day_visit_order","plan_visits"]
+                    "day_visit_order","plan_visits"] + _date_visit_cols
         ordered = [c for c in priority if c in df.columns and c not in _always_exclude]
         rest    = [c for c in df.columns if c not in ordered and c not in _always_exclude]
         return df[ordered + rest]
@@ -380,6 +387,9 @@ with col2:
     _gap_df = pd.DataFrame(gap_stores).reset_index(drop=True) if gap_stores else pd.DataFrame()
     if not _gap_df.empty and "score" in _gap_df.columns:
         _score_thresh = _gap_df["score"].quantile(0.40)  # top 60% = above 40th percentile
+
+
+
         _gap_df["top_gap_opportunity"] = (_gap_df["score"] >= _score_thresh).map({True:"Yes", False:"No"})
     st.download_button("  Gap report CSV",
         _gap_df.reset_index(drop=True).to_csv(index=False),
@@ -387,9 +397,6 @@ with col2:
 with col3:
     features = [
         {"type":"Feature",
-
-
-
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
              "visits_per_month","rep_id","coverage_status","category"]}}
