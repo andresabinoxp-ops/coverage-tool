@@ -752,7 +752,7 @@ if final_categories:
     st.markdown("**Set visits per month and visit duration (minutes) per category:**")
     # Header row
     hc0,hc1,hc2,hc3,hc4,hc5,hc6 = st.columns([2,1,1,1,1,1,1])
-    hc0.markdown("**Category**")
+    hc0.markdown("**Sub-channel**")
     hc1.markdown("**Large visits/mo**")
     hc2.markdown("**Large duration**")
     hc3.markdown("**Medium visits/mo**")
@@ -768,19 +768,19 @@ if final_categories:
         with c0:
             st.markdown(f"<div style='padding-top:8px;font-weight:600'>{cat_label}</div>", unsafe_allow_html=True)
         with c1:
-            lv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
+            lv = st.number_input("", min_value=0.1, max_value=20.0, step=0.01,
                 value=float(admin_defaults.get("large_visits",4)), key=f"lv_{cat}", label_visibility="collapsed")
         with c2:
             ld = st.number_input("", min_value=5, max_value=120,
                 value=admin_defaults.get("large_duration",40), key=f"ld_{cat}", label_visibility="collapsed")
         with c3:
-            mv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
+            mv = st.number_input("", min_value=0.1, max_value=20.0, step=0.01,
                 value=float(admin_defaults.get("medium_visits",2)), key=f"mv_{cat}", label_visibility="collapsed")
         with c4:
             md = st.number_input("", min_value=5, max_value=120,
                 value=admin_defaults.get("medium_duration",25), key=f"md_{cat}", label_visibility="collapsed")
         with c5:
-            sv = st.number_input("", min_value=0.25, max_value=20.0, step=0.25,
+            sv = st.number_input("", min_value=0.1, max_value=20.0, step=0.01,
                 value=float(admin_defaults.get("small_visits",1)), key=f"sv_{cat}", label_visibility="collapsed")
         with c6:
             sd = st.number_input("", min_value=5, max_value=120,
