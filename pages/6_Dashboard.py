@@ -72,15 +72,28 @@ def parse_dates_cell(val):
     return [d.strip() for d in s.split(",") if d.strip()]
 
 def get_dates_for_month(df, month_key):
+    import datetime as _dt
     dates = set()
-    col = f"{month_key}_dates"
-    if col in df.columns:
-        for val in df[col].dropna():
-            for d in parse_dates_cell(val):
-                if d: dates.add(d)
-    return ["All dates"] + sorted(dates)
+    # Try mk_dates first, fall back to mk_weeks for backwards compatibility
+    for col in [f"{month_key}_dates", f"{month_key}_weeks", "m1_dates"]:
+        if col in df.columns:
+            for val in df[col].dropna():
+                for d in parse_dates_cell(val):
+                    if d and str(d).strip() not in ("nan", ""):
+                        dates.add(str(d).strip())
+            if dates:
+                break
+    def _sort_key(d):
+        for fmt in ("%d %b", "%d %B", "%b %d"):
+            try: return _dt.datetime.strptime(d.strip(), fmt)
+            except: pass
+        return _dt.datetime.max
+    return ["All dates"] + sorted(dates, key=_sort_key)
 
 def hex_to_rgb(h):
+
+
+
     h = h.lstrip("#")
     return [int(h[i:i+2],16) for i in (0,2,4)]
 
@@ -91,9 +104,6 @@ if "snapshot_library" not in st.session_state:
 is_admin = st.session_state.get("admin_authenticated", False)
 
 # ── ADMIN UPLOAD ──────────────────────────────────────────────────────────────
-
-
-
 if is_admin:
     st.markdown('<div class="section-title">Upload market snapshot (Admin only)</div>', unsafe_allow_html=True)
     st.caption("Upload the stores CSV downloaded from the Results page (*_stores.csv).")
@@ -131,6 +141,9 @@ if is_admin:
                     stores_df = stores_df.drop(columns=["Unnamed: 0"])
                 if "store_name" not in stores_df.columns:
                     st.error("This doesn't look like a stores CSV — missing store_name column. Please upload the *_stores.csv file from the Results page.")
+
+
+
                     st.stop()
                 snap_key = f"{snap_market}_{snap_category}_{snap_date}".replace(" ","_")
                 st.session_state["snapshot_library"][snap_key] = {
@@ -141,9 +154,6 @@ if is_admin:
                     "key": snap_key,
                 }
                 st.success(f"  Snapshot saved: {snap_market} — {snap_date}")
-
-
-
                 st.rerun()
             except Exception as e:
                 st.error(f"Error reading file: {e}")
@@ -151,10 +161,27 @@ if is_admin:
 
 library = st.session_state.get("snapshot_library", {})
 if not library:
-    st.info("No market snapshots uploaded yet. " +
-        ("Use the upload section above to add a market." if is_admin
-         else "Ask your admin to upload market snapshots."))
-    st.stop()
+    # Fallback: use live session data from pipeline run
+    run_res = st.session_state.get("run_results", {})
+    if run_res and run_res.get("all_stores"):
+        import pandas as _pd2
+        _live_df     = _pd2.DataFrame(run_res["all_stores"])
+        cfg_live     = st.session_state.get("market_config", {})
+        _market_name = cfg_live.get("market_name", "Current run")
+        library["live_session"] = {
+            "name":        _market_name,
+            "category":    "Live session",
+            "run_date":    "Today",
+            "uploaded_at": "Session",
+            "stores_df":   _live_df,
+            "summary_df":  _pd2.DataFrame(),
+        }
+        st.info("Showing live pipeline session data. Upload a snapshot to save permanently.")
+    else:
+        st.info("No market snapshots uploaded yet. " +
+            ("Use the upload section above to add a market." if is_admin
+             else "Ask your admin to upload market snapshots."))
+        st.stop()
 
 # ── MARKET LIBRARY CARDS ──────────────────────────────────────────────────────
 st.markdown('<div class="section-title">Market library</div>', unsafe_allow_html=True)
@@ -164,6 +191,9 @@ for row_start in range(0, len(snap_keys), 3):
     row_cols = st.columns(3)
     for i, key in enumerate(snap_keys[row_start:row_start+3]):
         snap      = library[key]
+
+
+
         sdf       = snap["stores_df"]
         n_stores  = len(sdf)
         n_gaps    = len(sdf[sdf["coverage_status"]=="gap"]) if "coverage_status" in sdf.columns else 0
@@ -191,9 +221,6 @@ st.markdown("---")
 # ── MARKET SELECTOR ───────────────────────────────────────────────────────────
 snap_options   = {f"{s['name']} — {s['category']} ({s['run_date']})": k for k, s in library.items()}
 selected_label = st.selectbox("Select market snapshot to view", list(snap_options.keys()))
-
-
-
 selected_key   = snap_options[selected_label]
 snap           = library[selected_key]
 stores_df      = snap["stores_df"].copy()
@@ -214,6 +241,8 @@ n_covered = len(stores_df[stores_df["coverage_status"]=="covered"]) if "coverage
 n_gaps    = len(stores_df[stores_df["coverage_status"]=="gap"])    if "coverage_status" in stores_df.columns else 0
 cov_pct   = round(n_covered/max(n_total,1)*100,1)
 n_reps    = stores_df["rep_id"].nunique() if "rep_id" in stores_df.columns else 0
+
+
 
 c1,c2,c3,c4,c5,c6 = st.columns(6)
 # Proposed coverage = stores with rep_id assigned (plan_visits > 0)
@@ -241,9 +270,6 @@ st.markdown("")
 
 # ── SIZE DISTRIBUTION ─────────────────────────────────────────────────────────
 if "size_tier" in stores_df.columns:
-
-
-
     fc = st.columns(3)
     tier_colors = {"Large":"#2E7D32","Medium":"#1565C0","Small":"#F57F17"}
     for i, tier in enumerate(["Large","Medium","Small"]):
@@ -264,6 +290,8 @@ st.markdown("---")
 st.markdown('<div class="section-title">Store map & routes</div>', unsafe_allow_html=True)
 
 all_reps  = sorted([r for r in stores_df["rep_id"].dropna().unique() if r > 0]) if "rep_id" in stores_df.columns else []
+
+
 
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
@@ -291,9 +319,6 @@ if not map_df.empty:
     if sel_rep != "All reps":
         rep_num = int(sel_rep.split()[1])
         map_df  = map_df[map_df["rep_id"] == rep_num]
-
-
-
     if sel_month != "Full plan" and sel_month in DASH_PLAN_NAMES:
         mkey   = DASH_PLAN_KEYS[DASH_PLAN_NAMES.index(sel_month)]
         if f"{mkey}_visits" in map_df.columns:
@@ -314,6 +339,9 @@ if not map_df.empty:
             rid = int(row.get("rep_id", 0) or 0)
             c   = hex_to_rgb(REP_COLORS[rid % len(REP_COLORS)])
             return [c[0],c[1],c[2],210]
+
+
+
         elif colour_by == "Size tier":
             return {"Large":[46,125,50,220],"Medium":[21,101,192,220],"Small":[245,127,23,220]}.get(row.get("size_tier",""),[150,150,150,180])
         elif colour_by == "Coverage status":
@@ -341,9 +369,6 @@ if not map_df.empty:
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
     except Exception:
-
-
-
         st.map(map_df.rename(columns={"lng":"lon"})[["lat","lon"]])
 
     # ── COLOUR LEGEND ─────────────────────────────────────────────────────────
@@ -364,6 +389,9 @@ if not map_df.empty:
         lc[0].markdown('<span class="legend-chip" style="background:#2E7D32">Covered</span>', unsafe_allow_html=True)
         lc[1].markdown('<span class="legend-chip" style="background:#C62828">Gap</span>', unsafe_allow_html=True)
     elif colour_by == "Score":
+
+
+
         lc = st.columns(4)
         for i,(label,col) in enumerate([("≥80","#2E7D32"),("60-79","#1565C0"),("40-59","#F57F17"),("<40","#C62828")]):
             lc[i].markdown(f'<span class="legend-chip" style="background:{col}">{label}</span>', unsafe_allow_html=True)
@@ -391,9 +419,6 @@ with tr3:
         st.selectbox("Date", ["All dates"], disabled=True, key="tbl_date_dash_empty")
 with tr4:
     route_filter_d = st.selectbox("Route status",
-
-
-
         ["Recommended stores","Not in route","All stores"], key="tbl_route_filter_dash")
 
 # Apply route status filter
@@ -414,6 +439,8 @@ if tbl_month != "Full plan" and tbl_month in DASH_PLAN_NAMES:
         dcol = f"{tmkey}_dates"
         if dcol in route_df.columns:
             route_df = route_df[route_df[dcol].apply(lambda x: tbl_date in parse_dates_cell(x))]
+
+
 
 if "day_visit_order" in route_df.columns:
     route_df = route_df.sort_values(["rep_id","day_visit_order"]).reset_index(drop=True)
@@ -441,9 +468,6 @@ if tbl_month != "Full plan" and tbl_month in DASH_PLAN_NAMES:
     rename_map[f"{DASH_PLAN_KEYS[DASH_PLAN_NAMES.index(tbl_month)]}_dates"] = f"{tbl_month[:3]} Dates"
 
 if not route_df.empty:
-
-
-
     df_show = route_df[[c for c in show_cols if c in route_df.columns]].rename(columns=rename_map)
 
     # Daily budget metrics when specific date selected
@@ -464,6 +488,9 @@ if not route_df.empty:
                     slat,slng = float(sr.get("lat",0) or 0), float(sr.get("lng",0) or 0)
                     if slat and slng and prev_lat and prev_lng:
                         R=6371000; p=_math.pi/180
+
+
+
                         a=((_math.sin((slat-prev_lat)*p/2))**2+
                            _math.cos(prev_lat*p)*_math.cos(slat*p)*(_math.sin((slng-prev_lng)*p/2))**2)
                         travel_t += (2*R*_math.asin(_math.sqrt(a))/1000/30)*60
@@ -490,8 +517,6 @@ else:
     st.info("No stores match the current selection.")
 
 st.markdown("---")
-
-
 
 # ── GAP REPORT ────────────────────────────────────────────────────────────────
 if "coverage_status" in stores_df.columns:
