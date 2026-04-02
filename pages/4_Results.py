@@ -159,16 +159,17 @@ if rep_rec:
     monthly_break    = break_mins * work_days           # 30 × 22  =    660 min
 
     # zone_centres holds exec+travel per rep (no break)
+    # Top metric computed after table is built; placeholder uses zone_cs
     zone_cs = rep_rec.get("zone_centres", [])
     exec_travel_total = sum(z.get("time_needed_min", 0) for z in zone_cs)
     n_reps_actual = max(len(zone_cs), rec_reps, 1)
-    break_total   = n_reps_actual * monthly_break          # break for all reps
-    display_total = exec_travel_total + break_total        # grand total incl break
+    break_total   = n_reps_actual * monthly_break
+    display_total = exec_travel_total + break_total
 
-    m2.metric("Time needed / month (total)",
+    top_time_placeholder = m2.empty()
+    top_time_placeholder.metric("Time needed / month (total)",
         f"{display_total:,.0f} min",
-        help=f"Execution + Travel + Break across all {rec_reps} rep(s). "
-             f"Exec+Travel: {exec_travel_total:,} min · Break: {break_total:,} min.")
+        help=f"Execution + Travel + Break across all {rec_reps} rep(s).")
     m3.metric("Rep capacity / month",
         f"{monthly_cap_full:,} min",
         help=f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min")
@@ -188,10 +189,10 @@ if rep_rec:
         util = round(display_total / total_capacity * 100)
         st.caption(
             f"Average utilisation per rep: {util}% (incl. travel) · "
+
+
+
             f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min/month capacity · "
-
-
-
             f"{break_mins} min break included · {speed} km/h avg travel speed"
         )
 
@@ -238,31 +239,38 @@ if rep_rec:
         if s.get("covered"): rep_rows[rid]["Current"]  += 1
         else:                rep_rows[rid]["Gap (new)"] += 1
 
+
+
     if rep_rows:
-
-
-
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
 
-        zc_map = {z["zone"]: z.get("time_needed_min", 0)
+        zc_map = {int(z["zone"]): z.get("time_needed_min", 0)
                   for z in rep_rec.get("zone_centres", [])}
 
         cap_per_period = daily_mins * work_days * max(_plan_pp, 1)   # 10,560 × plan_period
         brk_per_period = break_mins * work_days * max(_plan_pp, 1)   # 660 × plan_period
         cap_col = f"Capacity {_plan_pp}mo (min)"
 
-        def _exec(rid):  return rep_rows[rid]["Execution (min)"]
+        def _exec(rid):  return rep_rows.get(int(rid), rep_rows.get(rid, {})).get("Execution (min)", 0)
         def _travel(rid):
-            et = zc_map.get(rid, 0) * _plan_pp
+            et = zc_map.get(int(rid), 0) * _plan_pp
             return max(0, int(et) - _exec(rid))
         def _total(rid): return _exec(rid) + _travel(rid) + brk_per_period
 
-        rdf["Execution (min)"]    = rdf["Rep"].apply(_exec).astype(int)
+        rdf["Execution (min)"]    = rdf["Rep"].apply(lambda r: _exec(r)).astype(int)
         rdf["Travel (min)"]       = rdf["Rep"].apply(_travel).astype(int)
         rdf["Break (min)"]        = brk_per_period
         rdf["Total needed (min)"] = rdf["Rep"].apply(_total).astype(int)
         rdf[cap_col]              = cap_per_period
         rdf["Utilisation %"]      = (rdf["Total needed (min)"] / max(cap_per_period,1) * 100).round(0).astype(int)
+
+        # Update top metric with actual table total (exec+travel+break)
+        real_total = int(rdf["Total needed (min)"].sum())
+        real_et    = int(rdf["Execution (min)"].sum()) + int(rdf["Travel (min)"].sum())
+        real_brk   = int(rdf["Break (min)"].sum())
+        top_time_placeholder.metric("Time needed / month (total)",
+            f"{real_total:,.0f} min",
+            help=f"Execution: {real_et:,} min + Break: {real_brk:,} min = {real_total:,} min total.")
 
         col_order = ["Rep","Stores","Current","Gap (new)",
                      "Execution (min)","Travel (min)","Break (min)",
@@ -280,6 +288,9 @@ if rep_rec:
             cap_col:              int(rdf[cap_col].sum()),
             "Utilisation %":      round(rdf["Total needed (min)"].sum() /
                                         max(rdf[cap_col].sum(), 1) * 100),
+
+
+
         }
 
         rdf_with_total = pd.concat(
@@ -289,9 +300,6 @@ if rep_rec:
         st.dataframe(rdf_with_total, use_container_width=True, hide_index=True,
             column_config={
                 "Utilisation %": st.column_config.ProgressColumn(
-
-
-
                     "Utilisation %", min_value=0, max_value=100, format="%d%%"),
             })
 
@@ -330,6 +338,8 @@ st.markdown('<div class="section-title">Download results</div>', unsafe_allow_ht
 mkt_safe = market.replace(" ","_").replace("-","_")
 run_date = datetime.date.today().strftime("%Y-%m-%d")
 
+
+
 col1, col2, col3 = st.columns(3)
 with col1:
     # Build clean CSV — keep only plan months, remove other month columns
@@ -339,9 +349,6 @@ with col1:
     _all_months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
     # Always keep scoring signals in output CSV
     _always_keep = {"price_level","poi_count","rating","review_count","score",
-
-
-
                     "coverage_status","size_tier","visits_per_month","rep_id",
                     "assigned_day","plan_visits","lat","lng","source","covered"}
 
@@ -380,6 +387,9 @@ with col3:
     ]
     st.download_button("  Routes GeoJSON",
         json.dumps({"type":"FeatureCollection","features":features}, indent=2),
+
+
+
         f"rep_routes_{mkt_safe}.geojson", "application/json")
 
 st.markdown("---")
