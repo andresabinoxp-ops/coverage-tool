@@ -2789,14 +2789,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                 rep_recommendation["total_minutes_needed"] = round(final_total_mins)
                 rep_recommendation["monthly_cap_per_rep"]  = round(final_monthly_cap)
                 rep_recommendation["recommended_reps"]     = len(kept_reps) if kept_reps else len(rep_time_map)
-                # Update zone_centres utilisation
-                for z in rep_recommendation.get("zone_centres", []):
-                    zid = z.get("zone", 0)
-                    zs  = [s for s in routed_stores if s.get("rep_id") == zid]
-                    if zs:
-                        z_mins = sum(s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2 for s in zs)
-                        z["time_needed_min"] = round(z_mins)
-                        z["utilisation_pct"] = round(z_mins / max(final_monthly_cap,1) * 100)
+                # zone_centres time_needed_min already updated by recalc block above
+                # (exec+travel via calc_zone_monthly_time) — do not overwrite here
 
         bar.progress(80)
 
@@ -2822,13 +2816,14 @@ if st.button("  Run Coverage Agent", type="primary"):
             failed   = 0
             enrich_start = time.time()
 
-
-
             for i, store in enumerate(candidates):
                 result = fetch_place_details(store.get("place_id",""), api_key)
                 if result:
                     store["phone"]   = result.get("formatted_phone_number","")
                     store["website"] = result.get("website","")
+
+
+
                     oh = result.get("opening_hours",{})
                     wt = oh.get("weekday_text",[])
                     store["opening_hours"] = " | ".join(wt) if wt else ""
@@ -2870,15 +2865,15 @@ if st.button("  Run Coverage Agent", type="primary"):
             for i, store in enumerate(poi_candidates):
                 try:
                     r = requests.get(PLACES_URL,
-
-
-
                         params={"location":f"{store['lat']},{store['lng']}",
                                 "radius":poi_radius,"key":api_key},
                         timeout=8)
                     data = r.json()
                     store["poi_count"] = len(data.get("results",[]))
                     poi_enriched += 1
+
+
+
                 except Exception:
                     store["poi_count"] = 0
                 rem = (time.time()-poi_start)/(i+1)*(len(poi_candidates)-i-1) if i>0 else 0
@@ -2920,15 +2915,15 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         st.session_state["run_results"] = {
             "all_stores":all_stores,"gap_stores":gap_stores,
-
-
-
             "coverage_rate_before":round(len(covered_p)/max(len(universe),1)*100,1),
             "coverage_rate_after":round(covered_n/max(len(all_stores),1)*100,1),
             "portfolio":portfolio,"universe":universe,
             "rep_recommendation": rep_recommendation,
             "geocode_summary": {"ok": geocode_ok, "failed": geocode_fail},
         }
+
+
+
         st.session_state["last_market"] = cfg["market_name"]
         bar.progress(100)
 
