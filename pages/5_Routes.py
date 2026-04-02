@@ -305,15 +305,13 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
     filtered = list(stores)
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
-    if month_key and day and day not in ("Full month", "All weeks", ""):
-        # Filter by specific week label — e.g. "Week 1 - Monday"
-        # Week label is stored like ["Week 1 - Monday", "Week 3 - Monday"]
+    if month_key and day and day not in ("Full month", "All dates", "All weeks", ""):
+        # Filter by real calendar date e.g. "07 Apr"
         filtered = [s for s in filtered
-                    if day in parse_dates_val(s.get(f"{month_key}_weeks", []))]
+                    if day in parse_dates_val(s.get(f"{month_key}_dates", []))]
     elif month_key:
         filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
-    elif day and day not in ("Full month", "All weeks", ""):
-        # No month — filter by weekday in assigned_day
+    elif day and day not in ("Full month", "All dates", "All weeks", ""):
         day_name = day.split("-")[-1].strip()
         filtered = [s for s in filtered if s.get("assigned_day","").strip() == day_name]
     if not filtered:
@@ -340,14 +338,14 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "address":            s.get("address",""),
             "city":               s.get("city",""),
             "lat":                s.get("lat",""),
-
-
-
             "lng":                s.get("lng",""),
         }
+
+
+
         # Add only plan month columns
         for mk in PLAN_MONTH_KEYS:
-            row[f"{mk}_weeks"]  = ", ".join(s.get(f"{mk}_weeks", []))
+            row[f"{mk}_dates"]  = ", ".join(parse_dates_val(s.get(f"{mk}_dates", [])))
             row[f"{mk}_visits"] = s.get(f"{mk}_visits", 0)
         row["plan_visits"] = s.get("plan_visits", 0)
         rows.append(row)
@@ -390,16 +388,21 @@ with col_r:
     tbl_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps], key="tbl_rep")
 with col_m:
     tbl_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS, key="tbl_month")
-
-
-
 with col_d:
     if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
+
+
+
         _tbl_mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
         _tbl_dates = get_dates_for_month(all_stores, _tbl_mkey)
         tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
     else:
-        tbl_day    = st.selectbox("Day", all_days, key="tbl_day")
+        if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
+            _tbl_mk   = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
+            _tbl_dates = get_dates_for_month(all_stores, _tbl_mk)
+        else:
+            _tbl_dates = ["All dates"]
+        tbl_day = st.selectbox("Date", _tbl_dates, key="tbl_day")
 with col_f:
     route_filter = st.selectbox("Route status",
         ["Recommended stores", "Not in route", "All stores"], key="tbl_route_filter")
@@ -427,7 +430,7 @@ cfg_tbl   = st.session_state.get("market_config", {})
 daily_cap = cfg_tbl.get("daily_minutes", 480)
 
 # When a specific date is selected, sort by visit order — already within budget
-if not display_df.empty and tbl_day not in ("Full month", "All weeks", "") and "visit_duration_min" in display_df.columns:
+if not display_df.empty and tbl_day not in ("Full month", "All dates", "All weeks", "") and "visit_duration_min" in display_df.columns:
     display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
 if not display_df.empty:
@@ -437,14 +440,13 @@ if not display_df.empty:
                  "address","city","lat","lng"]
     # Add month columns if viewing a specific month
     if tbl_month_key:
-        month_cols = [f"{tbl_month_key}_weeks", f"{tbl_month_key}_visits"]
+
+
+
+        month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
-
-
-
-        # Full plan — show both month date and visit columns
-        base_cols = base_cols + [f"{mk}_weeks" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
+        base_cols = base_cols + [f"{mk}_dates" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
     # Deduplicate show_cols — preserve order, remove duplicates
     seen = set()
     show_cols = []
@@ -465,7 +467,7 @@ if not display_df.empty:
     # Add month column renames using full label names to avoid 3-char collision
     for i, mk in enumerate(PLAN_MONTH_KEYS):
         lbl = PLAN_MONTHS[i] if i < len(PLAN_MONTHS) else f"Month {i+1}"
-        rename_map[f"{mk}_weeks"]  = f"{lbl} Weeks"
+        rename_map[f"{mk}_dates"]  = f"{lbl} Dates"
         rename_map[f"{mk}_visits"] = f"{lbl} Visits"
     df_show = display_df[show_cols].rename(columns=rename_map)
     # Final dedup safeguard
@@ -488,11 +490,11 @@ if not display_df.empty:
     effective_daily = daily_cap - break_mins  # actual selling time per day
     # Number of reps for this view
     n_reps_in_view = len(set(s.get("rep_id",0) for s in all_stores
+
+
+
                               if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0))
     if tbl_rep_id:
-
-
-
         n_reps_in_view = 1
     monthly_cap_total = effective_daily * work_days * max(n_reps_in_view, 1)
 
@@ -538,11 +540,11 @@ if not display_df.empty:
                     help="Recommended stores only: visits × duration per month.")
                 m3.metric("Utilisation",
                     f"{util_pct}%",
+
+
+
                     delta=cap_label,
                     delta_color="off")
-
-
-
             else:
                 m2.metric("—","—"); m3.metric("—","—")
     else:
