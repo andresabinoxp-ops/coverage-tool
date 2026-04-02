@@ -85,12 +85,12 @@ MONTH_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov"
 
 plan_period = plan_months.get("plan_period", len(PLAN_MONTHS))
 plan_label  = " + ".join(PLAN_MONTHS)
-st.markdown(f"""
+st.html(f"""
 <div class="page-header">
     <h2>  Rep Routes</h2>
     <p>Market: {market} &nbsp;·&nbsp; {plan_period}-month plan: {plan_label}</p>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 
 
