@@ -480,21 +480,21 @@ if not route_df.empty:
         day_stores_ord = (route_df.sort_values("day_visit_order")
                           .to_dict("records") if "day_visit_order" in route_df.columns else [])
         travel_t = 0
+        # Inter-store travel only — first leg (depot → store 1) excluded
         if len(day_stores_ord) > 1:
-            prev_lat = float(day_stores_ord[0].get("lat",0) or 0)
-            prev_lng = float(day_stores_ord[0].get("lng",0) or 0)
-            for sr in day_stores_ord[1:]:
+            for i in range(1, len(day_stores_ord)):
+                s_a, s_b = day_stores_ord[i-1], day_stores_ord[i]
                 try:
-                    slat,slng = float(sr.get("lat",0) or 0), float(sr.get("lng",0) or 0)
-                    if slat and slng and prev_lat and prev_lng:
+                    la1,ln1 = float(s_a.get("lat",0) or 0), float(s_a.get("lng",0) or 0)
+                    la2,ln2 = float(s_b.get("lat",0) or 0), float(s_b.get("lng",0) or 0)
+                    if la1 and ln1 and la2 and ln2:
+
+
+
                         R=6371000; p=_math.pi/180
-
-
-
-                        a=((_math.sin((slat-prev_lat)*p/2))**2+
-                           _math.cos(prev_lat*p)*_math.cos(slat*p)*(_math.sin((slng-prev_lng)*p/2))**2)
+                        a=((_math.sin((la2-la1)*p/2))**2+
+                           _math.cos(la1*p)*_math.cos(la2*p)*(_math.sin((ln2-ln1)*p/2))**2)
                         travel_t += (2*R*_math.asin(_math.sqrt(a))/1000/30)*60
-                        prev_lat,prev_lng = slat,slng
                 except: pass
         travel_t = round(travel_t)
         total_t  = exec_t + travel_t + break_mins
