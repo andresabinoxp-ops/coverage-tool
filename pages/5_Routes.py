@@ -166,7 +166,20 @@ def get_dates_for_month(stores, month_key):
 
 all_days = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
 
-col1, col2, col3, col4, col5 = st.columns(5)
+# Cluster filter
+_clusters_available = sorted(set(
+    (s.get("cluster_id",0), s.get("cluster_name",""))
+    for s in all_stores if s.get("cluster_id",0) > 0
+))
+_cluster_options = ["All clusters"] + [f"Cluster {cid}: {cname}" for cid,cname in _clusters_available]
+
+col0, col1, col2, col3, col4, col5 = st.columns(6)
+with col0:
+    sel_cluster = st.selectbox("Cluster", _cluster_options)
+    if sel_cluster != "All clusters":
+        _sel_cid = int(sel_cluster.split(":")[0].replace("Cluster","").strip())
+        all_stores = [s for s in all_stores if s.get("cluster_id") == _sel_cid]
+        all_reps   = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 with col1:
     colour_by = st.selectbox("Colour by", ["Rep route","Day of week","Size tier","Coverage status","Score"])
 with col2:
@@ -178,6 +191,9 @@ with col4:
         _mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(sel_month)]
         _dates = get_dates_for_month(all_stores, _mkey)
         sel_day = st.selectbox("Date", _dates)
+
+
+
     else:
         sel_day = st.selectbox("Date", ["All dates"])
 with col5:
@@ -191,9 +207,6 @@ if sel_month != "Full plan":
     sel_month_key = PLAN_MONTH_KEYS[idx] if idx >= 0 else None
 
 # Map base filter respects route_filter selection
-
-
-
 _map_route_filter = st.session_state.get("tbl_route_filter", "Recommended stores")
 if _map_route_filter == "Recommended stores":
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) > 0]
@@ -228,6 +241,9 @@ map_data = [{
     "score":s.get("score",0),
     "size_tier":s.get("size_tier",""),
     "annual_visits":s.get("annual_visits",0),
+
+
+
     "status":s.get("coverage_status",""),
     "rep":s.get("rep_id",0),
     "day":s.get("assigned_day",""),
@@ -241,9 +257,6 @@ try:
     df_map = pd.DataFrame(map_data)
     if not df_map.empty:
         layer = pdk.Layer("ScatterplotLayer", data=df_map,
-
-
-
             get_position="[lng, lat]", get_color="color", get_radius="radius",
             radius_min_pixels=4, radius_max_pixels=20, pickable=True)
         view = pdk.ViewState(latitude=df_map["lat"].mean(), longitude=df_map["lng"].mean(), zoom=11, pitch=0)
@@ -278,6 +291,9 @@ if colour_by == "Rep route":
                 c         = REP_COLORS[rep % len(REP_COLORS)]
                 hx        = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
                 cols[i].markdown(
+
+
+
                     f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                    f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                    f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                    f'Plan stores: {plan_n} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                    f'</div></div>',
                     unsafe_allow_html=True)
 elif colour_by == "Day of week":
@@ -291,9 +307,6 @@ elif colour_by == "Size tier":
     lc = st.columns(3)
     for i,(tier,col) in enumerate([("Large","#2E7D32"),("Medium","#1565C0"),("Small","#F57F17")]):
         cnt = len([s for s in map_stores if s.get("size_tier")==tier])
-
-
-
         lc[i].markdown(f'<span class="legend-chip" style="background:{col}">{tier} · {cnt} stores</span>',unsafe_allow_html=True)
 elif colour_by == "Coverage status":
     lc = st.columns(2)
@@ -328,6 +341,9 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
     if not filtered:
         return pd.DataFrame()
     filtered = sorted(filtered, key=lambda x: (x.get("assigned_day",""), x.get("day_visit_order",99)))
+
+
+
     rows = []
     for s in filtered:
         row = {
@@ -341,9 +357,6 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "visits_per_month":   s.get("visits_per_month",0),
             "annual_visits":      s.get("annual_visits",0),
             "visit_duration_min": s.get("visit_duration_min",0),
-
-
-
             "coverage_status":    s.get("coverage_status",""),
             "rating":             s.get("rating",0),
             "review_count":       s.get("review_count",0),
@@ -378,6 +391,9 @@ if all_reps:
         tv = rep_df["visits_per_month"].sum() if "visits_per_month" in rep_df.columns else 0
         c  = REP_COLORS[rep % len(REP_COLORS)]
         hx = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+
+
+
         with rep_cols[i % n_cols]:
             st.markdown(f"""
             <div style="background:{hx}18;border:1.5px solid {hx};border-radius:8px;
@@ -391,9 +407,6 @@ if all_reps:
 st.markdown("---")
 
 # ── ROUTE DETAIL TABLE ────────────────────────────────────────────────────────
-
-
-
 st.markdown('<div class="section-title">Route detail</div>', unsafe_allow_html=True)
 st.caption("Select a rep and day to see the exact stores and visit order for that day.")
 
@@ -428,6 +441,9 @@ else:
 if route_filter == "Recommended stores":
     _tbl_src = [s for s in all_stores if s.get("plan_visits",0) > 0]
 elif route_filter == "Not in route":
+
+
+
     _tbl_src = [s for s in all_stores if s.get("plan_visits",0) == 0]
 else:
     _tbl_src = all_stores
@@ -441,9 +457,6 @@ cfg_tbl   = st.session_state.get("market_config", {})
 daily_cap = cfg_tbl.get("daily_minutes", 480)
 
 # When a specific date is selected, sort by visit order — already within budget
-
-
-
 if not display_df.empty and tbl_day not in ("Full month", "All dates", "All weeks", "") and "visit_duration_min" in display_df.columns:
     display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
@@ -478,6 +491,9 @@ if not display_df.empty:
     # Add month column renames using full label names to avoid 3-char collision
     for i, mk in enumerate(PLAN_MONTH_KEYS):
         lbl = PLAN_MONTHS[i] if i < len(PLAN_MONTHS) else f"Month {i+1}"
+
+
+
         rename_map[f"{mk}_dates"]  = f"{lbl} Dates"
         rename_map[f"{mk}_visits"] = f"{lbl} Visits"
     df_show = display_df[show_cols].rename(columns=rename_map)
@@ -490,8 +506,6 @@ if not display_df.empty:
             "Latitude": st.column_config.NumberColumn("Latitude",  format="%.5f"),
             "Longitude":st.column_config.NumberColumn("Longitude", format="%.5f"),
         })
-
-
 
     # Summary metrics
     st.markdown("---")
@@ -527,6 +541,9 @@ if not display_df.empty:
         # Travel = actual route through today's stores in visit order using geocoords
         avg_speed = cfg_ref.get("avg_speed_kmh",
             st.session_state.get("admin_rep_defaults", {}).get("avg_speed_kmh", 30))
+
+
+
         day_stores_ordered = (
             _routed.sort_values("day_visit_order")
             .to_dict("records")
@@ -540,9 +557,6 @@ if not display_df.empty:
             for i in range(1, len(day_stores_ordered)):
                 s_prev = day_stores_ordered[i - 1]
                 s_curr = day_stores_ordered[i]
-
-
-
                 la1 = s_prev.get("lat") or s_prev.get("Latitude", 0)
                 ln1 = s_prev.get("lng") or s_prev.get("Longitude", 0)
                 la2 = s_curr.get("lat") or s_curr.get("Latitude", 0)
@@ -577,6 +591,9 @@ if not display_df.empty:
             exec_monthly = int((_routed["plan_visits"].fillna(0) * _routed["visit_duration_min"]).sum())
             # Travel from zone_centres
             if tbl_rep_id and tbl_rep_id in _zc_by_rep:
+
+
+
                 monthly_et   = _zc_by_rep[tbl_rep_id].get("time_needed_min", 0)
                 travel_monthly = max(0, monthly_et - exec_monthly)
             else:
@@ -590,9 +607,6 @@ if not display_df.empty:
             m1.metric("Stores in view", len(_routed))
             m2.metric("Execution / month", f"{exec_monthly:,} min",
                 help="plan_visits × visit_duration for all routed stores.")
-
-
-
             m3.metric("Travel / month", f"{travel_monthly:,} min",
                 help="From zone routing calculations.")
             m4.metric("Break / month", f"{break_monthly:,} min",
