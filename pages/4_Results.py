@@ -35,12 +35,12 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.html("""
 <div class="page-header">
     <h2>  Results</h2>
     <p>Scored store universe, coverage analysis and rep planning</p>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 
 
