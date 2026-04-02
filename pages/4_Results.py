@@ -168,9 +168,11 @@ if rep_rec:
     else:
         display_total = total_mins + (n_zones * monthly_break) if total_mins else 0
 
-    m2.metric("Time needed / month",
-        f"{display_total:,.0f} min",
-        help="(Execution + Travel + Break) per month across all reps.")
+    avg_per_rep = round(display_total / max(rec_reps, 1))
+    m2.metric("Avg time needed / rep / month",
+        f"{avg_per_rep:,.0f} min",
+        help=f"(Execution + Travel + Break) per rep per month. "
+             f"Total across all {rec_reps} rep(s): {display_total:,.0f} min.")
     m3.metric("Rep capacity / month",
         f"{monthly_cap_full:,} min",
         help=f"{daily_mins} min/day (execution + travel + break) × {work_days} days")
@@ -182,21 +184,16 @@ if rep_rec:
         m4.metric("Current headcount", "Not provided",
             help="Enter current rep count in Configure to see comparison.")
 
-    # Calculate actual utilisation from plan_visits (what was actually routed)
-    actual_plan_time = sum(
-        s.get("plan_visits",0) * s.get("visit_duration_min",25)
-        for s in all_stores if s.get("plan_visits",0) > 0
-    )
-    # plan_visits is already the TOTAL across the full plan period
-    # monthly equivalent = total / plan_period
-
-
-
-    actual_monthly   = actual_plan_time / max(plan_period, 1)
+    # Use zone_centres time_needed_min (exec+travel) for utilisation — includes travel
+    # Already added break in display_total above
     total_capacity = rec_reps * monthly_cap_full if rec_reps > 0 else monthly_cap_full
 
     if total_capacity > 0 and display_total > 0 and rec_reps > 0:
+
+
+
         util = round(display_total / total_capacity * 100)
+        # Sanity check: display_total already includes break for all reps
         st.caption(
             f"Average utilisation per rep: {util}% (incl. travel) · "
             f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min/month capacity · "
@@ -205,6 +202,8 @@ if rep_rec:
 
     # Shortfall / surplus message — based on actual routed time
     if cur_reps > 0 and display_total > 0:
+        # display_total = exec+travel+break across all recommended reps
+        # scale to cur_reps to show what utilisation would be with current headcount
         time_per_cur_rep = display_total / max(cur_reps, 1)
         util_cur = round(time_per_cur_rep / max(monthly_cap_full, 1) * 100)
         if shortfall > 0:
@@ -239,10 +238,10 @@ if rep_rec:
             rep_rows[rid] = {
                 "Rep":                 rid,
                 "Stores recommended":  0,
-
-
-
                 "Current":             0,
+
+
+
                 "Gap (new)":           0,
                 "Time needed (min)":   0,
             }
@@ -289,9 +288,10 @@ if rep_rec:
 
         col_order = ["Rep","Stores recommended","Current","Gap (new)", t_col, c_col, "Utilisation %"]
 
-
-
         total_row = {
+
+
+
             "Rep":                "TOTAL",
             "Stores recommended": int(rdf["Stores recommended"].sum()),
             "Current":            int(rdf["Current"].sum()),
@@ -387,10 +387,10 @@ with col2:
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
-
-
-
         {"type":"Feature",
+
+
+
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
              "visits_per_month","rep_id","coverage_status","category"]}}
