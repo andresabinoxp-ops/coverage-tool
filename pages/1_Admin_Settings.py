@@ -265,7 +265,7 @@ if w1_total==100 and w2_total==100:
 
 # ── SECTION 3: STORE SIZE & VISIT BENCHMARKS ──────────────────────────────────
 st.markdown("---")
-sec("3","Store Size & Visit Benchmarks",
+sec("3","Store Size & Visit Benchmarks per Sub-channel",
     "Define percentile splits for Large/Medium/Small classification within each category. "
     "Also set default visit frequency and duration per tier. Markets can override per-category in Configure.",
     "Stage 5 — Frequency")
@@ -302,7 +302,7 @@ for col,tier,label,default_v,default_d in [
     (bc3,"small","Small",1,15)]:
     with col:
         st.markdown(f"**{label}**")
-        v = st.number_input("Visits/month", min_value=0.25,max_value=12.0,step=0.25,
+        v = st.number_input("Visits/month", min_value=0.1,max_value=12.0,step=0.01,
             value=float(saved_bench.get(tier,{}).get("visits_month",default_v)),key=f"v_{tier}",
             help="Use decimals for less-than-monthly frequency: 0.5 = every 2 months, 0.33 = every 3 months")
         d = st.number_input("Duration (min)", min_value=5,max_value=120,
@@ -358,11 +358,11 @@ with c4:
     st.caption(f"Capacity: {(minutes_day-break_mins)*working_days:,} min/rep/month")
 
 st.markdown("**Utilisation thresholds:**")
-st.caption("Per Jaimin doc: 60% min daily · 80% min monthly · 110% max daily")
+st.caption("60% min daily · 80% min monthly · 110% max daily")
 min_util = st.slider(
     "Minimum monthly utilisation % (reps below this are removed)",
     min_value=20, max_value=90, value=saved_rep.get("min_utilisation_pct", 80), step=5,
-    help="Recommended: 80% monthly minimum per Jaimin doc."
+    help="Recommended: 80% monthly minimum."
 )
 min_minutes = round(minutes_day * working_days * min_util / 100)
 st.caption(
@@ -373,8 +373,8 @@ st.caption(
 st.markdown("**Store selection (Recommended mode only):**")
 store_select_pct = st.slider(
     "Top % of stores to include",
-    min_value=30, max_value=100, value=saved_rep.get("store_select_pct", 55), step=5,
-    help="In Recommended mode: top X% by normalised score (Group 1 = with sales data, Group 2 = without — normalised separately). Default 55% per Jaimin doc."
+    min_value=30, max_value=100, value=saved_rep.get("store_select_pct", 60), step=5,
+    help="In Recommended mode: top X% by normalised score (Group 1 = with sales data, Group 2 = without — normalised separately). Default 60%."
 )
 st.caption("Fixed mode always includes all stores.")
 
