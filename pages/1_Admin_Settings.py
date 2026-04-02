@@ -40,7 +40,7 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.html("""
 <div class="page-header">
 
 
@@ -48,7 +48,7 @@ st.markdown("""
     <h2>  Admin Settings</h2>
     <p>Configure global defaults for all markets &mdash; changes here apply to every new pipeline run</p>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 if "admin_authenticated" not in st.session_state:
     st.session_state["admin_authenticated"] = False
