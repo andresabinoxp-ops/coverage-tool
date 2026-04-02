@@ -350,7 +350,8 @@ with col1:
     # Always keep scoring signals in output CSV
     _always_keep = {"price_level","poi_count","rating","review_count","score",
                     "coverage_status","size_tier","visits_per_month","rep_id",
-                    "assigned_day","plan_visits","lat","lng","source","covered"}
+                    "assigned_day","plan_visits","lat","lng","source","covered",
+                    "cluster_id","cluster_name"}
 
     # Reorder columns so scoring signals are grouped together
     _always_exclude = {"calls_per_month", "visit_frequency"}
@@ -367,7 +368,8 @@ with col1:
                     "lat","lng","category","source","covered","coverage_status",
                     "rating","review_count","price_level","poi_count",
                     "score","size_tier","visits_per_month","visit_duration_min",
-                    "annual_sales_usd","lines_per_store","rep_id","assigned_day",
+                    "annual_sales_usd","lines_per_store","cluster_id","cluster_name",
+                    "rep_id","assigned_day",
                     "day_visit_order","plan_visits"] + _date_visit_cols
         ordered = [c for c in priority if c in df.columns and c not in _always_exclude]
         rest    = [c for c in df.columns if c not in ordered and c not in _always_exclude]
@@ -385,11 +387,11 @@ with col1:
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
     _gap_df = pd.DataFrame(gap_stores).reset_index(drop=True) if gap_stores else pd.DataFrame()
+
+
+
     if not _gap_df.empty and "score" in _gap_df.columns:
         _score_thresh = _gap_df["score"].quantile(0.40)  # top 60% = above 40th percentile
-
-
-
         _gap_df["top_gap_opportunity"] = (_gap_df["score"] >= _score_thresh).map({True:"Yes", False:"No"})
     st.download_button("  Gap report CSV",
         _gap_df.reset_index(drop=True).to_csv(index=False),
