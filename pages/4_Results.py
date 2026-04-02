@@ -230,76 +230,56 @@ if rep_rec:
         if not rid or rid == 0: continue
         if s.get("plan_visits", 0) == 0: continue
         if rid not in rep_rows:
-            rep_rows[rid] = {
-                "Rep":                 rid,
-                "Stores":  0,
-                "Current":             0,
-                "Gap (new)":           0,
-                "Time needed (min)":   0,
-            }
-        rep_rows[rid]["Stores"] += 1
-        # Travel time added below from zone_centres — accumulate visit time here
-
-
-
-        rep_rows[rid]["Time needed (min)"] += (
-            s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
-        )
-        if s.get("covered"):
-            rep_rows[rid]["Current"]   += 1
-        else:
-            rep_rows[rid]["Gap (new)"] += 1
+            rep_rows[rid] = {"Rep": rid, "Stores": 0, "Current": 0,
+                             "Gap (new)": 0, "Execution (min)": 0}
+        rep_rows[rid]["Stores"]          += 1
+        rep_rows[rid]["Execution (min)"] += (
+            s.get("plan_visits", 0) * s.get("visit_duration_min", 25))
+        if s.get("covered"): rep_rows[rid]["Current"]  += 1
+        else:                rep_rows[rid]["Gap (new)"] += 1
 
     if rep_rows:
+
+
+
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
 
-        # Override time_needed with zone_centres values (include travel)
-        # zone_centres is stored in rep_recommendation
         zc_map = {z["zone"]: z.get("time_needed_min", 0)
                   for z in rep_rec.get("zone_centres", [])}
-        def _rep_time(rid):
-            # Use zone_centres if available (includes travel), else fall back to visit-only
-            if rid in zc_map and zc_map[rid] > 0:
-                return zc_map[rid] * _plan_pp   # scale to plan period
-            return rep_rows[rid]["Time needed (min)"]
 
-        rdf["_rid"] = rdf["Rep"]
-        # Capacity = full 480 × 22 × plan_period
-        cap_per_month = daily_mins * work_days           # 10,560 min
-        plan_cap      = cap_per_month * max(_plan_pp, 1)
-        t_col  = f"Time needed — {_plan_pp}mo (min)"
-        c_col  = f"Capacity — {_plan_pp}mo (min)"
-        # Time needed per rep = exec+travel (zone_centres) + break (30 × 22 × plan_period)
-        break_per_plan = break_mins * work_days * max(_plan_pp, 1)
-        def _rep_time_with_break(rid):
-            zc_t = zc_map.get(rid, 0) * _plan_pp if zc_map.get(rid, 0) > 0 else 0
-            if zc_t > 0:
-                return zc_t + break_per_plan
-            return rep_rows[rid]["Time needed (min)"] + break_per_plan
-        rdf[t_col]           = rdf["_rid"].apply(_rep_time_with_break).round(0).astype(int)
-        rdf[c_col]           = plan_cap
-        rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap, 1) * 100).round(0).astype(int)
-        rdf = rdf.drop(columns=["Time needed (min)", "_rid"])
+        cap_per_period = daily_mins * work_days * max(_plan_pp, 1)   # 10,560 × plan_period
+        brk_per_period = break_mins * work_days * max(_plan_pp, 1)   # 660 × plan_period
+        cap_col = f"Capacity {_plan_pp}mo (min)"
+
+        def _exec(rid):  return rep_rows[rid]["Execution (min)"]
+        def _travel(rid):
+            et = zc_map.get(rid, 0) * _plan_pp
+            return max(0, int(et) - _exec(rid))
+        def _total(rid): return _exec(rid) + _travel(rid) + brk_per_period
+
+        rdf["Execution (min)"]    = rdf["Rep"].apply(_exec).astype(int)
+        rdf["Travel (min)"]       = rdf["Rep"].apply(_travel).astype(int)
+        rdf["Break (min)"]        = brk_per_period
+        rdf["Total needed (min)"] = rdf["Rep"].apply(_total).astype(int)
+        rdf[cap_col]              = cap_per_period
+        rdf["Utilisation %"]      = (rdf["Total needed (min)"] / max(cap_per_period,1) * 100).round(0).astype(int)
 
         col_order = ["Rep","Stores","Current","Gap (new)",
                      "Execution (min)","Travel (min)","Break (min)",
-                     "Total needed (min)", f"Capacity {_plan_pp}mo (min)", "Utilisation %"]
+                     "Total needed (min)", cap_col, "Utilisation %"]
 
         total_row = {
-            "Rep":             "TOTAL",
-            "Stores":          int(rdf["Stores"].sum()),
-            "Current":         int(rdf["Current"].sum()),
-
-
-
-            "Gap (new)":       int(rdf["Gap (new)"].sum()),
-            "Execution (min)":        int(rdf["Execution (min)"].sum()),
-            "Travel (min)":           int(rdf["Travel (min)"].sum()),
-            "Break (min)":            int(rdf["Break (min)"].sum()),
-            "Total needed (min)":     int(rdf["Total needed (min)"].sum()),
-            f"Capacity {_plan_pp}mo (min)": int(rdf[f"Capacity {_plan_pp}mo (min)"].sum()),
-            "Utilisation %":          round(rdf["Total needed (min)"].sum() /
-                                            max(rdf[f"Capacity {_plan_pp}mo (min)"].sum(),1)*100),
+            "Rep":                "TOTAL",
+            "Stores":             int(rdf["Stores"].sum()),
+            "Current":            int(rdf["Current"].sum()),
+            "Gap (new)":          int(rdf["Gap (new)"].sum()),
+            "Execution (min)":    int(rdf["Execution (min)"].sum()),
+            "Travel (min)":       int(rdf["Travel (min)"].sum()),
+            "Break (min)":        int(rdf["Break (min)"].sum()),
+            "Total needed (min)": int(rdf["Total needed (min)"].sum()),
+            cap_col:              int(rdf[cap_col].sum()),
+            "Utilisation %":      round(rdf["Total needed (min)"].sum() /
+                                        max(rdf[cap_col].sum(), 1) * 100),
         }
 
         rdf_with_total = pd.concat(
@@ -309,6 +289,9 @@ if rep_rec:
         st.dataframe(rdf_with_total, use_container_width=True, hide_index=True,
             column_config={
                 "Utilisation %": st.column_config.ProgressColumn(
+
+
+
                     "Utilisation %", min_value=0, max_value=100, format="%d%%"),
             })
 
@@ -340,8 +323,6 @@ if high_gaps:
 else:
     st.info("No gap stores with score above 40.")
 
-
-
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">Download results</div>', unsafe_allow_html=True)
@@ -358,6 +339,9 @@ with col1:
     _all_months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
     # Always keep scoring signals in output CSV
     _always_keep = {"price_level","poi_count","rating","review_count","score",
+
+
+
                     "coverage_status","size_tier","visits_per_month","rep_id",
                     "assigned_day","plan_visits","lat","lng","source","covered"}
 
@@ -388,9 +372,6 @@ with col2:
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
-
-
-
         {"type":"Feature",
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
