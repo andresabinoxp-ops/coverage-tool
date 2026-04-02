@@ -232,12 +232,12 @@ if rep_rec:
         if rid not in rep_rows:
             rep_rows[rid] = {
                 "Rep":                 rid,
-                "Stores recommended":  0,
+                "Stores":  0,
                 "Current":             0,
                 "Gap (new)":           0,
                 "Time needed (min)":   0,
             }
-        rep_rows[rid]["Stores recommended"] += 1
+        rep_rows[rid]["Stores"] += 1
         # Travel time added below from zone_centres — accumulate visit time here
 
 
