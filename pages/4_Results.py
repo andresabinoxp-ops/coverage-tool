@@ -153,21 +153,27 @@ if rep_rec:
         m1.metric("Recommended reps", rec_reps)
     else:
         m1.metric("Fixed reps", rec_reps)
-    # Capacity = (daily_minutes - break_minutes) × working_days
-    effective_daily = daily_mins - break_mins          # 480 - 30 = 450 min
-    effective_cap   = effective_daily * work_days       # 450 × 22 = 9,900 min
+    # Capacity = full day × working days = 480 × 22 = 10,560 min
+    # Break is included in both time_needed and capacity (it is part of the working day)
+    monthly_cap_full = daily_mins * work_days           # 480 × 22 = 10,560 min
+    monthly_break    = break_mins * work_days           # 30 × 22  =    660 min
 
-    # Time needed = sum of zone_centres time_needed_min (includes travel)
+    # Time needed = execution + travel (from zone_centres) + break
     zone_cs = rep_rec.get("zone_centres", [])
-    total_mins_travel = sum(z.get("time_needed_min", 0) for z in zone_cs)
-    display_total = total_mins_travel if total_mins_travel > 0 else total_mins
+    exec_travel_total = sum(z.get("time_needed_min", 0) for z in zone_cs)
+    n_zones = max(len(zone_cs), rec_reps, 1)
+    if exec_travel_total > 0:
+        # Add break time: 30 min × 22 days per rep
+        display_total = exec_travel_total + (n_zones * monthly_break)
+    else:
+        display_total = total_mins + (n_zones * monthly_break) if total_mins else 0
 
     m2.metric("Time needed / month",
         f"{display_total:,.0f} min",
-        help="Visit time + real travel time per month (sum across all reps).")
+        help="(Execution + Travel + Break) per month across all reps.")
     m3.metric("Rep capacity / month",
-        f"{effective_cap:,} min",
-        help=f"({daily_mins} min/day − {break_mins} min break) × {work_days} days = {effective_daily} × {work_days}")
+        f"{monthly_cap_full:,} min",
+        help=f"{daily_mins} min/day (execution + travel + break) × {work_days} days")
     if cur_reps > 0:
         m4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
@@ -183,24 +189,24 @@ if rep_rec:
     )
     # plan_visits is already the TOTAL across the full plan period
     # monthly equivalent = total / plan_period
+
+
+
     actual_monthly   = actual_plan_time / max(plan_period, 1)
-    total_capacity   = rec_reps * effective_cap if rec_reps > 0 else effective_cap
+    total_capacity = rec_reps * monthly_cap_full if rec_reps > 0 else monthly_cap_full
 
     if total_capacity > 0 and display_total > 0 and rec_reps > 0:
         util = round(display_total / total_capacity * 100)
         st.caption(
-
-
-
             f"Average utilisation per rep: {util}% (incl. travel) · "
-            f"{daily_mins} min/day − {break_mins} min break = {effective_daily} min effective · "
-            f"{work_days} working days/month · {speed} km/h avg travel speed"
+            f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min/month capacity · "
+            f"{break_mins} min break included · {speed} km/h avg travel speed"
         )
 
     # Shortfall / surplus message — based on actual routed time
     if cur_reps > 0 and display_total > 0:
         time_per_cur_rep = display_total / max(cur_reps, 1)
-        util_cur = round(time_per_cur_rep / max(effective_cap, 1) * 100)
+        util_cur = round(time_per_cur_rep / max(monthly_cap_full, 1) * 100)
         if shortfall > 0:
             st.error(
                 f"  {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
@@ -233,15 +239,15 @@ if rep_rec:
             rep_rows[rid] = {
                 "Rep":                 rid,
                 "Stores recommended":  0,
+
+
+
                 "Current":             0,
                 "Gap (new)":           0,
                 "Time needed (min)":   0,
             }
         rep_rows[rid]["Stores recommended"] += 1
         # Travel time added below from zone_centres — accumulate visit time here
-
-
-
         rep_rows[rid]["Time needed (min)"] += (
             s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
         )
@@ -264,16 +270,26 @@ if rep_rec:
             return rep_rows[rid]["Time needed (min)"]
 
         rdf["_rid"] = rdf["Rep"]
-        effective_cap_local = (daily_mins - break_mins) * work_days
-        plan_cap  = effective_cap_local * max(_plan_pp, 1)
-        t_col     = f"Time needed — {_plan_pp}mo (min)"
-        c_col     = f"Capacity — {_plan_pp}mo (min)"
-        rdf[t_col]           = rdf["_rid"].apply(_rep_time).round(0).astype(int)
+        # Capacity = full 480 × 22 × plan_period
+        cap_per_month = daily_mins * work_days           # 10,560 min
+        plan_cap      = cap_per_month * max(_plan_pp, 1)
+        t_col  = f"Time needed — {_plan_pp}mo (min)"
+        c_col  = f"Capacity — {_plan_pp}mo (min)"
+        # Time needed per rep = exec+travel (zone_centres) + break (30 × 22 × plan_period)
+        break_per_plan = break_mins * work_days * max(_plan_pp, 1)
+        def _rep_time_with_break(rid):
+            zc_t = zc_map.get(rid, 0) * _plan_pp if zc_map.get(rid, 0) > 0 else 0
+            if zc_t > 0:
+                return zc_t + break_per_plan
+            return rep_rows[rid]["Time needed (min)"] + break_per_plan
+        rdf[t_col]           = rdf["_rid"].apply(_rep_time_with_break).round(0).astype(int)
         rdf[c_col]           = plan_cap
         rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap, 1) * 100).round(0).astype(int)
         rdf = rdf.drop(columns=["Time needed (min)", "_rid"])
 
         col_order = ["Rep","Stores recommended","Current","Gap (new)", t_col, c_col, "Utilisation %"]
+
+
 
         total_row = {
             "Rep":                "TOTAL",
@@ -289,9 +305,6 @@ if rep_rec:
             [rdf[col_order], pd.DataFrame([total_row])[col_order]],
             ignore_index=True
         )
-
-
-
         st.dataframe(rdf_with_total, use_container_width=True, hide_index=True,
             column_config={
                 "Utilisation %": st.column_config.ProgressColumn(
@@ -326,6 +339,8 @@ if high_gaps:
 else:
     st.info("No gap stores with score above 40.")
 
+
+
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">Download results</div>', unsafe_allow_html=True)
@@ -339,9 +354,6 @@ with col1:
     plan_months_sess = st.session_state.get("route_plan_months", {})
     _m1k = plan_months_sess.get("m1_key","")
     _m2k = plan_months_sess.get("m2_key","")
-
-
-
     _all_months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
     # Always keep scoring signals in output CSV
     _always_keep = {"price_level","poi_count","rating","review_count","score",
@@ -375,6 +387,9 @@ with col2:
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
+
+
+
         {"type":"Feature",
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
@@ -389,9 +404,6 @@ st.markdown("---")
 st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
 st.caption("Download this file and upload it to the Dashboard page to view results anytime.")
 st.download_button("  Download stores snapshot (upload to Dashboard)",
-
-
-
     _clean_df.reset_index(drop=True).to_csv(index=False),
     f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
 st.info("Upload the stores CSV to the Dashboard page. Admin manages the market library from there.")
