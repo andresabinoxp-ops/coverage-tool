@@ -136,29 +136,22 @@ def parse_dates_val(val):
 
 def get_dates_for_month(stores, month_key):
     """Get all unique real calendar dates for a given month key (e.g. 'm1').
-    Uses m1_dates / m2_dates which contain real date strings like '07 Apr'."""
+    Reads {month_key}_dates column, e.g. m1_dates = ['07 Apr', '14 Apr', ...]"""
     import datetime
-    dates_col = f"{month_key}_dates" if month_key != "m1" else "m1_dates"
-    # Also try m2_dates for second month
     dates_set = set()
-
-
-
+    col = f"{month_key}_dates"   # always m1_dates, m2_dates etc.
     for s in stores:
-        for d in parse_dates_val(s.get(dates_col, [])):
-            if d and d not in ("nan", ""):
-                dates_set.add(d.strip())
-        # fallback: try m1_dates / m2_dates directly
-        for d in parse_dates_val(s.get(f"{month_key}_dates", [])):
-            if d and d not in ("nan", ""):
-                dates_set.add(d.strip())
 
+
+
+        for d in parse_dates_val(s.get(col, [])):
+            if d and str(d).strip() not in ("", "nan"):
+                dates_set.add(str(d).strip())
     def date_sort(d):
-        try:
-            return datetime.datetime.strptime(d.strip(), "%d %b")
-        except:
-            try: return datetime.datetime.strptime(d.strip(), "%d %B")
-            except: return datetime.datetime.max
+        for fmt in ("%d %b", "%d %B", "%b %d"):
+            try: return datetime.datetime.strptime(d.strip(), fmt)
+            except: pass
+        return datetime.datetime.max
     return ["All dates"] + sorted(dates_set, key=date_sort)
 
 all_days = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
@@ -191,9 +184,6 @@ if sel_month != "Full plan":
 _map_route_filter = st.session_state.get("tbl_route_filter", "Recommended stores")
 if _map_route_filter == "Recommended stores":
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) > 0]
-
-
-
 elif _map_route_filter == "Not in route":
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) == 0]
 else:
@@ -201,15 +191,17 @@ else:
 if sel_rep != "All reps":
     rep_num    = int(sel_rep.split()[1])
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
+
+
+
 # Month filter — only stores with visits in that month
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
-# Week filter — match against week label stored in _dates column
-if sel_day not in ("Full month", "All weeks", "") and sel_month_key:
+# Date filter — match against real calendar dates in mk_dates
+if sel_day not in ("Full month", "All dates", "All weeks", "") and sel_month_key:
     map_stores = [s for s in map_stores
-                  if sel_day in parse_dates_val(s.get(f"{sel_month_key}_weeks", []))]
-elif sel_day not in ("Full month", "All weeks", "") and not sel_month_key:
-    # No month selected — filter by weekday name in assigned_day
+                  if sel_day in parse_dates_val(s.get(f"{sel_month_key}_dates", []))]
+elif sel_day not in ("Full month", "All dates", "All weeks", "") and not sel_month_key:
     map_stores = [s for s in map_stores
                   if sel_day.split("-")[-1].strip() == s.get("assigned_day","").strip()]
 if not show_gaps:
@@ -241,9 +233,6 @@ try:
         layer = pdk.Layer("ScatterplotLayer", data=df_map,
             get_position="[lng, lat]", get_color="color", get_radius="radius",
             radius_min_pixels=4, radius_max_pixels=20, pickable=True)
-
-
-
         view = pdk.ViewState(latitude=df_map["lat"].mean(), longitude=df_map["lng"].mean(), zoom=11, pitch=0)
         tooltip = {
             "html":"<b>{name}</b><br/>Score: <b>{score}</b><br/>Size: {size_tier}<br/>"
@@ -252,6 +241,9 @@ try:
             "style":{"backgroundColor":"#1A2B4A","color":"white","padding":"10px","borderRadius":"8px","fontSize":"13px"}
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
+
+
+
     else:
         st.info("No stores match the current filters.")
 except ImportError:
@@ -291,9 +283,6 @@ elif colour_by == "Size tier":
         cnt = len([s for s in map_stores if s.get("size_tier")==tier])
         lc[i].markdown(f'<span class="legend-chip" style="background:{col}">{tier} · {cnt} stores</span>',unsafe_allow_html=True)
 elif colour_by == "Coverage status":
-
-
-
     lc = st.columns(2)
     cov = len([s for s in map_stores if s.get("coverage_status")=="covered"])
     gap = len([s for s in map_stores if s.get("coverage_status")=="gap"])
@@ -301,6 +290,8 @@ elif colour_by == "Coverage status":
     lc[1].markdown(f'<span class="legend-chip" style="background:#C62828">Gap · {gap}</span>',unsafe_allow_html=True)
 
 st.markdown("---")
+
+
 
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-title">Download rep route files</div>', unsafe_allow_html=True)
@@ -341,9 +332,6 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "visits_per_month":   s.get("visits_per_month",0),
             "annual_visits":      s.get("annual_visits",0),
             "visit_duration_min": s.get("visit_duration_min",0),
-
-
-
             "coverage_status":    s.get("coverage_status",""),
             "rating":             s.get("rating",0),
             "review_count":       s.get("review_count",0),
@@ -352,6 +340,9 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "address":            s.get("address",""),
             "city":               s.get("city",""),
             "lat":                s.get("lat",""),
+
+
+
             "lng":                s.get("lng",""),
         }
         # Add only plan month columns
@@ -391,9 +382,6 @@ if all_reps:
 st.markdown("---")
 
 # ── ROUTE DETAIL TABLE ────────────────────────────────────────────────────────
-
-
-
 st.markdown('<div class="section-title">Route detail</div>', unsafe_allow_html=True)
 st.caption("Select a rep and day to see the exact stores and visit order for that day.")
 
@@ -402,6 +390,9 @@ with col_r:
     tbl_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps], key="tbl_rep")
 with col_m:
     tbl_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS, key="tbl_month")
+
+
+
 with col_d:
     if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
         _tbl_mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
@@ -441,9 +432,6 @@ if not display_df.empty and tbl_day not in ("Full month", "All weeks", "") and "
 
 if not display_df.empty:
     base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
-
-
-
                  "size_tier","score","visits_per_month","annual_visits","visit_duration_min",
                  "coverage_status","rating","review_count","phone","opening_hours",
                  "address","city","lat","lng"]
@@ -452,6 +440,9 @@ if not display_df.empty:
         month_cols = [f"{tbl_month_key}_weeks", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
+
+
+
         # Full plan — show both month date and visit columns
         base_cols = base_cols + [f"{mk}_weeks" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
     # Deduplicate show_cols — preserve order, remove duplicates
@@ -491,9 +482,6 @@ if not display_df.empty:
     st.markdown("---")
     cfg_ref        = st.session_state.get("market_config", {})
     daily_cap      = cfg_ref.get("daily_minutes", 480)
-
-
-
     break_mins     = cfg_ref.get("break_minutes",
         st.session_state.get("admin_rep_defaults",{}).get("break_minutes", 30))
     work_days      = cfg_ref.get("working_days", 22)
@@ -502,6 +490,9 @@ if not display_df.empty:
     n_reps_in_view = len(set(s.get("rep_id",0) for s in all_stores
                               if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0))
     if tbl_rep_id:
+
+
+
         n_reps_in_view = 1
     monthly_cap_total = effective_daily * work_days * max(n_reps_in_view, 1)
 
@@ -541,9 +532,6 @@ if not display_df.empty:
                 else:
                     total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
                 util_pct         = round(total_time_month / monthly_cap_total * 100) if monthly_cap_total > 0 else 0
-
-
-
                 cap_label        = f"{effective_daily}×{work_days} days×{n_reps_in_view} rep{'s' if n_reps_in_view!=1 else ''} = {monthly_cap_total:,} min"
                 m2.metric("Time needed / month",
                     f"{total_time_month:,} min",
@@ -552,6 +540,9 @@ if not display_df.empty:
                     f"{util_pct}%",
                     delta=cap_label,
                     delta_color="off")
+
+
+
             else:
                 m2.metric("—","—"); m3.metric("—","—")
     else:
