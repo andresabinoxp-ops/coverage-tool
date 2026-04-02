@@ -89,7 +89,7 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.html("""
 <div class="page-header">
     <h2>  Run Pipeline</h2>
 
@@ -97,7 +97,7 @@ st.markdown("""
 
     <p>Upload your portfolio, configure enrichment, review the full cost estimate &mdash; then run</p>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 if not st.session_state.get("market_config"):
     st.warning("No market configured. Please go to Configure in the sidebar first.")
