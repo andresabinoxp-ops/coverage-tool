@@ -498,59 +498,85 @@ if not display_df.empty:
         n_reps_in_view = 1
     monthly_cap_total = effective_daily * work_days * max(n_reps_in_view, 1)
 
-    m1,m2,m3,m4 = st.columns(4)
-    m1.metric("Stores in view", len(display_df))
+    # Pull zone_centres travel data for this rep if available
+    _zc_list   = st.session_state.get("run_results", {}).get("rep_recommendation", {}).get("zone_centres", [])
+    _zc_by_rep = {int(z["zone"]): z for z in _zc_list}
 
-    # Always calculate time from RECOMMENDED stores only (plan_visits > 0)
-    # regardless of which filter is selected — avoids inflated utilisation
+    # Routed stores only
     if tbl_rep_id:
-        _routed = display_df[display_df.get("plan_visits", pd.Series(0, index=display_df.index)).fillna(0) > 0] if "plan_visits" in display_df.columns else display_df
+        _routed = display_df[display_df["plan_visits"].fillna(0) > 0] if "plan_visits" in display_df.columns else display_df
     else:
-        _routed = display_df[display_df["plan_visits"] > 0] if "plan_visits" in display_df.columns else display_df
+        _routed = display_df[display_df["plan_visits"].fillna(0) > 0] if "plan_visits" in display_df.columns else display_df
 
-    if "visit_duration_min" in display_df.columns:
-        if tbl_day not in ("Full month", "All weeks", "") and tbl_month != "Full plan":
-            # Specific date selected — show time for that day's routed stores
-            day_visit_time = int(_routed["visit_duration_min"].sum()) if not _routed.empty else 0
-            # Per Jaimin doc: 110% max daily cap including travel and break
-            max_daily_110 = round(effective_daily * 1.10)
-            m2.metric("Time for this day",
-                f"{day_visit_time} min",
-                delta=f"Daily target: {effective_daily} min · 110% max: {max_daily_110} min",
-                delta_color="inverse" if day_visit_time > max_daily_110 else "off",
-                help=f"Visit time only (no travel). Target ≤ {effective_daily} min, hard cap ≤ {max_daily_110} min (110%).")
-            if day_visit_time <= effective_daily:
-                m3.metric("Budget status", "  Within target")
-            elif day_visit_time <= max_daily_110:
-                m3.metric("Budget status", f"  {day_visit_time - effective_daily} min over target (within 110% cap)")
-            else:
-                m3.metric("Budget status", f"  Over 110% cap by {day_visit_time - max_daily_110} min")
+    is_day_view = tbl_day not in ("Full month", "All dates", "All weeks", "") and tbl_month != "Full plan"
+
+    if is_day_view:
+        # ── SPECIFIC DATE VIEW ──────────────────────────────────────────────
+        # Execution = sum of visit_duration_min for stores on this day
+        exec_t  = int(_routed["visit_duration_min"].sum()) if "visit_duration_min" in _routed.columns and not _routed.empty else 0
+        # Travel estimate: from zone_centres total travel ÷ 22 working days
+        if tbl_rep_id and tbl_rep_id in _zc_by_rep:
+            zc      = _zc_by_rep[tbl_rep_id]
+            monthly_et = zc.get("time_needed_min", 0)
+            monthly_ex = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25)
+                             for s in all_stores if s.get("rep_id")==tbl_rep_id and s.get("plan_visits",0)>0)
+            monthly_tr = max(0, monthly_et - monthly_ex)
+            travel_t   = round(monthly_tr / max(work_days, 1))
         else:
-            # Full plan/month view — show monthly from routed stores only
-            if "visits_per_month" in _routed.columns and not _routed.empty:
-                # Use plan_visits/2 × duration to match Results page source of truth
-                if "plan_visits" in _routed.columns:
-                    total_time_month = int((_routed["plan_visits"] / 2 * _routed["visit_duration_min"]).sum())
-                else:
-                    total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
-                util_pct         = round(total_time_month / monthly_cap_total * 100) if monthly_cap_total > 0 else 0
-                cap_label        = f"{effective_daily}×{work_days} days×{n_reps_in_view} rep{'s' if n_reps_in_view!=1 else ''} = {monthly_cap_total:,} min"
-                m2.metric("Time needed / month",
-                    f"{total_time_month:,} min",
-                    help="Recommended stores only: visits × duration per month.")
-                m3.metric("Utilisation",
-                    f"{util_pct}%",
+            travel_t = 0
+        total_t  = exec_t + break_mins + travel_t
+        cap_day  = daily_cap  # 480 min full day
+        util_pct = round(total_t / max(cap_day, 1) * 100)
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Stores this day", len(_routed))
+        m2.metric("Execution", f"{exec_t} min",
+            help="Sum of visit durations for stores on this date.")
+        m3.metric("Travel (est.)", f"{travel_t} min",
+            help="Estimated travel for this day (monthly travel ÷ 22 days).")
+        m4.metric("Break", f"{break_mins} min",
+            help=f"Fixed {break_mins} min break per day.")
+        flag = " " if total_t <= cap_day else (" " if total_t <= cap_day*1.25 else " ")
+        m5.metric(f"{flag} Total / capacity",
+            f"{total_t} / {cap_day} min ({util_pct}%)",
+            help=f"Execution + Travel + Break vs {cap_day} min full day capacity.")
 
 
 
-                    delta=cap_label,
-                    delta_color="off")
-            else:
-                m2.metric("—","—"); m3.metric("—","—")
     else:
-        m2.metric("—","—"); m3.metric("—","—")
+        # ── MONTHLY / FULL PLAN VIEW ────────────────────────────────────────
+        if "visit_duration_min" in _routed.columns and not _routed.empty:
+            exec_monthly = int((_routed["plan_visits"].fillna(0) * _routed["visit_duration_min"]).sum())
+            # Travel from zone_centres
+            if tbl_rep_id and tbl_rep_id in _zc_by_rep:
+                monthly_et   = _zc_by_rep[tbl_rep_id].get("time_needed_min", 0)
+                travel_monthly = max(0, monthly_et - exec_monthly)
+            else:
+                travel_monthly = 0
+            break_monthly = break_mins * work_days * n_reps_in_view
+            total_monthly = exec_monthly + travel_monthly + break_monthly
+            cap_monthly   = daily_cap * work_days * n_reps_in_view
+            util_pct      = round(total_monthly / max(cap_monthly, 1) * 100)
 
-    m4.metric("Gap stores in view", len(display_df[display_df["coverage_status"]=="gap"]) if "coverage_status" in display_df.columns else 0)
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Stores in view", len(_routed))
+            m2.metric("Execution / month", f"{exec_monthly:,} min",
+                help="plan_visits × visit_duration for all routed stores.")
+            m3.metric("Travel / month", f"{travel_monthly:,} min",
+                help="From zone routing calculations.")
+            m4.metric("Break / month", f"{break_monthly:,} min",
+                help=f"{break_mins} min × {work_days} days × {n_reps_in_view} rep(s).")
+            m5.metric(f"Utilisation",
+                f"{util_pct}% ({total_monthly:,} / {cap_monthly:,} min)",
+                help=f"(Execution + Travel + Break) / ({daily_cap} × {work_days} × {n_reps_in_view} reps).")
+        else:
+            m1, m2, m3, m4, m5 = st.columns(5)
+            for mx in [m1,m2,m3,m4,m5]: mx.metric("—","—")
+
+    if "coverage_status" in display_df.columns:
+        gap_count = len(display_df[display_df["coverage_status"]=="gap"])
+        if gap_count > 0:
+            st.caption(f"  {gap_count} gap store(s) in this view.")
 else:
     st.info("No stores for this selection.")
 
@@ -563,4 +589,7 @@ features = [{"type":"Feature",
     for s in all_stores if s.get("lat") and s.get("lng")]
 st.download_button("  Full routes GeoJSON",
     json.dumps({"type":"FeatureCollection","features":features}, indent=2),
+
+
+
     f"rep_routes_{mkt_safe}.geojson","application/json")
