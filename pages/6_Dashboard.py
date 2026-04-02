@@ -45,12 +45,12 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 
 
 
-st.markdown("""
+st.html("""
 <div class="page-header">
     <h2>  Market Dashboard</h2>
-    <p>Upload market snapshots and explore results — routes, reps, daily schedules</p>
+    <p>Upload market snapshots and explore results &mdash; routes, reps, daily schedules</p>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 # ── CONSTANTS ─────────────────────────────────────────────────────────────────
 REP_COLORS  = ["#1565C0","#2E7D32","#E65100","#6A1B9A","#00695C","#4A148C","#B71C1C","#004D40","#3E2723","#263238"]
