@@ -3044,141 +3044,207 @@ if st.button("  Run Coverage Agent", type="primary"):
             "month_labels":  plan_month_labels,
             "months_ym":     plan_months_ym,
         }
-        # ── Post-route constraint enforcement ──────────────────────────────────
-        # Constraints:
-        #   1. Travel <= 25% of daily budget on any given day
-        #   2. >= 8 outlets on any active day
-        #   3. >= 6500 min execution per rep per month
-        # These are enforced after build_daily_routes by redistributing stores.
+        # ── Post-route rebalancing loop ─────────────────────────────────────
+        # For each rep, look at every actual calendar date they have stores on.
+        # If a date has > 538 min (exec + inter-store travel + break):
+        #   → move stores to dates where the same rep has < 450 min
+        #   → travel cap (25%) is relaxed here — day window (420-550) is the hard rule
+        # Loop until no day exceeds 538 min or no improvement is possible (max 50 passes).
+        # All moves stay within the same rep.
+
+        REBAL_MAX   = 538   # trigger move if day exceeds this
+        REBAL_MIN   = 450   # target days below this to receive stores
+        HARD_MAX    = 550   # absolute ceiling
+        HARD_MIN    = 420   # absolute floor
+        BREAK_MIN   = 30    # fixed break
 
         all_rep_ids_post = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0)>0))
-        max_travel_post  = daily_minutes * 0.25   # 120 min travel max/day
-        min_outlets_post = 8
         min_exec_month   = 6500
 
-        def get_day_stores(rid, day):
-            return [s for s in all_stores
-                    if s.get("rep_id")==rid and s.get("assigned_day")==day
-                    and s.get("plan_visits",0)>0 and s.get("size_tier") in ("Large","Medium","Small")]
-
-        def day_travel_only(stores_list):
+        def _day_len(stores_list):
 
 
 
-            t = 0.0
-            for i in range(1, len(stores_list)):
-                a, b = stores_list[i-1], stores_list[i]
-                if a.get("lat") and b.get("lat"):
-                    t += travel_time_minutes(a["lat"],a["lng"],b["lat"],b["lng"],avg_speed)
-            return t
+            """exec + inter-store travel + break. First/last leg excluded."""
+            if not stores_list:
+                return BREAK_MIN
+            exec_t   = sum(s.get("visit_duration_min", 25) for s in stores_list)
+            travel_t = sum(
+                travel_time_minutes(
+                    stores_list[i-1]["lat"], stores_list[i-1]["lng"],
+                    stores_list[i]["lat"],   stores_list[i]["lng"],
+                    avg_speed
+                )
+                for i in range(1, len(stores_list))
+                if stores_list[i-1].get("lat") and stores_list[i].get("lat")
+            )
+            return exec_t + travel_t + BREAK_MIN
 
-        def rep_exec_monthly(rid):
-            return sum(s.get("plan_visits",0)*s.get("visit_duration_min",25)
-                       for s in all_stores
-                       if s.get("rep_id")==rid and s.get("plan_visits",0)>0)
+        def _nn_reseq(stores):
+            """Re-sequence a list of stores using nearest-neighbour from centroid."""
+            if len(stores) <= 1:
+                return stores[:]
+            c_lat = sum(s["lat"] for s in stores if s.get("lat")) / max(1, sum(1 for s in stores if s.get("lat")))
+            c_lng = sum(s["lng"] for s in stores if s.get("lng")) / max(1, sum(1 for s in stores if s.get("lng")))
+            result, remaining = [], stores[:]
+            cur_lat, cur_lng  = c_lat, c_lng
+            while remaining:
+                nn = min(remaining, key=lambda s: haversine_m(
+                    cur_lat, cur_lng, s.get("lat", cur_lat), s.get("lng", cur_lng)))
+                result.append(nn)
+                cur_lat, cur_lng = nn.get("lat", cur_lat), nn.get("lng", cur_lng)
+                remaining.remove(nn)
+            return result
 
-        # Pass 1: enforce travel cap — move high-travel stores to other days of same rep
+        def _get_rep_day_map(rid):
+            """
+            Returns dict: {assigned_day: [sorted stores]}
+            Uses assigned_day (weekday name) as the grouping key.
+            """
+            day_map = {}
+            for s in all_stores:
+                if (s.get("rep_id") == rid
+                        and s.get("assigned_day")
+                        and s.get("plan_visits", 0) > 0
+                        and s.get("size_tier") in ("Large", "Medium", "Small")
+                        and s.get("lat") and s.get("lng")):
+                    d = s["assigned_day"]
+                    day_map.setdefault(d, []).append(s)
+            # Sort each day by visit order
+            for d in day_map:
+
+
+
+                day_map[d].sort(key=lambda s: s.get("day_visit_order", 99))
+            return day_map
+
         for rid in all_rep_ids_post:
-            for day in WEEKDAYS:
-                day_s = get_day_stores(rid, day)
-                if len(day_s) < 2: continue
-                travel = day_travel_only(day_s)
-                if travel <= max_travel_post: continue
-                # Move the store causing most travel (furthest from its neighbours)
-                # to another day of same rep with space
-                while travel > max_travel_post and len(day_s) > 1:
-                    # Find store that saves most travel when removed
-                    best_save, best_idx = -1, -1
-                    for idx in range(1, len(day_s)):
-                        candidate = day_s[:idx] + day_s[idx+1:]
-                        t_without = day_travel_only(candidate)
-                        if travel - t_without > best_save:
-                            best_save = travel - t_without
-                            best_idx  = idx
-                    if best_idx < 0: break
-                    moved = day_s.pop(best_idx)
-                    # Try to place on another day of same rep
-                    placed = False
-                    for other_day in WEEKDAYS:
-                        if other_day == day: continue
-                        other_s = get_day_stores(rid, other_day)
-                        other_exec = sum(s.get("visit_duration_min",25) for s in other_s)
-                        if other_exec + moved.get("visit_duration_min",25) <= daily_minutes * 1.25:
-                            other_travel = day_travel_only(other_s + [moved])
-                            if other_travel <= max_travel_post:
-                                moved["assigned_day"] = other_day
-                                moved["day_visit_order"] = len(other_s) + 1
-                                placed = True
-                                break
-                    if not placed:
-                        # Leave on original day — best we can do without violating other constraints
+            # Loop until stable or max passes reached
+            for _pass in range(50):
+                day_map  = _get_rep_day_map(rid)
+                if not day_map:
+                    break
+
+                # Find the most overloaded day (highest day_len above REBAL_MAX)
+                over_days = {
+                    d: _day_len(stores)
+                    for d, stores in day_map.items()
+                    if _day_len(stores) > REBAL_MAX
+                }
+                if not over_days:
+                    break   # all days within target — done for this rep
+
+                # Pick the worst overloaded day
+                worst_day    = max(over_days, key=over_days.get)
+                worst_stores = day_map[worst_day]
+
+                # Find the lightest receiving day (day_len < REBAL_MIN)
+                light_days = {
+                    d: _day_len(stores)
+                    for d, stores in day_map.items()
+                    if d != worst_day and _day_len(stores) < REBAL_MIN
+                }
+
+                if not light_days:
+                    # No day below 450 — try any day below HARD_MAX
+                    light_days = {
+                        d: _day_len(stores)
+                        for d, stores in day_map.items()
+                        if d != worst_day and _day_len(stores) < HARD_MAX
+                    }
+
+                if not light_days:
+                    break   # nowhere to move stores — stop for this rep
+
+                best_target = min(light_days, key=light_days.get)
+                target_stores = day_map[best_target]
+
+                # Find the store in worst_day that:
+                #   1. When removed, reduces worst day length the most
+                #   2. When added to target, keeps target <= HARD_MAX
 
 
 
-                        day_s.insert(best_idx, moved)
-                        break
-                    travel = day_travel_only(day_s)
+                best_move_idx  = -1
+                best_reduction = -1
 
-        # Pass 2: enforce >= 8 outlets per active day
-        # Active day = any day that already has stores assigned to this rep
-        # Pull stores from the lightest other days to pad days below minimum
-        for rid in all_rep_ids_post:
-            for day in WEEKDAYS:
-                day_s = get_day_stores(rid, day)
-                if not day_s: continue  # skip empty days — rep may not work that day
-                if len(day_s) >= min_outlets_post: continue
-                # Need more stores — find stores from same rep on other days
-                # that can be moved here without breaking their day's constraints
-                deficit = min_outlets_post - len(day_s)
-                for other_day in WEEKDAYS:
-                    if other_day == day or deficit <= 0: continue
-                    other_s = get_day_stores(rid, other_day)
-                    if len(other_s) <= min_outlets_post: continue  # can't take from already-thin days
-                    # Take from the end (lowest visit order = lowest priority stores)
-                    extras = sorted(other_s, key=lambda x: x.get("score",0))
-                    for candidate in extras:
-                        if deficit <= 0: break
-                        # Check adding to current day doesn't breach travel or hard cap
-                        test_day = day_s + [candidate]
-                        new_travel = day_travel_only(test_day)
-                        new_exec   = sum(s.get("visit_duration_min",25) for s in test_day)
-                        if new_travel <= max_travel_post and new_exec + new_travel <= daily_minutes * 1.25:
-                            candidate["assigned_day"]    = day
-                            candidate["day_visit_order"] = len(day_s) + 1
-                            day_s.append(candidate)
-                            deficit -= 1
+                current_worst_len = over_days[worst_day]
 
-        # Pass 3: enforce >= 6500 min execution/month per rep
-        # Reps below threshold: merge their stores into nearest rep by centroid
+                for idx, candidate in enumerate(worst_stores):
+                    # Day length after removing this store
+                    remaining     = worst_stores[:idx] + worst_stores[idx+1:]
+                    remaining_seq = _nn_reseq(remaining) if remaining else []
+                    new_worst_len = _day_len(remaining_seq) if remaining_seq else BREAK_MIN
+
+                    # Day length after adding to target
+                    target_seq    = _nn_reseq(target_stores + [candidate])
+                    new_target_len = _day_len(target_seq)
+
+                    reduction = current_worst_len - new_worst_len
+
+                    # Only accept if:
+                    #  - worst day actually gets shorter
+                    #  - target day stays within hard max
+                    #  - remaining worst day stays above hard min (if it still has stores)
+                    if (reduction > 0.5
+                            and new_target_len <= HARD_MAX
+                            and (not remaining_seq or new_worst_len >= HARD_MIN)):
+                        if reduction > best_reduction:
+                            best_reduction = reduction
+                            best_move_idx  = idx
+
+                if best_move_idx < 0:
+                    break   # no valid move found — stop
+
+                # Execute the move
+                moved = worst_stores.pop(best_move_idx)
+                moved["assigned_day"] = best_target
+
+                # Re-sequence both days and update visit orders
+                new_worst_seq  = _nn_reseq(worst_stores)  if worst_stores  else []
+                new_target_seq = _nn_reseq(target_stores + [moved])
+
+                for i, s in enumerate(new_worst_seq):
+                    s["assigned_day"]    = worst_day
+                    s["day_visit_order"] = i + 1
+                for i, s in enumerate(new_target_seq):
+                    s["assigned_day"]    = best_target
+                    s["day_visit_order"] = i + 1
+
+            # end pass loop for this rep
+
+
+
+        # ── Exec floor: merge reps below 6500 min into nearest neighbour ─────
         rep_centroids = {}
         for rid in all_rep_ids_post:
-            rid_stores = [s for s in all_stores if s.get("rep_id")==rid and s.get("lat") and s.get("lng")]
+            rid_stores = [s for s in all_stores if s.get("rep_id")==rid
+                          and s.get("lat") and s.get("lng") and s.get("plan_visits",0)>0]
             if rid_stores:
                 rep_centroids[rid] = (
-                    sum(s["lat"] for s in rid_stores)/len(rid_stores),
-                    sum(s["lng"] for s in rid_stores)/len(rid_stores)
+                    sum(s["lat"] for s in rid_stores) / len(rid_stores),
+                    sum(s["lng"] for s in rid_stores) / len(rid_stores),
                 )
 
         for rid in list(all_rep_ids_post):
-            exec_mo = rep_exec_monthly(rid)
-            if exec_mo >= min_exec_month: continue
-
-
-
-            if len([r for r in all_rep_ids_post if r != rid]) == 0: continue
-            # Find nearest rep by centroid
-            if rid not in rep_centroids: continue
-            rlat, rlng = rep_centroids[rid]
+            exec_mo = sum(
+                s.get("plan_visits",0) * s.get("visit_duration_min",25)
+                for s in all_stores if s.get("rep_id")==rid and s.get("plan_visits",0)>0
+            )
+            if exec_mo >= min_exec_month:
+                continue
+            if rid not in rep_centroids:
+                continue
             other_rids = [r for r in all_rep_ids_post if r != rid and r in rep_centroids]
-            if not other_rids: continue
+            if not other_rids:
+                continue
+            rlat, rlng = rep_centroids[rid]
             nearest_rid = min(other_rids,
                 key=lambda r: haversine_m(rlat, rlng, rep_centroids[r][0], rep_centroids[r][1]))
-            # Reassign all stores from weak rep to nearest
             for s in all_stores:
                 if s.get("rep_id") == rid:
                     s["rep_id"] = nearest_rid
             all_rep_ids_post = [r for r in all_rep_ids_post if r != rid]
-            # Rebuild routes for the receiving rep
             receiving = [s for s in all_stores
                          if s.get("rep_id")==nearest_rid
                          and s.get("size_tier") in ("Large","Medium","Small")]
@@ -3195,6 +3261,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         if routed_stores:
             _, final_total_mins, final_monthly_cap = recommended_reps_time_based(
                 routed_stores, effective_daily, working_days, avg_speed
+
+
+
             )
             rep_time_map = {}
             for s in routed_stores:
@@ -3211,8 +3280,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 rep_recommendation["recommended_reps"]     = len(kept_reps) if kept_reps else len(rep_time_map)
                 # zone_centres time_needed_min already updated by recalc block above
                 # (exec+travel via calc_zone_monthly_time) — do not overwrite here
-
-
 
         bar.progress(80)
 
@@ -3244,6 +3311,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     store["phone"]   = result.get("formatted_phone_number","")
                     store["website"] = result.get("website","")
                     oh = result.get("opening_hours",{})
+
+
+
                     wt = oh.get("weekday_text",[])
                     store["opening_hours"] = " | ".join(wt) if wt else ""
                     if result.get("formatted_address"):
@@ -3261,9 +3331,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     f"Stage 7/{total_steps} — Enriching... {i+1}/{len(candidates)} | "
                     f"{enriched} updated |  {fmt_time(rem).replace('~','')} remaining"
                 )
-
-
-
                 bar.progress(min(pct,97))
                 time.sleep(0.1)
 
@@ -3294,6 +3361,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     store["poi_count"] = len(data.get("results",[]))
                     poi_enriched += 1
                 except Exception:
+
+
+
                     store["poi_count"] = 0
                 rem = (time.time()-poi_start)/(i+1)*(len(poi_candidates)-i-1) if i>0 else 0
                 status.info(
@@ -3311,9 +3381,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 r_n    = _safe_num(s.get("rating",0)) / 5
                 rv_n   = math.log1p(s.get("review_count",0) or 0)/math.log1p(max_rev)
                 sal_n  = _safe_num(s.get("annual_sales_usd",0)) / max_sales if (s.get("covered") and max_sales > 0) else 0.0
-
-
-
                 lin_n  = _safe_num(s.get("lines_per_store",0))  / max_lines if (s.get("covered") and max_lines > 0) else 0.0
                 s["score"] = min(100,round((
                     r_n   * w.get("rating",    0.20) +
@@ -3344,6 +3411,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             "geocode_summary": {"ok": geocode_ok, "failed": geocode_fail},
         }
         st.session_state["last_market"] = cfg["market_name"]
+
+
+
         bar.progress(100)
 
         enrich_msg = f" · {enriched} stores enriched with phone & hours" if enrich_scope != "none" else ""
