@@ -586,13 +586,47 @@ st.markdown("---")
 st.subheader("5b. Rep planning mode")
 st.caption("Choose how you want to handle rep allocation — fixed headcount or let the agent recommend.")
 
+# ── CLUSTER SELECTION ────────────────────────────────────────────────────────
+_country_clusters = st.session_state.get("country_clusters", [])
+if _country_clusters:
+    st.markdown('<div class="section-title">Select cluster(s) to run for this market</div>', unsafe_allow_html=True)
+
+
+
+    st.caption(
+        "Clusters are defined in Admin Settings. "
+        "Reps never cross cluster boundaries — select one or more clusters to run the pipeline for."
+    )
+    _cluster_options = ["All clusters"] + [c["name"] for c in _country_clusters]
+    selected_clusters = st.multiselect(
+        "Clusters to include in this run",
+        options=_cluster_options,
+        default=["All clusters"],
+        key="selected_clusters",
+        help="Select specific clusters to focus this pipeline run on a sub-region of the country."
+    )
+    if not selected_clusters or "All clusters" in selected_clusters:
+        selected_cluster_ids = [c["cluster_id"] for c in _country_clusters]
+        st.caption(f"All {len(_country_clusters)} clusters included.")
+    else:
+        selected_cluster_ids = [
+            c["cluster_id"] for c in _country_clusters
+            if c["name"] in selected_clusters
+        ]
+        total_stores = sum(c["store_count"] for c in _country_clusters
+                          if c["cluster_id"] in selected_cluster_ids)
+        st.caption(f"{len(selected_cluster_ids)} cluster(s) selected · ~{total_stores:,} stores in scope")
+else:
+    selected_cluster_ids = []
+    st.info("  No clusters defined yet. Go to Admin Settings → Section 6 to set up country clusters. "
+            "The pipeline will run without cluster boundaries until clusters are configured.")
+
+st.markdown("---")
+
 rep_mode = st.radio(
     "Rep planning approach",
     options=["Fixed — I know how many reps I have",
              "Recommended — tell me how many reps I need"],
-
-
-
     index=0,
     horizontal=True,
 )
@@ -606,6 +640,9 @@ if rep_mode == "Fixed — I know how many reps I have":
     rep_mode_key = "fixed"
     rep_count    = st.number_input(
         "Number of field reps",
+
+
+
         min_value=1, max_value=200, value=6,
         help="The pipeline will assign stores to exactly this many reps."
     )
@@ -640,9 +677,6 @@ else:
             "Break time (min/day)", min_value=0, max_value=120, value=30,
             help="Lunch and rest breaks. Deducted from daily capacity."
         )
-
-
-
     with col3:
         working_days = st.number_input(
             "Working days per month", min_value=15, max_value=26, value=22,
@@ -656,6 +690,9 @@ else:
     with col5:
         effective_daily = daily_minutes - break_minutes
         monthly_cap     = effective_daily * working_days
+
+
+
         st.metric("Effective capacity / month", f"{monthly_cap:,} min",
             help=f"({daily_minutes} - {break_minutes} break) × {working_days} days")
     st.caption(
@@ -690,9 +727,6 @@ if google_categories:
                               "liquor_store","grocery_or_supermarket","hypermarket"]
                  if c not in google_categories],
         default=[]
-
-
-
     )
     final_categories = google_categories + extra
 else:
@@ -705,6 +739,8 @@ else:
     )
 
 st.markdown("---")
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
@@ -740,9 +776,6 @@ Current splits: <strong>Large = top {large_pct}%</strong> &nbsp;·&nbsp;
 """.format(
     large_pct=admin_defaults["large_pct"],
     medium_pct=admin_defaults["medium_pct"],
-
-
-
     small_pct=admin_defaults["small_pct"],
 ), unsafe_allow_html=True)
 
@@ -756,6 +789,9 @@ if final_categories:
     hc1.markdown("**Large visits/mo**")
     hc2.markdown("**Large duration**")
     hc3.markdown("**Medium visits/mo**")
+
+
+
     hc4.markdown("**Medium duration**")
     hc5.markdown("**Small visits/mo**")
     hc6.markdown("**Small duration**")
@@ -790,9 +826,6 @@ if final_categories:
             "medium_visits": mv, "medium_duration": int(md),
             "small_visits": sv, "small_duration": int(sd),
         }
-
-
-
         _all_min_freq.append(min(lv, mv, sv))
 
     # Calculate and display plan period from minimum frequency
@@ -806,6 +839,9 @@ if final_categories:
             f"driven by minimum frequency {min_freq}/month across tiers"
         )
 else:
+
+
+
     st.info("Select scraping categories first (Step 6).")
     visit_benchmarks = {}
 
@@ -840,9 +876,6 @@ else:
             "country":                 st.session_state["country_name"],
             
             "regions":                 [e["name"] for e in st.session_state["region_entries"]],
-
-
-
             "cities":                  [e["name"] for e in st.session_state["city_entries"]],
             "city":                    final_scope,
             "country_name":            st.session_state.get("country_name",""),
@@ -852,9 +885,13 @@ else:
             "lng_max":                 lng_max,
             "rep_count":               int(rep_count),
             "rep_mode":                rep_mode_key,
+            "selected_cluster_ids":    selected_cluster_ids,
             "daily_minutes":           int(daily_minutes) if rep_mode_key == "recommended" else 480,
             "break_minutes":           int(break_minutes) if rep_mode_key == "recommended" else 30,
             "working_days":            int(working_days)  if rep_mode_key == "recommended" else 22,
+
+
+
             "avg_speed_kmh":           int(avg_speed_kmh) if rep_mode_key == "recommended" else 30,
             "categories":              final_categories,
             "market_api_key":          market_api_key,
