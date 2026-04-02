@@ -3,6 +3,16 @@ import ast
 import pandas as pd
 import json
 import datetime
+import math
+
+def _hav_min(lat1, lng1, lat2, lng2, speed_kmh=30):
+    """Straight-line travel time in minutes between two GPS points."""
+    R = 6371000
+    p = math.pi / 180
+    a = (math.sin((lat2-lat1)*p/2)**2 +
+         math.cos(lat1*p)*math.cos(lat2*p)*math.sin((lng2-lng1)*p/2)**2)
+    dist_km = 2 * R * math.asin(math.sqrt(a)) / 1000
+    return (dist_km / speed_kmh) * 60
 
 st.set_page_config(page_title="Routes - Coverage Tool", page_icon=" ", layout="wide")
 
@@ -32,6 +42,9 @@ st.markdown("""
     padding: 6px 14px; border-radius: 20px; color: white;
     font-weight: 700; font-size: 0.82rem; display: inline-block; margin: 3px;
 }
+
+
+
 .legend-chip {
     display: inline-block; padding: 5px 14px; border-radius: 20px;
     color: white; font-size: 0.8rem; font-weight: 600; margin: 3px;
@@ -42,8 +55,6 @@ div.stButton > button[kind="primary"] {
 div.stButton > button { border-radius: 6px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
-
-
 
 if not st.session_state.get("run_results"):
     st.warning("No results yet. Run the pipeline first.")
@@ -81,6 +92,8 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+
+
 REP_COLORS = [
     [21,101,192],[46,125,50],[230,81,0],[136,14,79],[0,96,100],
     [74,20,140],[183,28,28],[0,77,64],[62,39,35],[38,50,56]
@@ -91,9 +104,6 @@ DAY_COLORS = {
     "Wednesday": "#E65100",
     "Thursday":  "#6A1B9A",
     "Friday":    "#00695C",
-
-
-
 }
 STATUS_COLORS = {"covered":[46,125,50,200],"gap":[198,40,40,220]}
 SIZE_COLORS   = {"Large":[46,125,50,220],"Medium":[21,101,192,220],"Small":[245,127,23,220]}
@@ -131,6 +141,9 @@ def parse_dates_val(val):
         parsed = ast.literal_eval(s)
         if isinstance(parsed, list): return [str(d).strip() for d in parsed if d]
     except Exception: pass
+
+
+
     s = s.strip("[]").replace("'","").replace('"',"")
     return [d.strip() for d in s.split(",") if d.strip()]
 
@@ -141,9 +154,6 @@ def get_dates_for_month(stores, month_key):
     dates_set = set()
     col = f"{month_key}_dates"   # always m1_dates, m2_dates etc.
     for s in stores:
-
-
-
         for d in parse_dates_val(s.get(col, [])):
             if d and str(d).strip() not in ("", "nan"):
                 dates_set.add(str(d).strip())
@@ -181,6 +191,9 @@ if sel_month != "Full plan":
     sel_month_key = PLAN_MONTH_KEYS[idx] if idx >= 0 else None
 
 # Map base filter respects route_filter selection
+
+
+
 _map_route_filter = st.session_state.get("tbl_route_filter", "Recommended stores")
 if _map_route_filter == "Recommended stores":
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) > 0]
@@ -191,9 +204,6 @@ else:
 if sel_rep != "All reps":
     rep_num    = int(sel_rep.split()[1])
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
-
-
-
 # Month filter — only stores with visits in that month
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
@@ -231,6 +241,9 @@ try:
     df_map = pd.DataFrame(map_data)
     if not df_map.empty:
         layer = pdk.Layer("ScatterplotLayer", data=df_map,
+
+
+
             get_position="[lng, lat]", get_color="color", get_radius="radius",
             radius_min_pixels=4, radius_max_pixels=20, pickable=True)
         view = pdk.ViewState(latitude=df_map["lat"].mean(), longitude=df_map["lng"].mean(), zoom=11, pitch=0)
@@ -241,9 +254,6 @@ try:
             "style":{"backgroundColor":"#1A2B4A","color":"white","padding":"10px","borderRadius":"8px","fontSize":"13px"}
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
-
-
-
     else:
         st.info("No stores match the current filters.")
 except ImportError:
@@ -281,6 +291,9 @@ elif colour_by == "Size tier":
     lc = st.columns(3)
     for i,(tier,col) in enumerate([("Large","#2E7D32"),("Medium","#1565C0"),("Small","#F57F17")]):
         cnt = len([s for s in map_stores if s.get("size_tier")==tier])
+
+
+
         lc[i].markdown(f'<span class="legend-chip" style="background:{col}">{tier} · {cnt} stores</span>',unsafe_allow_html=True)
 elif colour_by == "Coverage status":
     lc = st.columns(2)
@@ -290,8 +303,6 @@ elif colour_by == "Coverage status":
     lc[1].markdown(f'<span class="legend-chip" style="background:#C62828">Gap · {gap}</span>',unsafe_allow_html=True)
 
 st.markdown("---")
-
-
 
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-title">Download rep route files</div>', unsafe_allow_html=True)
@@ -330,6 +341,9 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "visits_per_month":   s.get("visits_per_month",0),
             "annual_visits":      s.get("annual_visits",0),
             "visit_duration_min": s.get("visit_duration_min",0),
+
+
+
             "coverage_status":    s.get("coverage_status",""),
             "rating":             s.get("rating",0),
             "review_count":       s.get("review_count",0),
@@ -340,9 +354,6 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "lat":                s.get("lat",""),
             "lng":                s.get("lng",""),
         }
-
-
-
         # Add only plan month columns
         for mk in PLAN_MONTH_KEYS:
             row[f"{mk}_dates"]  = ", ".join(parse_dates_val(s.get(f"{mk}_dates", [])))
@@ -380,6 +391,9 @@ if all_reps:
 st.markdown("---")
 
 # ── ROUTE DETAIL TABLE ────────────────────────────────────────────────────────
+
+
+
 st.markdown('<div class="section-title">Route detail</div>', unsafe_allow_html=True)
 st.caption("Select a rep and day to see the exact stores and visit order for that day.")
 
@@ -390,9 +404,6 @@ with col_m:
     tbl_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS, key="tbl_month")
 with col_d:
     if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
-
-
-
         _tbl_mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
         _tbl_dates = get_dates_for_month(all_stores, _tbl_mkey)
         tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
@@ -430,6 +441,9 @@ cfg_tbl   = st.session_state.get("market_config", {})
 daily_cap = cfg_tbl.get("daily_minutes", 480)
 
 # When a specific date is selected, sort by visit order — already within budget
+
+
+
 if not display_df.empty and tbl_day not in ("Full month", "All dates", "All weeks", "") and "visit_duration_min" in display_df.columns:
     display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
@@ -440,9 +454,6 @@ if not display_df.empty:
                  "address","city","lat","lng"]
     # Add month columns if viewing a specific month
     if tbl_month_key:
-
-
-
         month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
@@ -480,6 +491,8 @@ if not display_df.empty:
             "Longitude":st.column_config.NumberColumn("Longitude", format="%.5f"),
         })
 
+
+
     # Summary metrics
     st.markdown("---")
     cfg_ref        = st.session_state.get("market_config", {})
@@ -490,9 +503,6 @@ if not display_df.empty:
     effective_daily = daily_cap - break_mins  # actual selling time per day
     # Number of reps for this view
     n_reps_in_view = len(set(s.get("rep_id",0) for s in all_stores
-
-
-
                               if s.get("rep_id",0) > 0 and s.get("plan_visits",0) > 0))
     if tbl_rep_id:
         n_reps_in_view = 1
@@ -514,34 +524,54 @@ if not display_df.empty:
         # ── SPECIFIC DATE VIEW ──────────────────────────────────────────────
         # Execution = sum of visit_duration_min for stores on this day
         exec_t  = int(_routed["visit_duration_min"].sum()) if "visit_duration_min" in _routed.columns and not _routed.empty else 0
-        # Travel estimate: from zone_centres total travel ÷ 22 working days
-        if tbl_rep_id and tbl_rep_id in _zc_by_rep:
-            zc      = _zc_by_rep[tbl_rep_id]
-            monthly_et = zc.get("time_needed_min", 0)
-            monthly_ex = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25)
-                             for s in all_stores if s.get("rep_id")==tbl_rep_id and s.get("plan_visits",0)>0)
-            monthly_tr = max(0, monthly_et - monthly_ex)
-            travel_t   = round(monthly_tr / max(work_days, 1))
-        else:
-            travel_t = 0
+        # Travel = actual route through today's stores in visit order using geocoords
+        avg_speed = cfg_ref.get("avg_speed_kmh",
+            st.session_state.get("admin_rep_defaults", {}).get("avg_speed_kmh", 30))
+        day_stores_ordered = (
+            _routed.sort_values("day_visit_order")
+            .to_dict("records")
+            if "day_visit_order" in _routed.columns and not _routed.empty
+            else []
+        )
+        travel_t = 0
+        if day_stores_ordered:
+            # Start from zone centroid if available, else first store
+            if tbl_rep_id and tbl_rep_id in _zc_by_rep:
+                prev_lat = _zc_by_rep[tbl_rep_id].get("centre_lat", day_stores_ordered[0].get("lat", 0))
+                prev_lng = _zc_by_rep[tbl_rep_id].get("centre_lng", day_stores_ordered[0].get("lng", 0))
+            else:
+
+
+
+                prev_lat = day_stores_ordered[0].get("lat", 0)
+                prev_lng = day_stores_ordered[0].get("lng", 0)
+            for st_row in day_stores_ordered:
+                slat = st_row.get("lat") or st_row.get("Latitude", 0)
+                slng = st_row.get("lng") or st_row.get("Longitude", 0)
+                try:
+                    slat, slng = float(slat), float(slng)
+                    if slat and slng:
+                        travel_t += _hav_min(prev_lat, prev_lng, slat, slng, avg_speed)
+                        prev_lat, prev_lng = slat, slng
+                except (TypeError, ValueError):
+                    pass
+        travel_t = round(travel_t)
         total_t  = exec_t + break_mins + travel_t
-        cap_day  = daily_cap  # 480 min full day
+        cap_day  = daily_cap   # 480 min (full day including break)
         util_pct = round(total_t / max(cap_day, 1) * 100)
 
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Stores this day", len(_routed))
         m2.metric("Execution", f"{exec_t} min",
             help="Sum of visit durations for stores on this date.")
-        m3.metric("Travel (est.)", f"{travel_t} min",
-            help="Estimated travel for this day (monthly travel ÷ 22 days).")
+        m3.metric("Travel", f"{travel_t} min",
+            help="Actual travel time routing through stores in visit order.")
         m4.metric("Break", f"{break_mins} min",
             help=f"Fixed {break_mins} min break per day.")
         flag = " " if total_t <= cap_day else (" " if total_t <= cap_day*1.25 else " ")
         m5.metric(f"{flag} Total / capacity",
             f"{total_t} / {cap_day} min ({util_pct}%)",
             help=f"Execution + Travel + Break vs {cap_day} min full day capacity.")
-
-
 
     else:
         # ── MONTHLY / FULL PLAN VIEW ────────────────────────────────────────
@@ -560,6 +590,9 @@ if not display_df.empty:
 
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Stores in view", len(_routed))
+
+
+
             m2.metric("Execution / month", f"{exec_monthly:,} min",
                 help="plan_visits × visit_duration for all routed stores.")
             m3.metric("Travel / month", f"{travel_monthly:,} min",
@@ -589,7 +622,4 @@ features = [{"type":"Feature",
     for s in all_stores if s.get("lat") and s.get("lng")]
 st.download_button("  Full routes GeoJSON",
     json.dumps({"type":"FeatureCollection","features":features}, indent=2),
-
-
-
     f"rep_routes_{mkt_safe}.geojson","application/json")
