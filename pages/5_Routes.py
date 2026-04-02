@@ -135,19 +135,31 @@ def parse_dates_val(val):
     return [d.strip() for d in s.split(",") if d.strip()]
 
 def get_dates_for_month(stores, month_key):
-    """Get all unique week labels for a given month key (e.g. 'm1')."""
-    weeks = set()
+    """Get all unique real calendar dates for a given month key (e.g. 'm1').
+    Uses m1_dates / m2_dates which contain real date strings like '07 Apr'."""
+    import datetime
+    dates_col = f"{month_key}_dates" if month_key != "m1" else "m1_dates"
+    # Also try m2_dates for second month
+    dates_set = set()
+
+
+
     for s in stores:
-        for w in parse_dates_val(s.get(f"{month_key}_dates", [])):
-            if w: weeks.add(w)
-    # Sort by week number
+        for d in parse_dates_val(s.get(dates_col, [])):
+            if d and d not in ("nan", ""):
+                dates_set.add(d.strip())
+        # fallback: try m1_dates / m2_dates directly
+        for d in parse_dates_val(s.get(f"{month_key}_dates", [])):
+            if d and d not in ("nan", ""):
+                dates_set.add(d.strip())
 
-
-
-    def week_sort(w):
-        try: return int(w.split("Date")[1].split("-")[0].strip())
-        except: return 99
-    return ["All dates"] + sorted(weeks, key=week_sort)
+    def date_sort(d):
+        try:
+            return datetime.datetime.strptime(d.strip(), "%d %b")
+        except:
+            try: return datetime.datetime.strptime(d.strip(), "%d %B")
+            except: return datetime.datetime.max
+    return ["All dates"] + sorted(dates_set, key=date_sort)
 
 all_days = ["Full month"] + ["Monday","Tuesday","Wednesday","Thursday","Friday"]
 
@@ -179,6 +191,9 @@ if sel_month != "Full plan":
 _map_route_filter = st.session_state.get("tbl_route_filter", "Recommended stores")
 if _map_route_filter == "Recommended stores":
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) > 0]
+
+
+
 elif _map_route_filter == "Not in route":
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("plan_visits",0) == 0]
 else:
@@ -190,13 +205,10 @@ if sel_rep != "All reps":
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
 # Week filter — match against week label stored in _dates column
-if sel_day not in ("Full month", "All dates", "") and sel_month_key:
-
-
-
+if sel_day not in ("Full month", "All weeks", "") and sel_month_key:
     map_stores = [s for s in map_stores
-                  if sel_day in parse_dates_val(s.get(f"{sel_month_key}_dates", []))]
-elif sel_day not in ("Full month", "All dates", "") and not sel_month_key:
+                  if sel_day in parse_dates_val(s.get(f"{sel_month_key}_weeks", []))]
+elif sel_day not in ("Full month", "All weeks", "") and not sel_month_key:
     # No month selected — filter by weekday name in assigned_day
     map_stores = [s for s in map_stores
                   if sel_day.split("-")[-1].strip() == s.get("assigned_day","").strip()]
@@ -229,6 +241,9 @@ try:
         layer = pdk.Layer("ScatterplotLayer", data=df_map,
             get_position="[lng, lat]", get_color="color", get_radius="radius",
             radius_min_pixels=4, radius_max_pixels=20, pickable=True)
+
+
+
         view = pdk.ViewState(latitude=df_map["lat"].mean(), longitude=df_map["lng"].mean(), zoom=11, pitch=0)
         tooltip = {
             "html":"<b>{name}</b><br/>Score: <b>{score}</b><br/>Size: {size_tier}<br/>"
@@ -241,9 +256,6 @@ try:
         st.info("No stores match the current filters.")
 except ImportError:
     if map_data:
-
-
-
         df_map = pd.DataFrame(map_data)
         st.map(df_map.rename(columns={"lng":"lon"})[["lat","lon"]])
 
@@ -279,6 +291,9 @@ elif colour_by == "Size tier":
         cnt = len([s for s in map_stores if s.get("size_tier")==tier])
         lc[i].markdown(f'<span class="legend-chip" style="background:{col}">{tier} · {cnt} stores</span>',unsafe_allow_html=True)
 elif colour_by == "Coverage status":
+
+
+
     lc = st.columns(2)
     cov = len([s for s in map_stores if s.get("coverage_status")=="covered"])
     gap = len([s for s in map_stores if s.get("coverage_status")=="gap"])
@@ -291,8 +306,6 @@ st.markdown("---")
 st.markdown('<div class="section-title">Download rep route files</div>', unsafe_allow_html=True)
 st.caption("Each file includes store details, assigned day, visit dates, visit order and coordinates.")
 
-
-
 mkt_safe = market.replace(" ","_").replace("-","_")
 
 def build_rep_df(stores, rep_id=None, day=None, month_key=None):
@@ -301,14 +314,14 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
     filtered = list(stores)
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
-    if month_key and day and day not in ("Full month", "All dates", ""):
+    if month_key and day and day not in ("Full month", "All weeks", ""):
         # Filter by specific week label — e.g. "Week 1 - Monday"
         # Week label is stored like ["Week 1 - Monday", "Week 3 - Monday"]
         filtered = [s for s in filtered
-                    if day in parse_dates_val(s.get(f"{month_key}_dates", []))]
+                    if day in parse_dates_val(s.get(f"{month_key}_weeks", []))]
     elif month_key:
         filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
-    elif day and day not in ("Full month", "All dates", ""):
+    elif day and day not in ("Full month", "All weeks", ""):
         # No month — filter by weekday in assigned_day
         day_name = day.split("-")[-1].strip()
         filtered = [s for s in filtered if s.get("assigned_day","").strip() == day_name]
@@ -328,6 +341,9 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
             "visits_per_month":   s.get("visits_per_month",0),
             "annual_visits":      s.get("annual_visits",0),
             "visit_duration_min": s.get("visit_duration_min",0),
+
+
+
             "coverage_status":    s.get("coverage_status",""),
             "rating":             s.get("rating",0),
             "review_count":       s.get("review_count",0),
@@ -340,10 +356,7 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None):
         }
         # Add only plan month columns
         for mk in PLAN_MONTH_KEYS:
-
-
-
-            row[f"{mk}_dates"]  = ", ".join(s.get(f"{mk}_dates", []))
+            row[f"{mk}_weeks"]  = ", ".join(s.get(f"{mk}_weeks", []))
             row[f"{mk}_visits"] = s.get(f"{mk}_visits", 0)
         row["plan_visits"] = s.get("plan_visits", 0)
         rows.append(row)
@@ -378,6 +391,9 @@ if all_reps:
 st.markdown("---")
 
 # ── ROUTE DETAIL TABLE ────────────────────────────────────────────────────────
+
+
+
 st.markdown('<div class="section-title">Route detail</div>', unsafe_allow_html=True)
 st.caption("Select a rep and day to see the exact stores and visit order for that day.")
 
@@ -390,9 +406,6 @@ with col_d:
     if tbl_month != "Full plan" and tbl_month in PLAN_MONTHS:
         _tbl_mkey  = PLAN_MONTH_KEYS[PLAN_MONTHS.index(tbl_month)]
         _tbl_dates = get_dates_for_month(all_stores, _tbl_mkey)
-
-
-
         tbl_day    = st.selectbox("Date", _tbl_dates, key="tbl_day")
     else:
         tbl_day    = st.selectbox("Day", all_days, key="tbl_day")
@@ -423,26 +436,26 @@ cfg_tbl   = st.session_state.get("market_config", {})
 daily_cap = cfg_tbl.get("daily_minutes", 480)
 
 # When a specific date is selected, sort by visit order — already within budget
-if not display_df.empty and tbl_day not in ("Full month", "All dates", "") and "visit_duration_min" in display_df.columns:
+if not display_df.empty and tbl_day not in ("Full month", "All weeks", "") and "visit_duration_min" in display_df.columns:
     display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
 if not display_df.empty:
     base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
+
+
+
                  "size_tier","score","visits_per_month","annual_visits","visit_duration_min",
                  "coverage_status","rating","review_count","phone","opening_hours",
                  "address","city","lat","lng"]
     # Add month columns if viewing a specific month
     if tbl_month_key:
-        month_cols = [f"{tbl_month_key}_dates", f"{tbl_month_key}_visits"]
+        month_cols = [f"{tbl_month_key}_weeks", f"{tbl_month_key}_visits"]
         base_cols  = base_cols[:4] + month_cols + base_cols[4:]
     else:
         # Full plan — show both month date and visit columns
-        base_cols = base_cols + [f"{mk}_dates" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
+        base_cols = base_cols + [f"{mk}_weeks" for mk in PLAN_MONTH_KEYS] + [f"{mk}_visits" for mk in PLAN_MONTH_KEYS] + ["plan_visits"]
     # Deduplicate show_cols — preserve order, remove duplicates
     seen = set()
-
-
-
     show_cols = []
     for c in base_cols:
         if c in display_df.columns and c not in seen:
@@ -461,7 +474,7 @@ if not display_df.empty:
     # Add month column renames using full label names to avoid 3-char collision
     for i, mk in enumerate(PLAN_MONTH_KEYS):
         lbl = PLAN_MONTHS[i] if i < len(PLAN_MONTHS) else f"Month {i+1}"
-        rename_map[f"{mk}_dates"]  = f"{lbl} Weeks"
+        rename_map[f"{mk}_weeks"]  = f"{lbl} Weeks"
         rename_map[f"{mk}_visits"] = f"{lbl} Visits"
     df_show = display_df[show_cols].rename(columns=rename_map)
     # Final dedup safeguard
@@ -478,6 +491,9 @@ if not display_df.empty:
     st.markdown("---")
     cfg_ref        = st.session_state.get("market_config", {})
     daily_cap      = cfg_ref.get("daily_minutes", 480)
+
+
+
     break_mins     = cfg_ref.get("break_minutes",
         st.session_state.get("admin_rep_defaults",{}).get("break_minutes", 30))
     work_days      = cfg_ref.get("working_days", 22)
@@ -490,9 +506,6 @@ if not display_df.empty:
     monthly_cap_total = effective_daily * work_days * max(n_reps_in_view, 1)
 
     m1,m2,m3,m4 = st.columns(4)
-
-
-
     m1.metric("Stores in view", len(display_df))
 
     # Always calculate time from RECOMMENDED stores only (plan_visits > 0)
@@ -503,7 +516,7 @@ if not display_df.empty:
         _routed = display_df[display_df["plan_visits"] > 0] if "plan_visits" in display_df.columns else display_df
 
     if "visit_duration_min" in display_df.columns:
-        if tbl_day not in ("Full month", "All dates", "") and tbl_month != "Full plan":
+        if tbl_day not in ("Full month", "All weeks", "") and tbl_month != "Full plan":
             # Specific date selected — show time for that day's routed stores
             day_visit_time = int(_routed["visit_duration_min"].sum()) if not _routed.empty else 0
             # Per Jaimin doc: 110% max daily cap including travel and break
@@ -528,6 +541,9 @@ if not display_df.empty:
                 else:
                     total_time_month = int((_routed["visits_per_month"] * _routed["visit_duration_min"]).sum())
                 util_pct         = round(total_time_month / monthly_cap_total * 100) if monthly_cap_total > 0 else 0
+
+
+
                 cap_label        = f"{effective_daily}×{work_days} days×{n_reps_in_view} rep{'s' if n_reps_in_view!=1 else ''} = {monthly_cap_total:,} min"
                 m2.metric("Time needed / month",
                     f"{total_time_month:,} min",
@@ -540,8 +556,6 @@ if not display_df.empty:
                 m2.metric("—","—"); m3.metric("—","—")
     else:
         m2.metric("—","—"); m3.metric("—","—")
-
-
 
     m4.metric("Gap stores in view", len(display_df[display_df["coverage_status"]=="gap"]) if "coverage_status" in display_df.columns else 0)
 else:
