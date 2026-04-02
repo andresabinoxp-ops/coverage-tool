@@ -353,6 +353,8 @@ with col1:
                     "assigned_day","plan_visits","lat","lng","source","covered"}
 
     # Reorder columns so scoring signals are grouped together
+    _always_exclude = {"calls_per_month", "visit_frequency"}
+
     def _reorder_cols(df):
         priority = ["store_id","store_name","address","city","district","region",
                     "lat","lng","category","source","covered","coverage_status",
@@ -360,26 +362,34 @@ with col1:
                     "score","size_tier","visits_per_month","visit_duration_min",
                     "annual_sales_usd","lines_per_store","rep_id","assigned_day",
                     "day_visit_order","plan_visits"]
-        ordered = [c for c in priority if c in df.columns]
-        rest    = [c for c in df.columns if c not in ordered]
+        ordered = [c for c in priority if c in df.columns and c not in _always_exclude]
+        rest    = [c for c in df.columns if c not in ordered and c not in _always_exclude]
         return df[ordered + rest]
     _keep_month_cols = {f"{_m1k}_dates","m1_dates",f"{_m1k}_visits",f"{_m2k}_dates","m2_dates",f"{_m2k}_visits","plan_visits"}
     _drop_cols = [c for c in (pd.DataFrame(all_stores).columns if all_stores else [])
                   if any(c.startswith(f"{m}_") for m in _all_months)
                   and c not in _keep_month_cols
                   and c not in _always_keep]
-    _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
+    _explicit_drop = list(_always_exclude) + [c for c in _drop_cols if c in pd.DataFrame(all_stores).columns]
+    _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _explicit_drop if c in pd.DataFrame(all_stores).columns], errors="ignore")
     _clean_df = _reorder_cols(_clean_df)
     st.download_button("  Full scored universe CSV",
         _clean_df.reset_index(drop=True).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
+    _gap_df = pd.DataFrame(gap_stores).reset_index(drop=True) if gap_stores else pd.DataFrame()
+    if not _gap_df.empty and "score" in _gap_df.columns:
+        _score_thresh = _gap_df["score"].quantile(0.40)  # top 60% = above 40th percentile
+        _gap_df["top_gap_opportunity"] = (_gap_df["score"] >= _score_thresh).map({True:"Yes", False:"No"})
     st.download_button("  Gap report CSV",
-        pd.DataFrame(gap_stores).reset_index(drop=True).to_csv(index=False),
+        _gap_df.reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
         {"type":"Feature",
+
+
+
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
              "visits_per_month","rep_id","coverage_status","category"]}}
@@ -387,9 +397,6 @@ with col3:
     ]
     st.download_button("  Routes GeoJSON",
         json.dumps({"type":"FeatureCollection","features":features}, indent=2),
-
-
-
         f"rep_routes_{mkt_safe}.geojson", "application/json")
 
 st.markdown("---")
