@@ -24,12 +24,12 @@ div.stButton > button:hover { background: #2563C0; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.html("""
 <div class="page-header">
     <h1>  Configure Market</h1>
     <p>Set up market location, scoring weights and pipeline parameters</p>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GOOGLE GEOCODING HELPERS
