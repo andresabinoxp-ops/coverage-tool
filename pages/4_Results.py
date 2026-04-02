@@ -158,23 +158,20 @@ if rep_rec:
     monthly_cap_full = daily_mins * work_days           # 480 × 22 = 10,560 min
     monthly_break    = break_mins * work_days           # 30 × 22  =    660 min
 
-    # Time needed = execution + travel (from zone_centres) + break
+    # zone_centres holds exec+travel per rep (no break)
     zone_cs = rep_rec.get("zone_centres", [])
     exec_travel_total = sum(z.get("time_needed_min", 0) for z in zone_cs)
-    n_zones = max(len(zone_cs), rec_reps, 1)
-    if exec_travel_total > 0:
-        # Add break time: 30 min × 22 days per rep
-        display_total = exec_travel_total + (n_zones * monthly_break)
-    else:
-        display_total = total_mins + (n_zones * monthly_break) if total_mins else 0
+    n_reps_actual = max(len(zone_cs), rec_reps, 1)
+    break_total   = n_reps_actual * monthly_break          # break for all reps
+    display_total = exec_travel_total + break_total        # grand total incl break
 
     m2.metric("Time needed / month (total)",
         f"{display_total:,.0f} min",
-        help=f"Total across all {rec_reps} rep(s): execution + travel + break. "
-             f"Per rep average: {round(display_total/max(rec_reps,1)):,} min.")
+        help=f"Execution + Travel + Break across all {rec_reps} rep(s). "
+             f"Exec+Travel: {exec_travel_total:,} min · Break: {break_total:,} min.")
     m3.metric("Rep capacity / month",
         f"{monthly_cap_full:,} min",
-        help=f"{daily_mins} min/day (execution + travel + break) × {work_days} days")
+        help=f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min")
     if cur_reps > 0:
         m4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
@@ -189,13 +186,12 @@ if rep_rec:
 
     if total_capacity > 0 and display_total > 0 and rec_reps > 0:
         util = round(display_total / total_capacity * 100)
-
-
-
-        # Sanity check: display_total already includes break for all reps
         st.caption(
             f"Average utilisation per rep: {util}% (incl. travel) · "
             f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min/month capacity · "
+
+
+
             f"{break_mins} min break included · {speed} km/h avg travel speed"
         )
 
@@ -239,13 +235,13 @@ if rep_rec:
                 "Stores recommended":  0,
                 "Current":             0,
                 "Gap (new)":           0,
-
-
-
                 "Time needed (min)":   0,
             }
         rep_rows[rid]["Stores recommended"] += 1
         # Travel time added below from zone_centres — accumulate visit time here
+
+
+
         rep_rows[rid]["Time needed (min)"] += (
             s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
         )
@@ -285,19 +281,25 @@ if rep_rec:
         rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap, 1) * 100).round(0).astype(int)
         rdf = rdf.drop(columns=["Time needed (min)", "_rid"])
 
-        col_order = ["Rep","Stores recommended","Current","Gap (new)", t_col, c_col, "Utilisation %"]
+        col_order = ["Rep","Stores","Current","Gap (new)",
+                     "Execution (min)","Travel (min)","Break (min)",
+                     "Total needed (min)", f"Capacity {_plan_pp}mo (min)", "Utilisation %"]
 
         total_row = {
-            "Rep":                "TOTAL",
+            "Rep":             "TOTAL",
+            "Stores":          int(rdf["Stores"].sum()),
+            "Current":         int(rdf["Current"].sum()),
 
 
 
-            "Stores recommended": int(rdf["Stores recommended"].sum()),
-            "Current":            int(rdf["Current"].sum()),
-            "Gap (new)":          int(rdf["Gap (new)"].sum()),
-            t_col:                int(rdf[t_col].sum()),
-            c_col:                int(rdf[c_col].sum()),
-            "Utilisation %":      round(rdf[t_col].sum() / max(rdf[c_col].sum(),1) * 100),
+            "Gap (new)":       int(rdf["Gap (new)"].sum()),
+            "Execution (min)":        int(rdf["Execution (min)"].sum()),
+            "Travel (min)":           int(rdf["Travel (min)"].sum()),
+            "Break (min)":            int(rdf["Break (min)"].sum()),
+            "Total needed (min)":     int(rdf["Total needed (min)"].sum()),
+            f"Capacity {_plan_pp}mo (min)": int(rdf[f"Capacity {_plan_pp}mo (min)"].sum()),
+            "Utilisation %":          round(rdf["Total needed (min)"].sum() /
+                                            max(rdf[f"Capacity {_plan_pp}mo (min)"].sum(),1)*100),
         }
 
         rdf_with_total = pd.concat(
@@ -338,10 +340,9 @@ if high_gaps:
 else:
     st.info("No gap stores with score above 40.")
 
+
+
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
-
-
-
 st.markdown("---")
 st.markdown('<div class="section-title">Download results</div>', unsafe_allow_html=True)
 
@@ -387,11 +388,11 @@ with col2:
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [
+
+
+
         {"type":"Feature",
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
-
-
-
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
              "visits_per_month","rep_id","coverage_status","category"]}}
         for s in all_stores if s.get("lat") and s.get("lng")
