@@ -46,7 +46,7 @@ st.markdown("""
 
 
     <h2>  Admin Settings</h2>
-    <p>Configure global defaults for all markets — changes here apply to every new pipeline run</p>
+    <p>Configure global defaults for all markets &mdash; changes here apply to every new pipeline run</p>
 </div>
 """, unsafe_allow_html=True)
 
