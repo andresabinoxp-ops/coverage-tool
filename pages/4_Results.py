@@ -168,11 +168,10 @@ if rep_rec:
     else:
         display_total = total_mins + (n_zones * monthly_break) if total_mins else 0
 
-    avg_per_rep = round(display_total / max(rec_reps, 1))
-    m2.metric("Avg time needed / rep / month",
-        f"{avg_per_rep:,.0f} min",
-        help=f"(Execution + Travel + Break) per rep per month. "
-             f"Total across all {rec_reps} rep(s): {display_total:,.0f} min.")
+    m2.metric("Time needed / month (total)",
+        f"{display_total:,.0f} min",
+        help=f"Total across all {rec_reps} rep(s): execution + travel + break. "
+             f"Per rep average: {round(display_total/max(rec_reps,1)):,} min.")
     m3.metric("Rep capacity / month",
         f"{monthly_cap_full:,} min",
         help=f"{daily_mins} min/day (execution + travel + break) × {work_days} days")
@@ -189,10 +188,10 @@ if rep_rec:
     total_capacity = rec_reps * monthly_cap_full if rec_reps > 0 else monthly_cap_full
 
     if total_capacity > 0 and display_total > 0 and rec_reps > 0:
-
-
-
         util = round(display_total / total_capacity * 100)
+
+
+
         # Sanity check: display_total already includes break for all reps
         st.caption(
             f"Average utilisation per rep: {util}% (incl. travel) · "
@@ -239,10 +238,10 @@ if rep_rec:
                 "Rep":                 rid,
                 "Stores recommended":  0,
                 "Current":             0,
-
-
-
                 "Gap (new)":           0,
+
+
+
                 "Time needed (min)":   0,
             }
         rep_rows[rid]["Stores recommended"] += 1
@@ -289,10 +288,10 @@ if rep_rec:
         col_order = ["Rep","Stores recommended","Current","Gap (new)", t_col, c_col, "Utilisation %"]
 
         total_row = {
-
-
-
             "Rep":                "TOTAL",
+
+
+
             "Stores recommended": int(rdf["Stores recommended"].sum()),
             "Current":            int(rdf["Current"].sum()),
             "Gap (new)":          int(rdf["Gap (new)"].sum()),
@@ -339,9 +338,10 @@ if high_gaps:
 else:
     st.info("No gap stores with score above 40.")
 
-
-
 # ── DOWNLOADS ─────────────────────────────────────────────────────────────────
+
+
+
 st.markdown("---")
 st.markdown('<div class="section-title">Download results</div>', unsafe_allow_html=True)
 
@@ -388,10 +388,10 @@ with col2:
 with col3:
     features = [
         {"type":"Feature",
-
-
-
          "geometry":{"type":"Point","coordinates":[s.get("lng",0),s.get("lat",0)]},
+
+
+
          "properties":{k:s.get(k) for k in ["store_name","score","size_tier",
              "visits_per_month","rep_id","coverage_status","category"]}}
         for s in all_stores if s.get("lat") and s.get("lng")
