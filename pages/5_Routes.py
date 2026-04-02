@@ -534,25 +534,23 @@ if not display_df.empty:
             else []
         )
         travel_t = 0
-        if day_stores_ordered:
-            # Start from zone centroid if available, else first store
-            if tbl_rep_id and tbl_rep_id in _zc_by_rep:
-                prev_lat = _zc_by_rep[tbl_rep_id].get("centre_lat", day_stores_ordered[0].get("lat", 0))
-                prev_lng = _zc_by_rep[tbl_rep_id].get("centre_lng", day_stores_ordered[0].get("lng", 0))
-            else:
+        # Inter-store travel only — first leg (depot → store 1) excluded.
+        # Rep's day starts at store 1, so only store-to-store travel counts.
+        if len(day_stores_ordered) > 1:
+            for i in range(1, len(day_stores_ordered)):
+                s_prev = day_stores_ordered[i - 1]
+                s_curr = day_stores_ordered[i]
 
 
 
-                prev_lat = day_stores_ordered[0].get("lat", 0)
-                prev_lng = day_stores_ordered[0].get("lng", 0)
-            for st_row in day_stores_ordered:
-                slat = st_row.get("lat") or st_row.get("Latitude", 0)
-                slng = st_row.get("lng") or st_row.get("Longitude", 0)
+                la1 = s_prev.get("lat") or s_prev.get("Latitude", 0)
+                ln1 = s_prev.get("lng") or s_prev.get("Longitude", 0)
+                la2 = s_curr.get("lat") or s_curr.get("Latitude", 0)
+                ln2 = s_curr.get("lng") or s_curr.get("Longitude", 0)
                 try:
-                    slat, slng = float(slat), float(slng)
-                    if slat and slng:
-                        travel_t += _hav_min(prev_lat, prev_lng, slat, slng, avg_speed)
-                        prev_lat, prev_lng = slat, slng
+                    la1, ln1, la2, ln2 = float(la1), float(ln1), float(la2), float(ln2)
+                    if la1 and ln1 and la2 and ln2:
+                        travel_t += _hav_min(la1, ln1, la2, ln2, avg_speed)
                 except (TypeError, ValueError):
                     pass
         travel_t = round(travel_t)
@@ -590,11 +588,11 @@ if not display_df.empty:
 
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Stores in view", len(_routed))
-
-
-
             m2.metric("Execution / month", f"{exec_monthly:,} min",
                 help="plan_visits × visit_duration for all routed stores.")
+
+
+
             m3.metric("Travel / month", f"{travel_monthly:,} min",
                 help="From zone routing calculations.")
             m4.metric("Break / month", f"{break_monthly:,} min",
