@@ -153,10 +153,21 @@ if rep_rec:
         m1.metric("Recommended reps", rec_reps)
     else:
         m1.metric("Fixed reps", rec_reps)
-    m2.metric("Time needed / month", f"{total_mins:,.0f} min",
-        help="visits_per_month × duration per store — monthly estimate used for rep count.")
-    m3.metric("Rep capacity / month", f"{monthly_cap:,} min",
-        help=f"{daily_mins} min/day (incl. {break_mins} min break) × {work_days} days")
+    # Capacity = (daily_minutes - break_minutes) × working_days
+    effective_daily = daily_mins - break_mins          # 480 - 30 = 450 min
+    effective_cap   = effective_daily * work_days       # 450 × 22 = 9,900 min
+
+    # Time needed = sum of zone_centres time_needed_min (includes travel)
+    zone_cs = rep_rec.get("zone_centres", [])
+    total_mins_travel = sum(z.get("time_needed_min", 0) for z in zone_cs)
+    display_total = total_mins_travel if total_mins_travel > 0 else total_mins
+
+    m2.metric("Time needed / month",
+        f"{display_total:,.0f} min",
+        help="Visit time + real travel time per month (sum across all reps).")
+    m3.metric("Rep capacity / month",
+        f"{effective_cap:,} min",
+        help=f"({daily_mins} min/day − {break_mins} min break) × {work_days} days = {effective_daily} × {work_days}")
     if cur_reps > 0:
         m4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
@@ -173,25 +184,25 @@ if rep_rec:
     # plan_visits is already the TOTAL across the full plan period
     # monthly equivalent = total / plan_period
     actual_monthly   = actual_plan_time / max(plan_period, 1)
-    total_capacity   = rec_reps * monthly_cap if rec_reps > 0 else monthly_cap
+    total_capacity   = rec_reps * effective_cap if rec_reps > 0 else effective_cap
 
-    if total_capacity > 0 and actual_monthly > 0 and rec_reps > 0:
-        util = round(actual_monthly / total_capacity * 100)
+    if total_capacity > 0 and display_total > 0 and rec_reps > 0:
+        util = round(display_total / total_capacity * 100)
         st.caption(
-            f"Average utilisation per rep: {util}% · "
-            f"{daily_mins} min/day total · {break_mins} min break · "
+
+
+
+            f"Average utilisation per rep: {util}% (incl. travel) · "
+            f"{daily_mins} min/day − {break_mins} min break = {effective_daily} min effective · "
             f"{work_days} working days/month · {speed} km/h avg travel speed"
         )
 
     # Shortfall / surplus message — based on actual routed time
-    if cur_reps > 0 and actual_monthly > 0:
-        time_per_cur_rep = actual_monthly / max(cur_reps, 1)
-        util_cur = round(time_per_cur_rep / max(monthly_cap,1) * 100)
+    if cur_reps > 0 and display_total > 0:
+        time_per_cur_rep = display_total / max(cur_reps, 1)
+        util_cur = round(time_per_cur_rep / max(effective_cap, 1) * 100)
         if shortfall > 0:
             st.error(
-
-
-
                 f"  {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
                 f"With {cur_reps} reps, each would need "
                 f"{time_per_cur_rep:,.0f} min/month ({util_cur}% utilisation) — over capacity."
@@ -227,7 +238,11 @@ if rep_rec:
                 "Time needed (min)":   0,
             }
         rep_rows[rid]["Stores recommended"] += 1
-        rep_rows[rid]["Time needed (min)"]  += (
+        # Travel time added below from zone_centres — accumulate visit time here
+
+
+
+        rep_rows[rid]["Time needed (min)"] += (
             s.get("plan_visits", 0) * s.get("visit_duration_min", 25)
         )
         if s.get("covered"):
@@ -236,17 +251,27 @@ if rep_rec:
             rep_rows[rid]["Gap (new)"] += 1
 
     if rep_rows:
-        rdf      = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
-        plan_cap = monthly_cap * max(_plan_pp, 1)
-        t_col    = f"Time needed — {_plan_pp}mo (min)"
+        rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
 
+        # Override time_needed with zone_centres values (include travel)
+        # zone_centres is stored in rep_recommendation
+        zc_map = {z["zone"]: z.get("time_needed_min", 0)
+                  for z in rep_rec.get("zone_centres", [])}
+        def _rep_time(rid):
+            # Use zone_centres if available (includes travel), else fall back to visit-only
+            if rid in zc_map and zc_map[rid] > 0:
+                return zc_map[rid] * _plan_pp   # scale to plan period
+            return rep_rows[rid]["Time needed (min)"]
 
-
-        c_col    = f"Capacity — {_plan_pp}mo (min)"
-        rdf[t_col]          = rdf["Time needed (min)"].round(0).astype(int)
-        rdf[c_col]          = plan_cap
-        rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap,1) * 100).round(0).astype(int)
-        rdf = rdf.drop(columns=["Time needed (min)"])
+        rdf["_rid"] = rdf["Rep"]
+        effective_cap_local = (daily_mins - break_mins) * work_days
+        plan_cap  = effective_cap_local * max(_plan_pp, 1)
+        t_col     = f"Time needed — {_plan_pp}mo (min)"
+        c_col     = f"Capacity — {_plan_pp}mo (min)"
+        rdf[t_col]           = rdf["_rid"].apply(_rep_time).round(0).astype(int)
+        rdf[c_col]           = plan_cap
+        rdf["Utilisation %"] = (rdf[t_col] / max(plan_cap, 1) * 100).round(0).astype(int)
+        rdf = rdf.drop(columns=["Time needed (min)", "_rid"])
 
         col_order = ["Rep","Stores recommended","Current","Gap (new)", t_col, c_col, "Utilisation %"]
 
@@ -264,6 +289,9 @@ if rep_rec:
             [rdf[col_order], pd.DataFrame([total_row])[col_order]],
             ignore_index=True
         )
+
+
+
         st.dataframe(rdf_with_total, use_container_width=True, hide_index=True,
             column_config={
                 "Utilisation %": st.column_config.ProgressColumn(
@@ -289,9 +317,6 @@ if high_gaps:
         "poi_count":"Nearby POI","visits_per_month":"Visits/Mo",
         "address":"Address","city":"City"
     }
-
-
-
     gdf   = gdf.rename(columns={c:rename.get(c,c) for c in gdf.columns})
     st.dataframe(gdf, use_container_width=True, height=320,
         column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
@@ -314,6 +339,9 @@ with col1:
     plan_months_sess = st.session_state.get("route_plan_months", {})
     _m1k = plan_months_sess.get("m1_key","")
     _m2k = plan_months_sess.get("m2_key","")
+
+
+
     _all_months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
     # Always keep scoring signals in output CSV
     _always_keep = {"price_level","poi_count","rating","review_count","score",
@@ -339,9 +367,6 @@ with col1:
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _drop_cols if c in pd.DataFrame(all_stores).columns], errors="ignore")
     _clean_df = _reorder_cols(_clean_df)
     st.download_button("  Full scored universe CSV",
-
-
-
         _clean_df.reset_index(drop=True).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
@@ -364,6 +389,9 @@ st.markdown("---")
 st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
 st.caption("Download this file and upload it to the Dashboard page to view results anytime.")
 st.download_button("  Download stores snapshot (upload to Dashboard)",
+
+
+
     _clean_df.reset_index(drop=True).to_csv(index=False),
     f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
 st.info("Upload the stores CSV to the Dashboard page. Admin manages the market library from there.")
