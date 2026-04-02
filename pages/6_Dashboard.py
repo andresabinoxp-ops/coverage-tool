@@ -3,7 +3,7 @@ import ast
 import pandas as pd
 import datetime
 
-st.set_page_config(page_title="Dashboard - Coverage Tool", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Dashboard - Coverage Tool", page_icon=" ", layout="wide")
 
 st.markdown("""
 <style>
@@ -43,9 +43,11 @@ div.stButton > button { border-radius: 6px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
+
+
 st.markdown("""
 <div class="page-header">
-    <h2>📈 Market Dashboard</h2>
+    <h2>  Market Dashboard</h2>
     <p>Upload market snapshots and explore results — routes, reps, daily schedules</p>
 </div>
 """, unsafe_allow_html=True)
@@ -89,6 +91,9 @@ if "snapshot_library" not in st.session_state:
 is_admin = st.session_state.get("admin_authenticated", False)
 
 # ── ADMIN UPLOAD ──────────────────────────────────────────────────────────────
+
+
+
 if is_admin:
     st.markdown('<div class="section-title">Upload market snapshot (Admin only)</div>', unsafe_allow_html=True)
     st.caption("Upload the stores CSV downloaded from the Results page (*_stores.csv).")
@@ -110,7 +115,7 @@ if is_admin:
 
     col_a, col_b, col_c = st.columns(3)
     with col_a: snap_market   = st.text_input("Market name",  value=name_part, placeholder="e.g. Recife")
-    with col_b: snap_category = st.text_input("Category",     placeholder="e.g. Supermarket")
+    with col_b: snap_category = st.text_input("Sub-channel",     placeholder="e.g. Supermarket")
     with col_c: snap_date     = st.date_input("Run date",     value=auto_date)
 
     if st.button("Save snapshot to library", type="primary"):
@@ -135,7 +140,10 @@ if is_admin:
                     "uploaded_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "key": snap_key,
                 }
-                st.success(f"✅ Snapshot saved: {snap_market} — {snap_date}")
+                st.success(f"  Snapshot saved: {snap_market} — {snap_date}")
+
+
+
                 st.rerun()
             except Exception as e:
                 st.error(f"Error reading file: {e}")
@@ -163,7 +171,7 @@ for row_start in range(0, len(snap_keys), 3):
         with row_cols[i]:
             st.markdown(f"""
             <div class="market-card">
-                <h4>📍 {snap['name']} — {snap['category']}</h4>
+                <h4>  {snap['name']} — {snap['category']}</h4>
                 <p>Run date: {snap['run_date']} · Uploaded: {snap['uploaded_at']}</p>
                 <p style="margin-top:6px">
                     <strong>{n_stores:,}</strong> stores ·
@@ -171,7 +179,7 @@ for row_start in range(0, len(snap_keys), 3):
                     Coverage: <strong>{cov_rate}</strong>
                 </p>
             </div>""", unsafe_allow_html=True)
-            if is_admin and st.button("🗑 Delete", key=f"del_{key}"):
+            if is_admin and st.button("  Delete", key=f"del_{key}"):
                 keys_to_delete.append(key)
 for k in keys_to_delete:
     del st.session_state["snapshot_library"][k]
@@ -183,6 +191,9 @@ st.markdown("---")
 # ── MARKET SELECTOR ───────────────────────────────────────────────────────────
 snap_options   = {f"{s['name']} — {s['category']} ({s['run_date']})": k for k, s in library.items()}
 selected_label = st.selectbox("Select market snapshot to view", list(snap_options.keys()))
+
+
+
 selected_key   = snap_options[selected_label]
 snap           = library[selected_key]
 stores_df      = snap["stores_df"].copy()
@@ -205,13 +216,20 @@ cov_pct   = round(n_covered/max(n_total,1)*100,1)
 n_reps    = stores_df["rep_id"].nunique() if "rep_id" in stores_df.columns else 0
 
 c1,c2,c3,c4,c5,c6 = st.columns(6)
+# Proposed coverage = stores with rep_id assigned (plan_visits > 0)
+n_proposed   = len(stores_df[stores_df["plan_visits"].fillna(0) > 0]) if "plan_visits" in stores_df.columns else 0
+proposed_pct = round(n_proposed / max(n_total, 1) * 100, 1)
+n_removed    = len(stores_df[(stores_df["covered"]==True) & (stores_df["plan_visits"].fillna(0)==0)]) if "covered" in stores_df.columns else 0
+n_new        = len(stores_df[(stores_df["covered"]==False) & (stores_df["plan_visits"].fillna(0)>0)]) if "covered" in stores_df.columns else 0
+planned_visits = int(stores_df["plan_visits"].fillna(0).sum()) if "plan_visits" in stores_df.columns else 0
+
 for col, val, label in [
-    (c1, f"{n_total:,}",   "Total stores"),
-    (c2, f"{n_covered:,}", "Covered"),
-    (c3, f"{n_gaps:,}",    "Gaps"),
-    (c4, f"{cov_pct}%",    "Coverage rate"),
-    (c5, f"{len(stores_df[stores_df['size_tier']=='Large']):,}" if "size_tier" in stores_df.columns else "—", "Large stores"),
-    (c6, f"{n_reps}",      "Reps"),
+    (c1, f"{n_total:,}",        "Total Universe"),
+    (c2, f"{n_covered:,}",      "Current Coverage"),
+    (c3, f"{n_proposed:,}",     "Proposed Coverage"),
+    (c4, f"{proposed_pct}%",    "Proposed Coverage Rate"),
+    (c5, f"{n_removed:,}",      "Stores Removed"),
+    (c6, f"{n_new:,}",          "New Stores Added"),
 ]:
     col.markdown(f"""
     <div class="kpi-card">
@@ -223,6 +241,9 @@ st.markdown("")
 
 # ── SIZE DISTRIBUTION ─────────────────────────────────────────────────────────
 if "size_tier" in stores_df.columns:
+
+
+
     fc = st.columns(3)
     tier_colors = {"Large":"#2E7D32","Medium":"#1565C0","Small":"#F57F17"}
     for i, tier in enumerate(["Large","Medium","Small"]):
@@ -270,6 +291,9 @@ if not map_df.empty:
     if sel_rep != "All reps":
         rep_num = int(sel_rep.split()[1])
         map_df  = map_df[map_df["rep_id"] == rep_num]
+
+
+
     if sel_month != "Full plan" and sel_month in DASH_PLAN_NAMES:
         mkey   = DASH_PLAN_KEYS[DASH_PLAN_NAMES.index(sel_month)]
         if f"{mkey}_visits" in map_df.columns:
@@ -317,6 +341,9 @@ if not map_df.empty:
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
     except Exception:
+
+
+
         st.map(map_df.rename(columns={"lng":"lon"})[["lat","lon"]])
 
     # ── COLOUR LEGEND ─────────────────────────────────────────────────────────
@@ -364,6 +391,9 @@ with tr3:
         st.selectbox("Date", ["All dates"], disabled=True, key="tbl_date_dash_empty")
 with tr4:
     route_filter_d = st.selectbox("Route status",
+
+
+
         ["Recommended stores","Not in route","All stores"], key="tbl_route_filter_dash")
 
 # Apply route status filter
@@ -401,7 +431,7 @@ if tbl_month != "Full plan" and tbl_month in DASH_PLAN_NAMES:
 
 rename_map = {
     "rep_id":"Rep","assigned_day":"Day","day_visit_order":"Visit Order",
-    "store_name":"Store","category":"Category","size_tier":"Size",
+    "store_name":"Store","category":"Sub-channel","size_tier":"Size",
     "score":"Score","visits_per_month":"Visits/Mo","plan_visits":"Plan Visits",
     "visit_duration_min":"Duration (min)","coverage_status":"Status",
     "rating":"Rating","review_count":"Reviews",
@@ -411,18 +441,44 @@ if tbl_month != "Full plan" and tbl_month in DASH_PLAN_NAMES:
     rename_map[f"{DASH_PLAN_KEYS[DASH_PLAN_NAMES.index(tbl_month)]}_dates"] = f"{tbl_month[:3]} Dates"
 
 if not route_df.empty:
+
+
+
     df_show = route_df[[c for c in show_cols if c in route_df.columns]].rename(columns=rename_map)
 
     # Daily budget metrics when specific date selected
     if tbl_date != "All dates" and "Duration (min)" in df_show.columns:
-        daily_cap = 480
-        day_time  = int(df_show["Duration (min)"].sum())
-        m1,m2,m3 = st.columns(3)
-        m1.metric("Stores on this day", len(df_show))
-        m2.metric("Time for this day",  f"{day_time} min",
-            delta=f"Budget: {daily_cap} min", delta_color="off")
-        m3.metric("Budget status",
-            "✅ Within budget" if day_time <= daily_cap else f"⚠️ Over by {day_time-daily_cap} min")
+        import math as _math
+        daily_cap  = 480
+        break_mins = 30
+        exec_t     = int(df_show["Duration (min)"].sum())
+        # Travel: route through stores in visit order
+        day_stores_ord = (route_df.sort_values("day_visit_order")
+                          .to_dict("records") if "day_visit_order" in route_df.columns else [])
+        travel_t = 0
+        if len(day_stores_ord) > 1:
+            prev_lat = float(day_stores_ord[0].get("lat",0) or 0)
+            prev_lng = float(day_stores_ord[0].get("lng",0) or 0)
+            for sr in day_stores_ord[1:]:
+                try:
+                    slat,slng = float(sr.get("lat",0) or 0), float(sr.get("lng",0) or 0)
+                    if slat and slng and prev_lat and prev_lng:
+                        R=6371000; p=_math.pi/180
+                        a=((_math.sin((slat-prev_lat)*p/2))**2+
+                           _math.cos(prev_lat*p)*_math.cos(slat*p)*(_math.sin((slng-prev_lng)*p/2))**2)
+                        travel_t += (2*R*_math.asin(_math.sqrt(a))/1000/30)*60
+                        prev_lat,prev_lng = slat,slng
+                except: pass
+        travel_t = round(travel_t)
+        total_t  = exec_t + travel_t + break_mins
+        util_pct = round(total_t / daily_cap * 100)
+        flag     = " " if total_t <= daily_cap else (" " if total_t <= daily_cap*1.25 else " ")
+        m1,m2,m3,m4,m5 = st.columns(5)
+        m1.metric("Stores this day", len(df_show))
+        m2.metric("Execution", f"{exec_t} min")
+        m3.metric("Travel", f"{travel_t} min")
+        m4.metric("Break", f"{break_mins} min")
+        m5.metric(f"{flag} Total / capacity", f"{total_t} / {daily_cap} min ({util_pct}%)")
 
     st.dataframe(df_show, use_container_width=True, height=420,
         column_config={
@@ -434,6 +490,8 @@ else:
     st.info("No stores match the current selection.")
 
 st.markdown("---")
+
+
 
 # ── GAP REPORT ────────────────────────────────────────────────────────────────
 if "coverage_status" in stores_df.columns:
@@ -449,9 +507,9 @@ st.markdown('<div class="section-title">Downloads</div>', unsafe_allow_html=True
 safe_name = f"{snap['name']}_{snap['category']}_{snap['run_date']}".replace(" ","_")
 col1, col2 = st.columns(2)
 with col1:
-    st.download_button("⬇️ Full stores CSV",
+    st.download_button("  Full stores CSV",
         stores_df.to_csv(index=False), f"{safe_name}_stores.csv", "text/csv")
 with col2:
     if not summary_df.empty:
-        st.download_button("⬇️ Summary CSV",
+        st.download_button("  Summary CSV",
             summary_df.to_csv(index=False), f"{safe_name}_summary.csv", "text/csv")
