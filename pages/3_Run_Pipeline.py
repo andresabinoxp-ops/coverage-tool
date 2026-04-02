@@ -95,7 +95,7 @@ st.markdown("""
 
 
 
-    <p>Upload your portfolio, configure enrichment, review the full cost estimate — then run</p>
+    <p>Upload your portfolio, configure enrichment, review the full cost estimate &mdash; then run</p>
 </div>
 """, unsafe_allow_html=True)
 
