@@ -142,71 +142,70 @@ if rep_rec:
 
 
 
-    # 2-month plan capacity
-    plan_months_sess = st.session_state.get("route_plan_months", {})
-    plan_period = plan_months_sess.get("plan_period", len(plan_months_sess.get("month_keys", ["m1","m2"])))
-    plan_period = max(plan_period, 1)
-    plan_cap = monthly_cap * plan_period
+    # Capacity definitions (consistent with pipeline):
+    # eff_cap  = (daily_minutes - break) × working_days = exec+travel budget only
+    # full_cap = daily_minutes × working_days = includes break time
+    monthly_cap_full = daily_mins * work_days            # 480 × 22 = 10,560 min (full day)
+    monthly_eff_cap  = (daily_mins - break_mins) * work_days  # 450 × 22 = 9,900 min (exec+travel)
+    monthly_break    = break_mins * work_days            # 30 × 22  =   660 min
+
+    # total_mins = exec+travel from zone_centres (no break) — this is what drives rep count
+    # rep count = ceil(total_mins / monthly_eff_cap)
+    zone_cs           = rep_rec.get("zone_centres", [])
+    exec_travel_total = rep_rec.get("total_minutes_needed", 0) or sum(z.get("time_needed_min",0) for z in zone_cs)
+    n_reps_actual     = max(rec_reps, 1)
+    break_total       = n_reps_actual * monthly_break
+    display_total     = exec_travel_total + break_total  # exec+travel+break
+
+    # Correct rec_reps from numbers (guard against pipeline bugs)
+    import math as _math
+    correct_reps = max(1, _math.ceil(exec_travel_total / monthly_eff_cap)) if exec_travel_total > 0 else rec_reps
 
     m1, m2, m3, m4 = st.columns(4)
     if mode == "recommended":
-        m1.metric("Recommended reps", rec_reps)
+        m1.metric("Recommended reps", correct_reps,
+            help=f"ceil({exec_travel_total:,} min ÷ {monthly_eff_cap:,} min/rep) = {correct_reps}")
     else:
         m1.metric("Fixed reps", rec_reps)
-    # Capacity = full day × working days = 480 × 22 = 10,560 min
-    # Break is included in both time_needed and capacity (it is part of the working day)
-    monthly_cap_full = daily_mins * work_days           # 480 × 22 = 10,560 min
-    monthly_break    = break_mins * work_days           # 30 × 22  =    660 min
-
-    # zone_centres holds exec+travel per rep (no break)
-    # Top metric computed after table is built; placeholder uses zone_cs
-    zone_cs = rep_rec.get("zone_centres", [])
-    exec_travel_total = sum(z.get("time_needed_min", 0) for z in zone_cs)
-    n_reps_actual = max(len(zone_cs), rec_reps, 1)
-    break_total   = n_reps_actual * monthly_break
-    display_total = exec_travel_total + break_total
 
     top_time_placeholder = m2.empty()
-    top_time_placeholder.metric("Time needed / month (total)",
-        f"{display_total:,.0f} min",
-        help=f"Execution + Travel + Break across all {rec_reps} rep(s).")
-    m3.metric("Rep capacity / month",
-        f"{monthly_cap_full:,} min",
-        help=f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min")
+    top_time_placeholder.metric("Exec + Travel / month",
+        f"{exec_travel_total:,.0f} min",
+        help=f"Execution + inter-store travel across all {correct_reps} rep(s). Excludes break.")
+    m3.metric("Capacity / rep / month",
+        f"{monthly_eff_cap:,} min",
+        help=f"({daily_mins} - {break_mins} break) × {work_days} days = {monthly_eff_cap:,} min exec+travel budget")
     if cur_reps > 0:
+        shortfall = correct_reps - cur_reps
         m4.metric("vs Current headcount",
             f"{'+' if shortfall > 0 else ''}{shortfall} reps",
             delta_color="inverse" if shortfall > 0 else "normal")
     else:
-        m4.metric("Current headcount", "Not provided",
-            help="Enter current rep count in Configure to see comparison.")
+        m4.metric("Current headcount", "Not provided")
 
-    # Use zone_centres time_needed_min (exec+travel) for utilisation — includes travel
-    # Already added break in display_total above
-    total_capacity = rec_reps * monthly_cap_full if rec_reps > 0 else monthly_cap_full
-
-    if total_capacity > 0 and display_total > 0 and rec_reps > 0:
-        util = round(display_total / total_capacity * 100)
+    # Utilisation caption
+    total_capacity = correct_reps * monthly_eff_cap if correct_reps > 0 else monthly_eff_cap
+    if total_capacity > 0 and exec_travel_total > 0:
+        util = round(exec_travel_total / total_capacity * 100)
         st.caption(
-            f"Average utilisation per rep: {util}% (incl. travel) · "
+            f"Utilisation: {util}% · "
 
 
 
-            f"{daily_mins} min/day × {work_days} days = {monthly_cap_full:,} min/month capacity · "
-            f"{break_mins} min break included · {speed} km/h avg travel speed"
+            f"{exec_travel_total:,} min needed ÷ ({correct_reps} reps × {monthly_eff_cap:,} min) · "
+            f"rep count = ceil({exec_travel_total:,} ÷ {monthly_eff_cap:,}) = {correct_reps} · "
+            f"{break_mins} min break/day excluded from capacity calc · {speed} km/h travel speed"
         )
 
-    # Shortfall / surplus message — based on actual routed time
-    if cur_reps > 0 and display_total > 0:
-        # display_total = exec+travel+break across all recommended reps
-        # scale to cur_reps to show what utilisation would be with current headcount
-        time_per_cur_rep = display_total / max(cur_reps, 1)
-        util_cur = round(time_per_cur_rep / max(monthly_cap_full, 1) * 100)
+    # Shortfall message
+    if cur_reps > 0 and exec_travel_total > 0:
+        time_per_cur_rep = exec_travel_total / max(cur_reps, 1)
+        util_cur = round(time_per_cur_rep / monthly_eff_cap * 100)
         if shortfall > 0:
             st.error(
                 f"  {shortfall} additional rep{'s' if shortfall!=1 else ''} recommended. "
                 f"With {cur_reps} reps, each would need "
-                f"{time_per_cur_rep:,.0f} min/month ({util_cur}% utilisation) — over capacity."
+                f"{time_per_cur_rep:,.0f} min/month exec+travel ({util_cur}% of {monthly_eff_cap:,} min capacity)."
             )
         elif shortfall < 0:
             st.success(
@@ -239,9 +238,10 @@ if rep_rec:
         if s.get("covered"): rep_rows[rid]["Current"]  += 1
         else:                rep_rows[rid]["Gap (new)"] += 1
 
-
-
     if rep_rows:
+
+
+
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
 
         zc_map = {int(z["zone"]): z.get("time_needed_min", 0)
@@ -288,10 +288,9 @@ if rep_rec:
             cap_col:              int(rdf[cap_col].sum()),
             "Utilisation %":      round(rdf["Total needed (min)"].sum() /
                                         max(rdf[cap_col].sum(), 1) * 100),
-
-
-
         }
+
+
 
         rdf_with_total = pd.concat(
             [rdf[col_order], pd.DataFrame([total_row])[col_order]],
@@ -338,9 +337,10 @@ st.markdown('<div class="section-title">Download results</div>', unsafe_allow_ht
 mkt_safe = market.replace(" ","_").replace("-","_")
 run_date = datetime.date.today().strftime("%Y-%m-%d")
 
-
-
 col1, col2, col3 = st.columns(3)
+
+
+
 with col1:
     # Build clean CSV — keep only plan months, remove other month columns
     plan_months_sess = st.session_state.get("route_plan_months", {})
@@ -387,10 +387,10 @@ with col1:
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
     _gap_df = pd.DataFrame(gap_stores).reset_index(drop=True) if gap_stores else pd.DataFrame()
-
-
-
     if not _gap_df.empty and "score" in _gap_df.columns:
+
+
+
         _score_thresh = _gap_df["score"].quantile(0.40)  # top 60% = above 40th percentile
         _gap_df["top_gap_opportunity"] = (_gap_df["score"] >= _score_thresh).map({True:"Yes", False:"No"})
     st.download_button("  Gap report CSV",
