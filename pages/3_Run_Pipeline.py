@@ -3556,32 +3556,72 @@ if st.button("  Run Coverage Agent", type="primary"):
             if priority:
                 pts    = [(s["lat"],s["lng"]) for s in priority]
                 labels = kmeans_simple(pts, rep_count)
+
+                # ── GUARANTEE exactly rep_count non-empty zones ──────────────
+                # K-means can produce empty clusters when stores are
+                # geographically concentrated. Force-split the largest
+                # cluster until we have exactly rep_count non-empty zones.
+                _actual_zones = len(set(labels))
+                while _actual_zones < rep_count and len(priority) >= rep_count:
+                    # Find the largest cluster
+                    from collections import Counter as _Counter
+                    _counts = _Counter(labels)
+                    _biggest_lbl = max(_counts, key=lambda x: _counts[x])
+                    if _counts[_biggest_lbl] < 2:
+                        break  # can't split a single-store cluster
+
+                    # Find an unused label
+                    _used = set(labels)
+                    _new_lbl = None
+                    for _candidate in range(rep_count):
+                        if _candidate not in _used:
+                            _new_lbl = _candidate
+                            break
+                    if _new_lbl is None:
+                        break
+
+                    # Split: take the half of the biggest cluster that is
+                    # furthest from the cluster centroid
+                    _big_indices = [i for i, l in enumerate(labels) if l == _biggest_lbl]
+                    _c_lat = sum(pts[i][0] for i in _big_indices) / len(_big_indices)
+                    _c_lng = sum(pts[i][1] for i in _big_indices) / len(_big_indices)
+                    _big_indices.sort(
+                        key=lambda i: haversine_m(pts[i][0], pts[i][1], _c_lat, _c_lng),
+                        reverse=True
+                    )
+                    # Move the furthest half to the new label
+                    _half = len(_big_indices) // 2
+                    for _idx in _big_indices[:_half]:
+                        labels[_idx] = _new_lbl
+
+                    _actual_zones = len(set(labels))
+
                 for s, lbl in zip(priority, labels):
                     s["rep_id"] = int(lbl) + 1
 
                 # Calculate time utilisation per rep
+                # Use actual labels present (guaranteed == rep_count now)
+                _zone_labels = sorted(set(labels))
                 zone_centres = []
-                for zone in range(rep_count):
-                    zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == zone]
-
-
-
-                    if zone_stores:
-                        centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
-                        centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
-                        zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
-                        monthly_cap = effective_daily * working_days
-                        zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
-                        zone_centres.append({
-                            "zone":                 zone + 1,
-                            "centre_lat":           round(centre_lat, 4),
-                            "centre_lng":           round(centre_lng, 4),
-                            "store_count":          len(zone_stores),
-                            "visits_per_month":     zone_visits,
-                            "time_needed_min":      round(zone_mins),
-                            "capacity_min":         monthly_cap,
-                            "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
-                        })
+                monthly_cap  = effective_daily * working_days
+                for _zi, _lbl in enumerate(_zone_labels):
+                    zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == _lbl]
+                    if not zone_stores:
+                        continue
+                    centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
+                    centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
+                    zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
+                    zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
+                    zone_centres.append({
+                        "zone":                 int(_lbl) + 1,
+                        "centre_lat":           round(centre_lat, 4),
+                        "centre_lng":           round(centre_lng, 4),
+                        "store_count":          len(zone_stores),
+                        "visits_per_month":     zone_visits,
+                        "time_needed_min":      round(zone_mins),
+                        "capacity_min":         monthly_cap,
+                        "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
+                    })
 
                 # Fixed mode: respect the user's configured rep count — do NOT
                 # remove under-utilised zones. The user explicitly chose this count.
@@ -3608,7 +3648,7 @@ if st.button("  Run Coverage Agent", type="primary"):
 
                 rep_recommendation = {
                     "mode":                "fixed",
-                    "rep_count":           len(kept_zones_f),
+                    "rep_count":           rep_count,  # always the user's configured value
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
