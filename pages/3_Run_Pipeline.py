@@ -140,6 +140,46 @@ def get_api_key():
     st.error("No Google API key found. Go to Admin Settings or Configure to add your key.")
     st.stop()
 
+# ── Performance helpers ──────────────────────────────────────────────────────
+def _api_retry(fn, *args, max_retries=3, base_delay=1.0, **kwargs):
+    """Call fn(*args, **kwargs) with exponential-backoff retry on failure."""
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception:
+            if attempt == max_retries - 1:
+                return None
+            time.sleep(base_delay * (2 ** attempt))
+    return None
+
+def _build_spatial_grid(stores, cell_size_deg=0.001):
+    """Build a dict grid for O(1) proximity lookups instead of O(N) scans.
+    cell_size_deg ~111m at equator — matches the 100m dedup threshold."""
+    grid = {}
+    for s in stores:
+        lat, lng = float(s.get("lat", 0) or 0), float(s.get("lng", 0) or 0)
+        if not lat or not lng:
+            continue
+        cell = (round(lat / cell_size_deg), round(lng / cell_size_deg))
+        if cell not in grid:
+            grid[cell] = []
+        grid[cell].append(s)
+    return grid
+
+def _is_duplicate_spatial(lat, lng, grid, threshold_m=100, cell_size_deg=0.001):
+    """Check if (lat,lng) is within threshold_m of any store in the spatial grid.
+    Only checks the 9 neighbouring cells — O(1) average instead of O(N)."""
+    cell_lat = round(lat / cell_size_deg)
+    cell_lng = round(lng / cell_size_deg)
+    for dlat in (-1, 0, 1):
+        for dlng in (-1, 0, 1):
+            for s in grid.get((cell_lat + dlat, cell_lng + dlng), []):
+                if haversine_m(lat, lng, float(s["lat"]), float(s["lng"])) < threshold_m:
+                    return True
+    return False
+
+CHECKPOINT_BATCH_SIZE = 100  # save progress every N stores
+
 def smart_tile_radius(lat_min, lat_max, lng_min, lng_max, max_tiles=MAX_TILES):
     mid        = (lat_min + lat_max) / 2
 
@@ -1642,12 +1682,44 @@ else:
         try: _scrape_api_key = st.secrets.get("GOOGLE_MAPS_API_KEY","") or None
         except: _scrape_api_key = None
 
+    # ── Resume from checkpoint if available ────────────────────────────
+    _ckpt = st.session_state.get("_scrape_checkpoint")
+    if _ckpt and _ckpt.get("universe"):
+        st.warning(
+            f"  Checkpoint available from a previous interrupted run "
+            f"({_ckpt.get('step','unknown')} · {_ckpt.get('saved_at','?')} · "
+            f"{len(_ckpt['universe']):,} stores). "
+        )
+        _rc1, _rc2 = st.columns(2)
+        with _rc1:
+            if st.button("  Restore checkpoint to cache", key="btn_restore_ckpt"):
+                import datetime as _dt_rc
+                if "universe_cache" not in st.session_state:
+                    st.session_state["universe_cache"] = {}
+                st.session_state["universe_cache"][_cache_key] = {
+                    "universe":    _ckpt["universe"],
+                    "market_name": cfg.get("market_name",""),
+                    "scraped_at":  f"Restored {_dt_rc.datetime.now().strftime('%d %b %Y %H:%M')}",
+                    "categories":  cfg.get("categories",[]),
+                    "bbox":        [cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"]],
+                }
+                del st.session_state["_scrape_checkpoint"]
+                st.success(f"  Restored {len(_ckpt['universe']):,} stores from checkpoint.")
+                st.rerun()
+        with _rc2:
+            if st.button("  Discard checkpoint", key="btn_discard_ckpt"):
+                del st.session_state["_scrape_checkpoint"]
+                st.rerun()
+
     if st.button("  Build & enrich universe", type="primary", key="btn_scrape_universe"):
         if not _scrape_api_key:
             st.error("No API key — set GOOGLE_MAPS_API_KEY in Secrets or Admin Settings.")
         else:
+            st.session_state["_cancel_scrape"] = False
             _scrape_status = st.empty()
             _scrape_bar    = st.progress(0)
+            if st.button("  Stop build (saves progress)", key="btn_cancel_scrape"):
+                st.session_state["_cancel_scrape"] = True
             _scrape_t0     = time.time()
 
             # ── Step A: Portfolio stores (Option 3) ───────────────────────────
@@ -1693,8 +1765,15 @@ else:
             _done_tiles  = 0
             _type_filtered = 0
 
+            _scrape_cancelled = False
             for _cat in cfg["categories"]:
+                if _scrape_cancelled:
+                    break
                 for _tlat,_tlng in _centres:
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step B: Cancelled at {_done_tiles}/{_total_tiles} tiles. Saving {len(_osm_shops):,} stores...")
+                        _scrape_cancelled = True
+                        break
                     _token = None
                     while True:
                         _data = fetch_places(_tlat,_tlng,_radius_m,_cat,_scrape_api_key,_token)
@@ -1775,6 +1854,9 @@ else:
 
                 "https://overpass.kumi.systems/api/interpreter",
             ]
+            # Build spatial grid for fast deduplication (O(1) per lookup vs O(N))
+            _google_grid = _build_spatial_grid(_osm_shops)
+
             for _mirror in _osm_mirrors:
                 try:
                     _osm_r = requests.post(_mirror, data={"data":_osm_q}, timeout=30)
@@ -1786,12 +1868,8 @@ else:
                         _elat  = _el["lat"] if _el["type"]=="node" else _el.get("center",{}).get("lat")
                         _elng  = _el["lon"] if _el["type"]=="node" else _el.get("center",{}).get("lon")
                         if not (_elat and _elng): continue
-                        # Deduplicate against Google results (within 100m = same store)
-                        _duplicate = any(
-                            haversine_m(float(_elat),float(_elng),
-                                        float(s.get("lat",0)),float(s.get("lng",0))) < 100
-                            for s in _osm_shops
-                        )
+                        # Deduplicate against Google results using spatial grid (O(1) avg)
+                        _duplicate = _is_duplicate_spatial(float(_elat), float(_elng), _google_grid)
                         if _duplicate: continue
                         _addr = _tags.get("addr:street","")
                         _city = _tags.get("addr:city") or _tags.get("addr:suburb") or cfg.get("city","")
@@ -1818,19 +1896,39 @@ else:
             _scrape_bar.progress(30)
             _all_universe = _portfolio_stores + _osm_shops
 
-            # ── Step C: Google enrichment — ALL stores, no cap ────────────────
+            # ── Save scrape checkpoint (crash recovery) ──────────────────
+            import datetime as _dt_ckpt
+            if "universe_cache" not in st.session_state:
+                st.session_state["universe_cache"] = {}
+            st.session_state["_scrape_checkpoint"] = {
+                "universe": list(_all_universe),
+                "step": "scrape_done",
+                "saved_at": _dt_ckpt.datetime.now().strftime("%d %b %Y %H:%M"),
+            }
+
+            # ── Step C: Google enrichment — ONLY stores missing data ─────────
+            # Skip stores already enriched by Google Places scraping (have rating > 0
+            # AND review_count > 0) — these already got their data in Step B.
+            _need_enrich = [s for s in _all_universe
+                           if not (s.get("rating", 0) > 0 and s.get("review_count", 0) > 0)]
+            _already_ok  = len(_all_universe) - len(_need_enrich)
             _scrape_status.info(
-
-
-
-                f"Step C: Google enrichment for all {len(_all_universe):,} stores "
-                "(portfolio + gap) — fetching ratings, reviews, price level..."
+                f"Step C: Enriching {len(_need_enrich):,} stores missing data "
+                f"(skipping {_already_ok:,} already enriched by Google Places)..."
             )
             _mkt_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
             _mkt_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
             _enriched_g = 0
+            # Cancel support
+            if "_cancel_scrape" not in st.session_state:
+                st.session_state["_cancel_scrape"] = False
 
-            for _ei, _s in enumerate(_all_universe):
+            _enrich_start_c = time.time()
+            for _ei, _s in enumerate(_need_enrich):
+                # Check cancel flag
+                if st.session_state.get("_cancel_scrape"):
+                    _scrape_status.warning(f"Step C: Cancelled at {_ei}/{len(_need_enrich)}. Saving progress...")
+                    break
                 try:
                     _sname = str(_s.get("store_name","")).strip()
                     _scity = str(_s.get("city","")).strip()
@@ -1838,12 +1936,13 @@ else:
                     if not _query: continue
                     _slat  = _s.get("lat") or _mkt_lat
                     _slng  = _s.get("lng") or _mkt_lng
-                    _gr    = requests.get(
+                    _gr    = _api_retry(
+                        requests.get,
                         "https://maps.googleapis.com/maps/api/place/textsearch/json",
                         params={"query":_query,"location":f"{_slat},{_slng}","radius":"2000","key":_scrape_api_key},
                         timeout=8
                     )
-                    _gdata = _gr.json()
+                    _gdata = _gr.json() if _gr else {}
                     if _gdata.get("status") == "OK" and _gdata.get("results"):
                         for _res in _gdata["results"]:
                             _rloc = _res.get("geometry",{}).get("location",{})
@@ -1867,15 +1966,21 @@ else:
                 except Exception:
                     pass
 
-                if (_ei+1) % 20 == 0 or _ei == len(_all_universe)-1:
-                    _elapsed = time.time() - _scrape_t0
-                    _rem     = (_elapsed/(_ei+1))*(len(_all_universe)-_ei-1) if _ei > 0 else 0
+                # Batch checkpoint — save progress every 100 stores
+                if (_ei + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                    st.session_state["_scrape_checkpoint"] = {
+                        "universe": list(_all_universe),
+                        "step": f"enrich_c_{_ei+1}",
+                        "saved_at": time.strftime("%d %b %Y %H:%M"),
+                    }
 
-
-
-                    _pct     = 30 + int((_ei+1)/len(_all_universe)*55)
+                if (_ei+1) % 20 == 0 or _ei == len(_need_enrich)-1:
+                    _elapsed_c = time.time() - _enrich_start_c
+                    _rem     = (_elapsed_c/(_ei+1))*(len(_need_enrich)-_ei-1) if _ei > 0 else 0
+                    _pct     = 30 + int((_ei+1)/max(len(_need_enrich),1)*55)
                     _scrape_status.info(
-                        f"Step C: {_ei+1}/{len(_all_universe)} · {_enriched_g} enriched · "
+                        f"Step C: {_ei+1}/{len(_need_enrich)} · {_enriched_g} enriched · "
+                        f"skipped {_already_ok:,} · "
                         f"  {fmt_time(_rem).replace('~','')} remaining"
                     )
                     _scrape_bar.progress(min(_pct, 85))
@@ -1884,7 +1989,11 @@ else:
             if _run_phone_s2:
                 _need_det = [s for s in _all_universe if s.get("place_id") and not s.get("phone")]
                 _scrape_status.info(f"Step D: Phone & hours for {len(_need_det):,} stores...")
+                _det_start = time.time()
                 for _di, _s in enumerate(_need_det):
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step D: Cancelled at {_di}/{len(_need_det)}. Saving progress...")
+                        break
                     _det = fetch_place_details(_s["place_id"], _scrape_api_key)
                     if _det:
                         _s["phone"]   = _det.get("formatted_phone_number","")
@@ -1898,6 +2007,20 @@ else:
                         if _det.get("user_ratings_total") and int(_det["user_ratings_total"]) > _s.get("review_count",0):
                             _s["review_count"] = int(_det["user_ratings_total"])
                     _scrape_bar.progress(85 + int((_di+1)/max(len(_need_det),1)*14))
+                    # Batch checkpoint every 100 stores
+                    if (_di + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                        st.session_state["_scrape_checkpoint"] = {
+                            "universe": list(_all_universe),
+                            "step": f"phone_{_di+1}",
+                            "saved_at": time.strftime("%d %b %Y %H:%M"),
+                        }
+                    if (_di+1) % 50 == 0 or _di == len(_need_det)-1:
+                        _det_elapsed = time.time() - _det_start
+                        _det_rem = (_det_elapsed/(_di+1))*(len(_need_det)-_di-1) if _di > 0 else 0
+                        _scrape_status.info(
+                            f"Step D: {_di+1}/{len(_need_det)} · "
+                            f"  {fmt_time(_det_rem).replace('~','')} remaining"
+                        )
                     time.sleep(0.05)
 
             # ── Step E: POI enrichment (always done at cache time) ────────────
@@ -1907,22 +2030,38 @@ else:
             if _need_poi and _poi_api_key:
                 _scrape_status.info(f"Step E: POI count for {len(_need_poi):,} stores...")
                 _poi_done = 0
+                _poi_start = time.time()
                 for _pi, _s in enumerate(_need_poi):
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step E: Cancelled at {_pi}/{len(_need_poi)}. Saving progress...")
+                        break
                     try:
-                        _pr = requests.get(
+                        _pr = _api_retry(
+                            requests.get,
                             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
                             params={"location":f"{_s['lat']},{_s['lng']}",
                                     "radius":_poi_radius_use,"key":_poi_api_key},
                             timeout=8)
-                        _s["poi_count"] = len(_pr.json().get("results",[]))
+                        _s["poi_count"] = len(_pr.json().get("results",[])) if _pr else 0
                         _poi_done += 1
                     except Exception:
                         _s["poi_count"] = 0
                     if (_pi+1) % 20 == 0 or _pi == len(_need_poi)-1:
                         _scrape_bar.progress(min(85 + int((_pi+1)/len(_need_poi)*14), 99))
-
-
-
+                    # Batch checkpoint every 100 stores
+                    if (_pi + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                        st.session_state["_scrape_checkpoint"] = {
+                            "universe": list(_all_universe),
+                            "step": f"poi_{_pi+1}",
+                            "saved_at": time.strftime("%d %b %Y %H:%M"),
+                        }
+                    if (_pi+1) % 50 == 0 or _pi == len(_need_poi)-1:
+                        _poi_elapsed = time.time() - _poi_start
+                        _poi_rem = (_poi_elapsed/(_pi+1))*(len(_need_poi)-_pi-1) if _pi > 0 else 0
+                        _scrape_status.info(
+                            f"Step E: {_pi+1}/{len(_need_poi)} · {_poi_done} updated · "
+                            f"  {fmt_time(_poi_rem).replace('~','')} remaining"
+                        )
                     time.sleep(0.05)
                 _scrape_status.info(f"Step E: POI enrichment complete — {_poi_done} stores updated.")
 
@@ -1942,10 +2081,17 @@ else:
                 "bbox":        [cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"]],
             }
             _scrape_bar.progress(100)
+            # Clear checkpoint on successful completion
+            if "_scrape_checkpoint" in st.session_state:
+                del st.session_state["_scrape_checkpoint"]
+            if "_cancel_scrape" in st.session_state:
+                del st.session_state["_cancel_scrape"]
+            _elapsed_total = time.time() - _scrape_t0
             _scrape_status.success(
                 f"  Universe built: {len(_all_universe):,} stores total · "
                 f"{_n_port} portfolio · {_n_osm} gap stores · "
-                f"{_n_rated:,} with ratings · {_n_poi:,} with POI · ready for pipeline runs."
+                f"{_n_rated:,} with ratings · {_n_poi:,} with POI · "
+                f"completed in {fmt_time(_elapsed_total)} · ready for pipeline runs."
             )
             st.rerun()
 
