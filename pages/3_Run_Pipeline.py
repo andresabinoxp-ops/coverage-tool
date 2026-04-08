@@ -1049,22 +1049,32 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
         return exec_t, travel_t, exec_t + travel_t + BREAK
 
     def nn_sequence(stores):
-        """Nearest-neighbour sort starting from the centroid of the store list."""
+        """Nearest-neighbour sort starting from the centroid of the store list.
+        Uses index-based tracking instead of list.remove() for O(N log N) vs O(N^2)."""
         if len(stores) <= 1:
             return stores[:]
         c_lat = sum(s["lat"] for s in stores if s.get("lat")) / max(1, sum(1 for s in stores if s.get("lat")))
         c_lng = sum(s["lng"] for s in stores if s.get("lng")) / max(1, sum(1 for s in stores if s.get("lng")))
         ordered   = []
-        remaining = stores[:]
+        used      = [False] * len(stores)
         cur_lat, cur_lng = c_lat, c_lng
-        while remaining:
-            nearest = min(remaining, key=lambda s: haversine_m(
-                cur_lat, cur_lng,
-                s.get("lat", cur_lat), s.get("lng", cur_lng)))
-            ordered.append(nearest)
-            cur_lat = nearest.get("lat", cur_lat)
-            cur_lng = nearest.get("lng", cur_lng)
-            remaining.remove(nearest)
+        for _ in range(len(stores)):
+            best_idx, best_dist = -1, float("inf")
+            for j in range(len(stores)):
+                if used[j]:
+                    continue
+                d = haversine_m(cur_lat, cur_lng,
+                                stores[j].get("lat", cur_lat),
+                                stores[j].get("lng", cur_lng))
+                if d < best_dist:
+                    best_dist = d
+                    best_idx  = j
+            if best_idx < 0:
+                break
+            used[best_idx] = True
+            ordered.append(stores[best_idx])
+            cur_lat = stores[best_idx].get("lat", cur_lat)
+            cur_lng = stores[best_idx].get("lng", cur_lng)
         return ordered
 
 
@@ -1222,7 +1232,19 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
             break
 
     # ── Step 5: Iterative 2-opt cross-day swap ────────────────────────────────
-    for _iter in range(20):
+    # Adaptive limits: reduce iterations for large store counts to avoid O(N^2) blowup
+    _max_per_day = max((len(day_groups[d]) for d in active_days), default=0)
+    if _max_per_day > 60:
+        _opt_iters = 3     # very large — minimal optimization
+        _swap_cap  = 15    # only try border stores (first/last N per day)
+    elif _max_per_day > 30:
+        _opt_iters = 8
+        _swap_cap  = 25
+    else:
+        _opt_iters = 20    # original behavior for small counts
+        _swap_cap  = 0     # 0 = no cap, try all
+
+    for _iter in range(_opt_iters):
         improved = False
         current_travel = total_travel(day_groups)
 
@@ -1233,9 +1255,27 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
                 if not stores_a or not stores_b:
                     continue
 
-                # Try swapping each store from day_a with each store from day_b
-                for ia, sa in enumerate(stores_a):
-                    for ib, sb in enumerate(stores_b):
+                # For large days, only try swapping border stores (first/last N)
+                # These are nearest-neighbour ordered, so borders are cluster edges
+                if _swap_cap and len(stores_a) > _swap_cap:
+                    _half = _swap_cap // 2
+                    a_indices = list(range(_half)) + list(range(max(0, len(stores_a) - _half), len(stores_a)))
+                else:
+                    a_indices = list(range(len(stores_a)))
+                if _swap_cap and len(stores_b) > _swap_cap:
+                    _half = _swap_cap // 2
+                    b_indices = list(range(_half)) + list(range(max(0, len(stores_b) - _half), len(stores_b)))
+                else:
+                    b_indices = list(range(len(stores_b)))
+
+                for ia in a_indices:
+                    if ia >= len(stores_a):
+                        continue
+                    sa = stores_a[ia]
+                    for ib in b_indices:
+                        if ib >= len(stores_b):
+                            continue
+                        sb = stores_b[ib]
                         # Build candidate days after swap
                         new_a = nn_sequence(stores_a[:ia] + [sb] + stores_a[ia+1:])
                         new_b = nn_sequence(stores_b[:ib] + [sa] + stores_b[ib+1:])
@@ -1263,9 +1303,6 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
 
                         if new_travel < current_travel - 0.5:  # 0.5 min threshold
                             day_groups[day_a] = new_a
-
-
-
                             day_groups[day_b] = new_b
                             current_travel    = new_travel
                             improved          = True
@@ -3457,13 +3494,17 @@ if st.button("  Run Coverage Agent", type="primary"):
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
-        status.info(f"Stage 6b — Building {plan_period}-month route plan for {len(all_rep_ids)} reps...")
+        _total_route_stores = sum(
+            1 for s in all_stores
+            if s.get("rep_id", 0) > 0 and s.get("size_tier") in ("Large", "Medium", "Small")
+        )
+        status.info(
+            f"Stage 6b — Building {plan_period}-month route plan for "
+            f"{len(all_rep_ids)} reps · {_total_route_stores:,} stores..."
+        )
 
         # Clear ALL route fields BEFORE building routes
         for s in all_stores:
-
-
-
             s["assigned_day"]    = ""
             s["day_visit_order"] = 0
             for mk in plan_month_keys:
@@ -3472,12 +3513,17 @@ if st.button("  Run Coverage Agent", type="primary"):
             s["plan_visits"] = 0
 
         # Build day assignments
-        for rep_id in all_rep_ids:
+        _route_t0 = time.time()
+        for _ri, rep_id in enumerate(all_rep_ids):
             try:
                 rep_stores = [s for s in all_stores
                     if s.get("rep_id") == rep_id
                     and s.get("size_tier") in ("Large","Medium","Small")]
                 if rep_stores:
+                    status.info(
+                        f"Stage 6b — Rep {_ri+1}/{len(all_rep_ids)} "
+                        f"({len(rep_stores)} stores)..."
+                    )
                     build_daily_routes(rep_stores, daily_minutes=effective_daily,
                                        avg_speed_kmh=avg_speed, city_lat=city_lat, city_lng=city_lng)
             except Exception as e:
