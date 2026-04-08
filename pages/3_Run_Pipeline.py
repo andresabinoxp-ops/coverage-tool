@@ -3418,29 +3418,13 @@ if st.button("  Run Coverage Agent", type="primary"):
                             "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
                         })
 
-                # Apply minimum utilisation threshold in fixed mode too
-                min_util_pct  = 40  # only remove truly under-utilised reps
+                # Fixed mode: respect the user's configured rep count — do NOT
+                # remove under-utilised zones. The user explicitly chose this count.
+                # Only flag low-utilisation zones for informational purposes.
+                min_util_pct   = 40
                 min_util_mins  = daily_minutes * working_days * min_util_pct / 100
-                kept_zones_f   = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
-                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) <  min_util_mins]
-
-                # Reassign stores from under-utilised zones to nearest kept zone
-                if under_util and kept_zones_f:
-                    kept_centroids_f = {z["zone"]: (z["centre_lat"], z["centre_lng"]) for z in kept_zones_f}
-                    under_ids        = {z["zone"] for z in under_util}
-                    kept_ids_f       = set(kept_centroids_f.keys())
-                    for s in all_stores:
-                        if s.get("rep_id") in under_ids and s.get("lat") and s.get("lng"):
-                            nearest_zone = min(
-                                kept_centroids_f.keys(),
-                                key=lambda zid: haversine_m(
-                                    s["lat"], s["lng"],
-                                    kept_centroids_f[zid][0], kept_centroids_f[zid][1]
-                                )
-                            )
-                            s["rep_id"] = nearest_zone
-                        elif s.get("rep_id") in under_ids:
-                            s["rep_id"] = list(kept_ids_f)[0] if kept_ids_f else 0
+                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins]
+                kept_zones_f   = zone_centres  # keep ALL zones in fixed mode
 
                 rep_recommendation = {
                     "mode":                "fixed",
@@ -3448,9 +3432,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
-
-
-
                     "break_minutes":       break_minutes,
                     "monthly_cap_per_rep": effective_daily * working_days,
                     "min_utilisation_pct": min_util_pct,
