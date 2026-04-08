@@ -2172,23 +2172,18 @@ if st.button("  Run Coverage Agent", type="primary"):
                             "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
                         })
 
-            # Apply minimum utilisation threshold
-            min_util_pct = cfg.get("min_utilisation_pct",
-                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
-            min_util_mins  = monthly_cap * min_util_pct / 100
-            kept_zones     = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
-            removed_zones  = [z for z in zone_centres if z.get("time_needed_min",0) <  min_util_mins]
-            zone_centres   = kept_zones
-            actual_reps    = len(zone_centres)
+            # Utilisation threshold disabled — respect configured rep count
+            removed_zones = []
+            actual_reps   = len(zone_centres)
 
-
-
-            # Reassign stores from removed zones to nearest kept zone
-            if removed_zones and kept_zones:
+            if False and removed_zones:  # disabled
                 kept_ids = {z["zone"] for z in kept_zones}
                 # Build centroid lookup for kept zones
                 kept_centroids = {z["zone"]: (z["centre_lat"], z["centre_lng"]) for z in kept_zones}
                 removed_ids    = {z["zone"] for z in removed_zones}
+
+
+
                 for s in all_stores:
                     if s.get("rep_id") in removed_ids and s.get("lat") and s.get("lng"):
                         # Assign to nearest kept zone by distance
@@ -2230,15 +2225,15 @@ if st.button("  Run Coverage Agent", type="primary"):
 
                 # Calculate time utilisation per rep
                 zone_centres = []
-
-
-
                 for zone in range(rep_count):
                     zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == zone]
                     if zone_stores:
                         centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
                         centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
                         zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
+
+
+
                         monthly_cap = effective_daily * working_days
                         zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
                         zone_centres.append({
@@ -2280,15 +2275,15 @@ if st.button("  Run Coverage Agent", type="primary"):
                 rep_recommendation = {
                     "mode":                "fixed",
                     "rep_count":           len(kept_zones_f),
-
-
-
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
                     "break_minutes":       break_minutes,
                     "monthly_cap_per_rep": effective_daily * working_days,
                     "min_utilisation_pct": min_util_pct,
+
+
+
                     "under_utilised_zones": [z["zone"] for z in under_util],
                     "zone_centres":        kept_zones_f,
                 }
@@ -2330,15 +2325,15 @@ if st.button("  Run Coverage Agent", type="primary"):
                     s["day_visit_order"] = (i // 5) + 1
 
         # WEEK LABELS: 4 weeks per month
-
-
-
         WEEK_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
 
         def pick_weeks(vpm):
             """Pick which weeks to visit based on visits_per_month."""
             if vpm >= 4:   return WEEK_LABELS          # weekly — all 4 weeks
             if vpm >= 2:   return [WEEK_LABELS[0], WEEK_LABELS[2]]  # fortnightly — Week 1 + 3
+
+
+
             if vpm >= 1:   return [WEEK_LABELS[1]]     # monthly — Week 2
             return []  # sub-monthly handled separately
 
@@ -2380,15 +2375,15 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # Clear unassigned stores
         for s in all_stores:
-
-
-
             if "assigned_day" not in s:
                 s["assigned_day"]    = ""
                 s["day_visit_order"] = 0
                 s["plan_visits"]     = 0
 
         # Store plan metadata
+
+
+
         st.session_state["route_plan_months"] = {
             "plan_period":  plan_period,
             "month_keys":   plan_month_keys,
@@ -2409,15 +2404,12 @@ if st.button("  Run Coverage Agent", type="primary"):
                     s.get("plan_visits", 0) * s.get("visit_duration_min", 25) / 2
                 )
 
-            # Apply 60% utilisation threshold — remove under-utilised reps
-            min_util_pct  = cfg.get("min_utilisation_pct",
-                st.session_state.get("admin_rep_defaults",{}).get("min_utilisation_pct", 60))
-            min_util_mins = final_monthly_cap * min_util_pct / 100
+            # Do not drop reps based on utilisation — respect the configured rep count.
+            # Low utilisation is informational only.
+            under_util_reps = []
+            kept_reps       = list(rep_time_map.keys())
 
-            under_util_reps = [rid for rid, t in rep_time_map.items() if t < min_util_mins]
-            kept_reps       = [rid for rid, t in rep_time_map.items() if t >= min_util_mins]
-
-            if under_util_reps and kept_reps:
+            if under_util_reps and kept_reps:  # never true — disabled
                 status.info(f"Stage 6b — {len(under_util_reps)} rep(s) below {min_util_pct}% utilisation — redistributing stores...")
                 # Build centroids for kept reps
                 kept_centroids = {}
@@ -2430,9 +2422,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                         )
                 # Reassign stores from under-utilised reps to nearest kept rep
                 for s in all_stores:
-
-
-
                     if s.get("rep_id") in under_util_reps:
                         if s.get("lat") and s.get("lng") and kept_centroids:
                             nearest = min(kept_centroids.keys(),
@@ -2442,6 +2431,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                             s["rep_id"] = kept_reps[0]
 
                 # Check if any kept rep is now over 100% capacity — if so rebalance
+
+
+
                 # Build rep time map after redistribution
                 rep_time_after = {}
                 for s in all_stores:
@@ -2480,9 +2472,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     rid = s.get("rep_id",0)
                     if rid and s.get("plan_visits",0) > 0:
                         rep_time_final[rid] = rep_time_final.get(rid,0) + (
-
-
-
                             s.get("plan_visits",0) * s.get("visit_duration_min",25) / 2
                         )
                 still_under = [rid for rid,t in rep_time_final.items() if t < min_util_mins]
@@ -2492,6 +2481,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                     for rid in still_kept:
                         rs = [s for s in all_stores if s.get("rep_id")==rid and s.get("lat") and s.get("lng")]
                         if rs:
+
+
+
                             still_centroids[rid] = (
                                 sum(s["lat"] for s in rs)/len(rs),
                                 sum(s["lng"] for s in rs)/len(rs)
@@ -2531,8 +2523,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         if enrich_scope != "none":
             status.info(f"Stage 7/{total_steps} — Enriching stores with phone & opening hours...")
 
-
-
             # Select candidates based on scope
             if enrich_scope == "top_n":
                 candidates = sorted(
@@ -2541,6 +2531,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 )[:enrich_count]
             elif enrich_scope == "gaps_only":
                 candidates = sorted(
+
+
+
                     [s for s in all_stores if s.get("coverage_status")=="gap" and s.get("place_id","")],
                     key=lambda x: x.get("score",0), reverse=True
                 )[:enrich_count]
@@ -2579,8 +2572,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             poi_stage = total_steps - (1 if enrich_scope == "none" else 0)
             status.info(f"Stage {poi_stage}/{total_steps} — Enriching stores with nearby POI count...")
 
-
-
             if enrich_poi == "top_n":
                 poi_candidates = sorted(
                     [s for s in all_stores if s.get("lat") and s.get("lng")],
@@ -2590,6 +2581,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                 poi_candidates = [s for s in all_stores if s.get("coverage_status")=="gap" and s.get("lat") and s.get("lng")]
             else:
                 poi_candidates = [s for s in all_stores if s.get("lat") and s.get("lng")]
+
+
 
             poi_enriched = 0
             poi_start    = time.time()
@@ -2628,9 +2621,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     poi_n * w.get("poi",       0.15) +
                     sal_n * w.get("sales",     0.15) +
                     lin_n * w.get("lines",     0.15)
-
-
-
                 )*100))
             status.info(f"Stage {poi_stage}/{total_steps} — POI enrichment complete. Scores updated.")
 
@@ -2640,6 +2630,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         actual_time = fmt_time(time.time()-run_start).replace("~","")
         actual_cost = (
             round(len(portfolio)*PRICE_GEOCODE_PER_CALL +
+
+
+
                   len(universe)/15*PRICE_NEARBY_PER_CALL +
                   (enriched if enrich_scope != "none" else 0)*PRICE_DETAILS_PER_CALL, 2)
         )
