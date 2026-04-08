@@ -1831,8 +1831,6 @@ else:
             _enriched_g = 0
 
            for _ei, _s in enumerate(_all_universe):
-                if _s.get("rating", 0) > 0 and _s.get("review_count", 0) > 0:
-                    continue
                 try:
                     _sname = str(_s.get("store_name","")).strip()
                     _scity = str(_s.get("city","")).strip()
