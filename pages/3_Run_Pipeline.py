@@ -3976,7 +3976,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         # This is what drives rep count — must be consistent with what Results shows
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
         if routed_stores and rep_recommendation:
-            # Count actual reps with stores
+            # Count actual reps with routed stores
             kept_reps = sorted(set(s.get("rep_id",0) for s in routed_stores if s.get("rep_id",0)>0))
             n_kept    = len(kept_reps)
 
@@ -3991,7 +3991,11 @@ if st.button("  Run Coverage Agent", type="primary"):
             rep_recommendation["total_minutes_needed"] = round(zc_total)
             rep_recommendation["monthly_cap_per_rep"]  = round(_eff_cap)
             rep_recommendation["recommended_reps"]     = correct_reps
-            rep_recommendation["actual_routed_reps"]   = n_kept
+            # In fixed mode, preserve the user's configured rep count
+            if rep_recommendation.get("mode") == "fixed":
+                rep_recommendation["actual_routed_reps"] = rep_recommendation.get("rep_count", n_kept)
+            else:
+                rep_recommendation["actual_routed_reps"] = n_kept
 
         bar.progress(80)
 
