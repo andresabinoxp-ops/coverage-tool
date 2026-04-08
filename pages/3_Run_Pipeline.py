@@ -140,6 +140,46 @@ def get_api_key():
     st.error("No Google API key found. Go to Admin Settings or Configure to add your key.")
     st.stop()
 
+# ── Performance helpers ──────────────────────────────────────────────────────
+def _api_retry(fn, *args, max_retries=3, base_delay=1.0, **kwargs):
+    """Call fn(*args, **kwargs) with exponential-backoff retry on failure."""
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception:
+            if attempt == max_retries - 1:
+                return None
+            time.sleep(base_delay * (2 ** attempt))
+    return None
+
+def _build_spatial_grid(stores, cell_size_deg=0.001):
+    """Build a dict grid for O(1) proximity lookups instead of O(N) scans.
+    cell_size_deg ~111m at equator — matches the 100m dedup threshold."""
+    grid = {}
+    for s in stores:
+        lat, lng = float(s.get("lat", 0) or 0), float(s.get("lng", 0) or 0)
+        if not lat or not lng:
+            continue
+        cell = (round(lat / cell_size_deg), round(lng / cell_size_deg))
+        if cell not in grid:
+            grid[cell] = []
+        grid[cell].append(s)
+    return grid
+
+def _is_duplicate_spatial(lat, lng, grid, threshold_m=100, cell_size_deg=0.001):
+    """Check if (lat,lng) is within threshold_m of any store in the spatial grid.
+    Only checks the 9 neighbouring cells — O(1) average instead of O(N)."""
+    cell_lat = round(lat / cell_size_deg)
+    cell_lng = round(lng / cell_size_deg)
+    for dlat in (-1, 0, 1):
+        for dlng in (-1, 0, 1):
+            for s in grid.get((cell_lat + dlat, cell_lng + dlng), []):
+                if haversine_m(lat, lng, float(s["lat"]), float(s["lng"])) < threshold_m:
+                    return True
+    return False
+
+CHECKPOINT_BATCH_SIZE = 100  # save progress every N stores
+
 def smart_tile_radius(lat_min, lat_max, lng_min, lng_max, max_tiles=MAX_TILES):
     mid        = (lat_min + lat_max) / 2
 
@@ -372,10 +412,31 @@ def kmeans_simple(points, k, iterations=20):
     if len(points) <= k: return list(range(len(points)))
     centroids = random.sample(points, k)
     labels = [0]*len(points)
-    for _ in range(iterations):
+    for _it in range(iterations):
         for i,p in enumerate(points):
             dists = [haversine_m(p[0],p[1],c[0],c[1]) for c in centroids]
             labels[i] = dists.index(min(dists))
+
+        # Re-seed empty clusters by splitting the largest cluster's furthest point
+        cluster_sizes = [0] * k
+        for lbl in labels:
+            cluster_sizes[lbl] += 1
+        for j in range(k):
+            if cluster_sizes[j] == 0:
+                # Find largest cluster
+                biggest = max(range(k), key=lambda c: cluster_sizes[c])
+                if cluster_sizes[biggest] <= 1:
+                    continue
+                # Pick the point furthest from the biggest cluster's centroid
+                big_pts = [i for i in range(len(points)) if labels[i] == biggest]
+                furthest = max(big_pts, key=lambda i: haversine_m(
+                    points[i][0], points[i][1],
+                    centroids[biggest][0], centroids[biggest][1]))
+                labels[furthest] = j
+                centroids[j] = points[furthest]
+                cluster_sizes[biggest] -= 1
+                cluster_sizes[j] = 1
+
         new_c = []
         for j in range(k):
             cluster = [points[i] for i in range(len(points)) if labels[i]==j]
@@ -956,6 +1017,150 @@ def assign_cross_city_stores(all_stores, zone_centres, daily_minutes=480,
             s["_cross_city"] = True
         # If no rep has capacity, store stays unassigned (plan_visits=0)
 
+def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
+                          working_days=22, avg_speed_kmh=30, min_util_pct=65,
+                          max_passes=5):
+    """
+    Rebalance store assignments so no rep is below min_util_pct utilisation.
+
+    Rules:
+      - Only move stores from a NEIGHBOURING zone (sorted by centroid distance)
+      - Donor must stay >= min_util_pct after giving up the store
+      - The moved store must be geographically close to the receiving zone
+        (within 2× the receiving zone's intra-cluster radius)
+      - One store moved per inner loop, recalculate, repeat
+      - max_passes full sweeps to prevent infinite loops
+
+    Returns the number of stores moved.
+    """
+    if not zone_centres or len(zone_centres) < 2:
+        return 0
+
+    monthly_cap = (daily_minutes - 30) * working_days   # effective capacity
+    min_thresh  = monthly_cap * min_util_pct / 100
+
+    def _zone_stores(zid):
+        return [s for s in all_stores
+                if s.get("rep_id") == zid
+                and s.get("size_tier") in ("Large", "Medium", "Small")
+                and s.get("lat") and s.get("lng")]
+
+    def _zone_time(stores):
+        return sum(
+            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+            for s in stores
+        )
+
+    def _zone_centroid(stores):
+        if not stores:
+            return 0, 0
+        return (sum(s["lat"] for s in stores) / len(stores),
+                sum(s["lng"] for s in stores) / len(stores))
+
+    def _zone_radius(stores, c_lat, c_lng):
+        """Max distance from centroid to any store in the zone."""
+        if not stores:
+            return 5000  # default 5km
+        return max(haversine_m(c_lat, c_lng, s["lat"], s["lng"]) for s in stores)
+
+    total_moved = 0
+
+    for _pass in range(max_passes):
+        moved_this_pass = 0
+
+        # Recalculate utilisation for all zones
+        zone_util = {}
+        for zc in zone_centres:
+            zid = zc["zone"]
+            zs  = _zone_stores(zid)
+            zt  = _zone_time(zs)
+            zone_util[zid] = {
+                "time": zt,
+                "util_pct": round(zt / monthly_cap * 100) if monthly_cap > 0 else 0,
+                "stores": zs,
+                "centroid": _zone_centroid(zs),
+            }
+
+        # Sort zones by utilisation ascending — fix most underloaded first
+        sorted_zones = sorted(zone_util.items(), key=lambda x: x[1]["util_pct"])
+
+        for zid, zinfo in sorted_zones:
+            if zinfo["util_pct"] >= min_util_pct:
+                continue  # this zone is fine
+
+            recv_lat, recv_lng = zinfo["centroid"]
+            recv_radius = _zone_radius(zinfo["stores"], recv_lat, recv_lng)
+            max_dist    = max(recv_radius * 2, 10000)  # at least 10km, at most 2× zone radius
+
+            # Find neighbouring donors sorted by centroid distance
+            donors = []
+            for d_zid, d_info in zone_util.items():
+                if d_zid == zid:
+                    continue
+                if d_info["util_pct"] <= min_util_pct:
+                    continue  # donor must be above threshold
+                d_lat, d_lng = d_info["centroid"]
+                dist = haversine_m(recv_lat, recv_lng, d_lat, d_lng)
+                donors.append((d_zid, dist, d_info))
+            donors.sort(key=lambda x: x[1])  # nearest first
+
+            for d_zid, _d_dist, d_info in donors:
+                if zinfo["time"] >= min_thresh:
+                    break  # receiver is now at threshold
+
+                # Find candidate stores in donor that are closest to receiver centroid
+                candidates = []
+                for s in d_info["stores"]:
+                    s_dist = haversine_m(recv_lat, recv_lng, s["lat"], s["lng"])
+                    if s_dist <= max_dist:
+                        candidates.append((s, s_dist))
+                candidates.sort(key=lambda x: x[1])  # nearest to receiver first
+
+                for s, s_dist in candidates:
+                    if zinfo["time"] >= min_thresh:
+                        break  # done
+
+                    s_time = s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+
+                    # Check donor stays >= min_util_pct after giving up this store
+                    donor_after = d_info["time"] - s_time
+                    if donor_after < min_thresh:
+                        continue  # would drain donor below threshold
+
+                    # Move the store
+                    s["rep_id"] = zid
+                    zinfo["time"]    += s_time
+                    zinfo["util_pct"] = round(zinfo["time"] / monthly_cap * 100)
+                    d_info["time"]   -= s_time
+                    d_info["util_pct"] = round(d_info["time"] / monthly_cap * 100)
+                    # Remove from donor's store list, add to receiver's
+                    d_info["stores"] = [x for x in d_info["stores"] if x is not s]
+                    zinfo["stores"].append(s)
+                    # Recalculate receiver centroid
+                    zinfo["centroid"] = _zone_centroid(zinfo["stores"])
+                    recv_lat, recv_lng = zinfo["centroid"]
+                    moved_this_pass += 1
+                    total_moved     += 1
+
+        if moved_this_pass == 0:
+            break  # nothing left to rebalance
+
+    # Update zone_centres with new values
+    for zc in zone_centres:
+        zid = zc["zone"]
+        zs  = _zone_stores(zid)
+        if zs:
+            zc["store_count"]     = len(zs)
+            zc["time_needed_min"] = round(_zone_time(zs))
+            zc["capacity_min"]    = monthly_cap
+            zc["utilisation_pct"] = round(_zone_time(zs) / monthly_cap * 100) if monthly_cap > 0 else 0
+            zc["centre_lat"]      = round(sum(s["lat"] for s in zs) / len(zs), 4)
+            zc["centre_lng"]      = round(sum(s["lng"] for s in zs) / len(zs), 4)
+            zc["visits_per_month"] = sum(s.get("visits_per_month", 1) for s in zs)
+
+    return total_moved
+
+
 def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg_speed_kmh=30, city_lat=0, city_lng=0):
     """
     Assign stores to days (Mon-Fri) and sequence them within each day.
@@ -1009,22 +1214,32 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
         return exec_t, travel_t, exec_t + travel_t + BREAK
 
     def nn_sequence(stores):
-        """Nearest-neighbour sort starting from the centroid of the store list."""
+        """Nearest-neighbour sort starting from the centroid of the store list.
+        Uses index-based tracking instead of list.remove() for O(N log N) vs O(N^2)."""
         if len(stores) <= 1:
             return stores[:]
         c_lat = sum(s["lat"] for s in stores if s.get("lat")) / max(1, sum(1 for s in stores if s.get("lat")))
         c_lng = sum(s["lng"] for s in stores if s.get("lng")) / max(1, sum(1 for s in stores if s.get("lng")))
         ordered   = []
-        remaining = stores[:]
+        used      = [False] * len(stores)
         cur_lat, cur_lng = c_lat, c_lng
-        while remaining:
-            nearest = min(remaining, key=lambda s: haversine_m(
-                cur_lat, cur_lng,
-                s.get("lat", cur_lat), s.get("lng", cur_lng)))
-            ordered.append(nearest)
-            cur_lat = nearest.get("lat", cur_lat)
-            cur_lng = nearest.get("lng", cur_lng)
-            remaining.remove(nearest)
+        for _ in range(len(stores)):
+            best_idx, best_dist = -1, float("inf")
+            for j in range(len(stores)):
+                if used[j]:
+                    continue
+                d = haversine_m(cur_lat, cur_lng,
+                                stores[j].get("lat", cur_lat),
+                                stores[j].get("lng", cur_lng))
+                if d < best_dist:
+                    best_dist = d
+                    best_idx  = j
+            if best_idx < 0:
+                break
+            used[best_idx] = True
+            ordered.append(stores[best_idx])
+            cur_lat = stores[best_idx].get("lat", cur_lat)
+            cur_lng = stores[best_idx].get("lng", cur_lng)
         return ordered
 
 
@@ -1182,7 +1397,19 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
             break
 
     # ── Step 5: Iterative 2-opt cross-day swap ────────────────────────────────
-    for _iter in range(20):
+    # Adaptive limits: reduce iterations for large store counts to avoid O(N^2) blowup
+    _max_per_day = max((len(day_groups[d]) for d in active_days), default=0)
+    if _max_per_day > 60:
+        _opt_iters = 3     # very large — minimal optimization
+        _swap_cap  = 15    # only try border stores (first/last N per day)
+    elif _max_per_day > 30:
+        _opt_iters = 8
+        _swap_cap  = 25
+    else:
+        _opt_iters = 20    # original behavior for small counts
+        _swap_cap  = 0     # 0 = no cap, try all
+
+    for _iter in range(_opt_iters):
         improved = False
         current_travel = total_travel(day_groups)
 
@@ -1193,9 +1420,27 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
                 if not stores_a or not stores_b:
                     continue
 
-                # Try swapping each store from day_a with each store from day_b
-                for ia, sa in enumerate(stores_a):
-                    for ib, sb in enumerate(stores_b):
+                # For large days, only try swapping border stores (first/last N)
+                # These are nearest-neighbour ordered, so borders are cluster edges
+                if _swap_cap and len(stores_a) > _swap_cap:
+                    _half = _swap_cap // 2
+                    a_indices = list(range(_half)) + list(range(max(0, len(stores_a) - _half), len(stores_a)))
+                else:
+                    a_indices = list(range(len(stores_a)))
+                if _swap_cap and len(stores_b) > _swap_cap:
+                    _half = _swap_cap // 2
+                    b_indices = list(range(_half)) + list(range(max(0, len(stores_b) - _half), len(stores_b)))
+                else:
+                    b_indices = list(range(len(stores_b)))
+
+                for ia in a_indices:
+                    if ia >= len(stores_a):
+                        continue
+                    sa = stores_a[ia]
+                    for ib in b_indices:
+                        if ib >= len(stores_b):
+                            continue
+                        sb = stores_b[ib]
                         # Build candidate days after swap
                         new_a = nn_sequence(stores_a[:ia] + [sb] + stores_a[ia+1:])
                         new_b = nn_sequence(stores_b[:ib] + [sa] + stores_b[ib+1:])
@@ -1223,9 +1468,6 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
 
                         if new_travel < current_travel - 0.5:  # 0.5 min threshold
                             day_groups[day_a] = new_a
-
-
-
                             day_groups[day_b] = new_b
                             current_travel    = new_travel
                             improved          = True
@@ -1642,12 +1884,44 @@ else:
         try: _scrape_api_key = st.secrets.get("GOOGLE_MAPS_API_KEY","") or None
         except: _scrape_api_key = None
 
+    # ── Resume from checkpoint if available ────────────────────────────
+    _ckpt = st.session_state.get("_scrape_checkpoint")
+    if _ckpt and _ckpt.get("universe"):
+        st.warning(
+            f"  Checkpoint available from a previous interrupted run "
+            f"({_ckpt.get('step','unknown')} · {_ckpt.get('saved_at','?')} · "
+            f"{len(_ckpt['universe']):,} stores). "
+        )
+        _rc1, _rc2 = st.columns(2)
+        with _rc1:
+            if st.button("  Restore checkpoint to cache", key="btn_restore_ckpt"):
+                import datetime as _dt_rc
+                if "universe_cache" not in st.session_state:
+                    st.session_state["universe_cache"] = {}
+                st.session_state["universe_cache"][_cache_key] = {
+                    "universe":    _ckpt["universe"],
+                    "market_name": cfg.get("market_name",""),
+                    "scraped_at":  f"Restored {_dt_rc.datetime.now().strftime('%d %b %Y %H:%M')}",
+                    "categories":  cfg.get("categories",[]),
+                    "bbox":        [cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"]],
+                }
+                del st.session_state["_scrape_checkpoint"]
+                st.success(f"  Restored {len(_ckpt['universe']):,} stores from checkpoint.")
+                st.rerun()
+        with _rc2:
+            if st.button("  Discard checkpoint", key="btn_discard_ckpt"):
+                del st.session_state["_scrape_checkpoint"]
+                st.rerun()
+
     if st.button("  Build & enrich universe", type="primary", key="btn_scrape_universe"):
         if not _scrape_api_key:
             st.error("No API key — set GOOGLE_MAPS_API_KEY in Secrets or Admin Settings.")
         else:
+            st.session_state["_cancel_scrape"] = False
             _scrape_status = st.empty()
             _scrape_bar    = st.progress(0)
+            if st.button("  Stop build (saves progress)", key="btn_cancel_scrape"):
+                st.session_state["_cancel_scrape"] = True
             _scrape_t0     = time.time()
 
             # ── Step A: Portfolio stores (Option 3) ───────────────────────────
@@ -1693,8 +1967,15 @@ else:
             _done_tiles  = 0
             _type_filtered = 0
 
+            _scrape_cancelled = False
             for _cat in cfg["categories"]:
+                if _scrape_cancelled:
+                    break
                 for _tlat,_tlng in _centres:
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step B: Cancelled at {_done_tiles}/{_total_tiles} tiles. Saving {len(_osm_shops):,} stores...")
+                        _scrape_cancelled = True
+                        break
                     _token = None
                     while True:
                         _data = fetch_places(_tlat,_tlng,_radius_m,_cat,_scrape_api_key,_token)
@@ -1775,6 +2056,9 @@ else:
 
                 "https://overpass.kumi.systems/api/interpreter",
             ]
+            # Build spatial grid for fast deduplication (O(1) per lookup vs O(N))
+            _google_grid = _build_spatial_grid(_osm_shops)
+
             for _mirror in _osm_mirrors:
                 try:
                     _osm_r = requests.post(_mirror, data={"data":_osm_q}, timeout=30)
@@ -1786,12 +2070,8 @@ else:
                         _elat  = _el["lat"] if _el["type"]=="node" else _el.get("center",{}).get("lat")
                         _elng  = _el["lon"] if _el["type"]=="node" else _el.get("center",{}).get("lon")
                         if not (_elat and _elng): continue
-                        # Deduplicate against Google results (within 100m = same store)
-                        _duplicate = any(
-                            haversine_m(float(_elat),float(_elng),
-                                        float(s.get("lat",0)),float(s.get("lng",0))) < 100
-                            for s in _osm_shops
-                        )
+                        # Deduplicate against Google results using spatial grid (O(1) avg)
+                        _duplicate = _is_duplicate_spatial(float(_elat), float(_elng), _google_grid)
                         if _duplicate: continue
                         _addr = _tags.get("addr:street","")
                         _city = _tags.get("addr:city") or _tags.get("addr:suburb") or cfg.get("city","")
@@ -1818,19 +2098,39 @@ else:
             _scrape_bar.progress(30)
             _all_universe = _portfolio_stores + _osm_shops
 
-            # ── Step C: Google enrichment — ALL stores, no cap ────────────────
+            # ── Save scrape checkpoint (crash recovery) ──────────────────
+            import datetime as _dt_ckpt
+            if "universe_cache" not in st.session_state:
+                st.session_state["universe_cache"] = {}
+            st.session_state["_scrape_checkpoint"] = {
+                "universe": list(_all_universe),
+                "step": "scrape_done",
+                "saved_at": _dt_ckpt.datetime.now().strftime("%d %b %Y %H:%M"),
+            }
+
+            # ── Step C: Google enrichment — ONLY stores missing data ─────────
+            # Skip stores already enriched by Google Places scraping (have rating > 0
+            # AND review_count > 0) — these already got their data in Step B.
+            _need_enrich = [s for s in _all_universe
+                           if not (s.get("rating", 0) > 0 and s.get("review_count", 0) > 0)]
+            _already_ok  = len(_all_universe) - len(_need_enrich)
             _scrape_status.info(
-
-
-
-                f"Step C: Google enrichment for all {len(_all_universe):,} stores "
-                "(portfolio + gap) — fetching ratings, reviews, price level..."
+                f"Step C: Enriching {len(_need_enrich):,} stores missing data "
+                f"(skipping {_already_ok:,} already enriched by Google Places)..."
             )
             _mkt_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
             _mkt_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
             _enriched_g = 0
+            # Cancel support
+            if "_cancel_scrape" not in st.session_state:
+                st.session_state["_cancel_scrape"] = False
 
-            for _ei, _s in enumerate(_all_universe):
+            _enrich_start_c = time.time()
+            for _ei, _s in enumerate(_need_enrich):
+                # Check cancel flag
+                if st.session_state.get("_cancel_scrape"):
+                    _scrape_status.warning(f"Step C: Cancelled at {_ei}/{len(_need_enrich)}. Saving progress...")
+                    break
                 try:
                     _sname = str(_s.get("store_name","")).strip()
                     _scity = str(_s.get("city","")).strip()
@@ -1838,12 +2138,13 @@ else:
                     if not _query: continue
                     _slat  = _s.get("lat") or _mkt_lat
                     _slng  = _s.get("lng") or _mkt_lng
-                    _gr    = requests.get(
+                    _gr    = _api_retry(
+                        requests.get,
                         "https://maps.googleapis.com/maps/api/place/textsearch/json",
                         params={"query":_query,"location":f"{_slat},{_slng}","radius":"2000","key":_scrape_api_key},
                         timeout=8
                     )
-                    _gdata = _gr.json()
+                    _gdata = _gr.json() if _gr else {}
                     if _gdata.get("status") == "OK" and _gdata.get("results"):
                         for _res in _gdata["results"]:
                             _rloc = _res.get("geometry",{}).get("location",{})
@@ -1867,15 +2168,21 @@ else:
                 except Exception:
                     pass
 
-                if (_ei+1) % 20 == 0 or _ei == len(_all_universe)-1:
-                    _elapsed = time.time() - _scrape_t0
-                    _rem     = (_elapsed/(_ei+1))*(len(_all_universe)-_ei-1) if _ei > 0 else 0
+                # Batch checkpoint — save progress every 100 stores
+                if (_ei + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                    st.session_state["_scrape_checkpoint"] = {
+                        "universe": list(_all_universe),
+                        "step": f"enrich_c_{_ei+1}",
+                        "saved_at": time.strftime("%d %b %Y %H:%M"),
+                    }
 
-
-
-                    _pct     = 30 + int((_ei+1)/len(_all_universe)*55)
+                if (_ei+1) % 20 == 0 or _ei == len(_need_enrich)-1:
+                    _elapsed_c = time.time() - _enrich_start_c
+                    _rem     = (_elapsed_c/(_ei+1))*(len(_need_enrich)-_ei-1) if _ei > 0 else 0
+                    _pct     = 30 + int((_ei+1)/max(len(_need_enrich),1)*55)
                     _scrape_status.info(
-                        f"Step C: {_ei+1}/{len(_all_universe)} · {_enriched_g} enriched · "
+                        f"Step C: {_ei+1}/{len(_need_enrich)} · {_enriched_g} enriched · "
+                        f"skipped {_already_ok:,} · "
                         f"  {fmt_time(_rem).replace('~','')} remaining"
                     )
                     _scrape_bar.progress(min(_pct, 85))
@@ -1884,7 +2191,11 @@ else:
             if _run_phone_s2:
                 _need_det = [s for s in _all_universe if s.get("place_id") and not s.get("phone")]
                 _scrape_status.info(f"Step D: Phone & hours for {len(_need_det):,} stores...")
+                _det_start = time.time()
                 for _di, _s in enumerate(_need_det):
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step D: Cancelled at {_di}/{len(_need_det)}. Saving progress...")
+                        break
                     _det = fetch_place_details(_s["place_id"], _scrape_api_key)
                     if _det:
                         _s["phone"]   = _det.get("formatted_phone_number","")
@@ -1898,6 +2209,20 @@ else:
                         if _det.get("user_ratings_total") and int(_det["user_ratings_total"]) > _s.get("review_count",0):
                             _s["review_count"] = int(_det["user_ratings_total"])
                     _scrape_bar.progress(85 + int((_di+1)/max(len(_need_det),1)*14))
+                    # Batch checkpoint every 100 stores
+                    if (_di + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                        st.session_state["_scrape_checkpoint"] = {
+                            "universe": list(_all_universe),
+                            "step": f"phone_{_di+1}",
+                            "saved_at": time.strftime("%d %b %Y %H:%M"),
+                        }
+                    if (_di+1) % 50 == 0 or _di == len(_need_det)-1:
+                        _det_elapsed = time.time() - _det_start
+                        _det_rem = (_det_elapsed/(_di+1))*(len(_need_det)-_di-1) if _di > 0 else 0
+                        _scrape_status.info(
+                            f"Step D: {_di+1}/{len(_need_det)} · "
+                            f"  {fmt_time(_det_rem).replace('~','')} remaining"
+                        )
                     time.sleep(0.05)
 
             # ── Step E: POI enrichment (always done at cache time) ────────────
@@ -1907,22 +2232,38 @@ else:
             if _need_poi and _poi_api_key:
                 _scrape_status.info(f"Step E: POI count for {len(_need_poi):,} stores...")
                 _poi_done = 0
+                _poi_start = time.time()
                 for _pi, _s in enumerate(_need_poi):
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step E: Cancelled at {_pi}/{len(_need_poi)}. Saving progress...")
+                        break
                     try:
-                        _pr = requests.get(
+                        _pr = _api_retry(
+                            requests.get,
                             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
                             params={"location":f"{_s['lat']},{_s['lng']}",
                                     "radius":_poi_radius_use,"key":_poi_api_key},
                             timeout=8)
-                        _s["poi_count"] = len(_pr.json().get("results",[]))
+                        _s["poi_count"] = len(_pr.json().get("results",[])) if _pr else 0
                         _poi_done += 1
                     except Exception:
                         _s["poi_count"] = 0
                     if (_pi+1) % 20 == 0 or _pi == len(_need_poi)-1:
                         _scrape_bar.progress(min(85 + int((_pi+1)/len(_need_poi)*14), 99))
-
-
-
+                    # Batch checkpoint every 100 stores
+                    if (_pi + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                        st.session_state["_scrape_checkpoint"] = {
+                            "universe": list(_all_universe),
+                            "step": f"poi_{_pi+1}",
+                            "saved_at": time.strftime("%d %b %Y %H:%M"),
+                        }
+                    if (_pi+1) % 50 == 0 or _pi == len(_need_poi)-1:
+                        _poi_elapsed = time.time() - _poi_start
+                        _poi_rem = (_poi_elapsed/(_pi+1))*(len(_need_poi)-_pi-1) if _pi > 0 else 0
+                        _scrape_status.info(
+                            f"Step E: {_pi+1}/{len(_need_poi)} · {_poi_done} updated · "
+                            f"  {fmt_time(_poi_rem).replace('~','')} remaining"
+                        )
                     time.sleep(0.05)
                 _scrape_status.info(f"Step E: POI enrichment complete — {_poi_done} stores updated.")
 
@@ -1942,10 +2283,17 @@ else:
                 "bbox":        [cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"]],
             }
             _scrape_bar.progress(100)
+            # Clear checkpoint on successful completion
+            if "_scrape_checkpoint" in st.session_state:
+                del st.session_state["_scrape_checkpoint"]
+            if "_cancel_scrape" in st.session_state:
+                del st.session_state["_cancel_scrape"]
+            _elapsed_total = time.time() - _scrape_t0
             _scrape_status.success(
                 f"  Universe built: {len(_all_universe):,} stores total · "
                 f"{_n_port} portfolio · {_n_osm} gap stores · "
-                f"{_n_rated:,} with ratings · {_n_poi:,} with POI · ready for pipeline runs."
+                f"{_n_rated:,} with ratings · {_n_poi:,} with POI · "
+                f"completed in {fmt_time(_elapsed_total)} · ready for pipeline runs."
             )
             st.rerun()
 
@@ -3204,75 +3552,115 @@ if st.button("  Run Coverage Agent", type="primary"):
         else:
             # Fixed mode — cluster into configured rep count
             rep_count = max(1, cfg.get("rep_count", 1))
-            status.info(f"Stage 6/{total_steps} — Allocating {rep_count} rep routes (time-based workload)...")
+            status.info(f"Stage 6/{total_steps} [v3] — Allocating {rep_count} rep routes (fixed mode)...")
             if priority:
                 pts    = [(s["lat"],s["lng"]) for s in priority]
                 labels = kmeans_simple(pts, rep_count)
+
+                # ── GUARANTEE exactly rep_count non-empty zones ──────────────
+                # K-means can produce empty clusters when stores are
+                # geographically concentrated. Force-split the largest
+                # cluster until we have exactly rep_count non-empty zones.
+                _actual_zones = len(set(labels))
+                while _actual_zones < rep_count and len(priority) >= rep_count:
+                    # Find the largest cluster
+                    from collections import Counter as _Counter
+                    _counts = _Counter(labels)
+                    _biggest_lbl = max(_counts, key=lambda x: _counts[x])
+                    if _counts[_biggest_lbl] < 2:
+                        break  # can't split a single-store cluster
+
+                    # Find an unused label
+                    _used = set(labels)
+                    _new_lbl = None
+                    for _candidate in range(rep_count):
+                        if _candidate not in _used:
+                            _new_lbl = _candidate
+                            break
+                    if _new_lbl is None:
+                        break
+
+                    # Split: take the half of the biggest cluster that is
+                    # furthest from the cluster centroid
+                    _big_indices = [i for i, l in enumerate(labels) if l == _biggest_lbl]
+                    _c_lat = sum(pts[i][0] for i in _big_indices) / len(_big_indices)
+                    _c_lng = sum(pts[i][1] for i in _big_indices) / len(_big_indices)
+                    _big_indices.sort(
+                        key=lambda i: haversine_m(pts[i][0], pts[i][1], _c_lat, _c_lng),
+                        reverse=True
+                    )
+                    # Move the furthest half to the new label
+                    _half = len(_big_indices) // 2
+                    for _idx in _big_indices[:_half]:
+                        labels[_idx] = _new_lbl
+
+                    _actual_zones = len(set(labels))
+
+                # Remap labels to contiguous 0..N-1 so rep_ids are 1..N
+                _unique_labels = sorted(set(labels))
+                _label_map     = {old: new for new, old in enumerate(_unique_labels)}
+                labels         = [_label_map[l] for l in labels]
+
                 for s, lbl in zip(priority, labels):
                     s["rep_id"] = int(lbl) + 1
 
                 # Calculate time utilisation per rep
                 zone_centres = []
-                for zone in range(rep_count):
+                monthly_cap  = effective_daily * working_days
+                for zone in range(len(_unique_labels)):
                     zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == zone]
+                    if not zone_stores:
+                        continue
+                    centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
+                    centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
+                    zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
+                    zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
+                    zone_centres.append({
+                        "zone":                 zone + 1,
+                        "centre_lat":           round(centre_lat, 4),
+                        "centre_lng":           round(centre_lng, 4),
+                        "store_count":          len(zone_stores),
+                        "visits_per_month":     zone_visits,
+                        "time_needed_min":      round(zone_mins),
+                        "capacity_min":         monthly_cap,
+                        "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
+                    })
 
+                # Fixed mode: respect the user's configured rep count — do NOT
+                # remove under-utilised zones. The user explicitly chose this count.
+                #
+                # Rebalance: ensure no rep is below 65% utilisation by moving
+                # stores from neighbouring over-65% zones. Stores only move
+                # to geographically close zones (never across the city).
+                min_util_pct   = 65
+                status.info(f"Stage 6/{total_steps} — Rebalancing zones to ≥{min_util_pct}% utilisation...")
+                _n_moved = rebalance_zones_65pct(
+                    all_stores, zone_centres,
+                    daily_minutes=daily_minutes,
+                    working_days=working_days,
+                    avg_speed_kmh=avg_speed,
+                    min_util_pct=min_util_pct,
+                    max_passes=5,
+                )
+                if _n_moved > 0:
+                    status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved} stores to raise under-utilised zones.")
 
-
-                    if zone_stores:
-                        centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
-                        centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
-                        zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
-                        monthly_cap = effective_daily * working_days
-                        zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
-                        zone_centres.append({
-                            "zone":                 zone + 1,
-                            "centre_lat":           round(centre_lat, 4),
-                            "centre_lng":           round(centre_lng, 4),
-                            "store_count":          len(zone_stores),
-                            "visits_per_month":     zone_visits,
-                            "time_needed_min":      round(zone_mins),
-                            "capacity_min":         monthly_cap,
-                            "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
-                        })
-
-                # Apply minimum utilisation threshold in fixed mode too
-                min_util_pct  = 40  # only remove truly under-utilised reps
-                min_util_mins  = daily_minutes * working_days * min_util_pct / 100
-                kept_zones_f   = [z for z in zone_centres if z.get("time_needed_min",0) >= min_util_mins]
-                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) <  min_util_mins]
-
-                # Reassign stores from under-utilised zones to nearest kept zone
-                if under_util and kept_zones_f:
-                    kept_centroids_f = {z["zone"]: (z["centre_lat"], z["centre_lng"]) for z in kept_zones_f}
-                    under_ids        = {z["zone"] for z in under_util}
-                    kept_ids_f       = set(kept_centroids_f.keys())
-                    for s in all_stores:
-                        if s.get("rep_id") in under_ids and s.get("lat") and s.get("lng"):
-                            nearest_zone = min(
-                                kept_centroids_f.keys(),
-                                key=lambda zid: haversine_m(
-                                    s["lat"], s["lng"],
-                                    kept_centroids_f[zid][0], kept_centroids_f[zid][1]
-                                )
-                            )
-                            s["rep_id"] = nearest_zone
-                        elif s.get("rep_id") in under_ids:
-                            s["rep_id"] = list(kept_ids_f)[0] if kept_ids_f else 0
+                min_util_mins  = (daily_minutes - break_minutes) * working_days * min_util_pct / 100
+                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins]
+                kept_zones_f   = zone_centres  # keep ALL zones in fixed mode
 
                 rep_recommendation = {
                     "mode":                "fixed",
-                    "rep_count":           len(kept_zones_f),
+                    "rep_count":           rep_count,  # always the user's configured value
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
-
-
-
                     "break_minutes":       break_minutes,
                     "monthly_cap_per_rep": effective_daily * working_days,
                     "min_utilisation_pct": min_util_pct,
                     "under_utilised_zones": [z["zone"] for z in under_util],
                     "zone_centres":        kept_zones_f,
+                    "stores_rebalanced":   _n_moved,
                 }
             else:
                 rep_recommendation = {"mode":"fixed","rep_count":rep_count,"zone_centres":[]}
@@ -3311,13 +3699,25 @@ if st.button("  Run Coverage Agent", type="primary"):
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
-        status.info(f"Stage 6b — Building {plan_period}-month route plan for {len(all_rep_ids)} reps...")
+        # In fixed mode, if all_rep_ids is fewer than configured, log a warning
+        _cfg_rep_count = cfg.get("rep_count", 0)
+        if rep_recommendation and rep_recommendation.get("mode") == "fixed" and len(all_rep_ids) < _cfg_rep_count:
+            status.warning(
+                f"Zone assignment produced {len(all_rep_ids)} rep IDs but {_cfg_rep_count} were configured. "
+                f"Rep IDs found: {all_rep_ids}. Zone centres: {len(zone_centres)}."
+            )
+
+        _total_route_stores = sum(
+            1 for s in all_stores
+            if s.get("rep_id", 0) > 0 and s.get("size_tier") in ("Large", "Medium", "Small")
+        )
+        status.info(
+            f"Stage 6b [v3] — Building {plan_period}-month route plan for "
+            f"{len(all_rep_ids)} reps · {_total_route_stores:,} stores..."
+        )
 
         # Clear ALL route fields BEFORE building routes
         for s in all_stores:
-
-
-
             s["assigned_day"]    = ""
             s["day_visit_order"] = 0
             for mk in plan_month_keys:
@@ -3326,12 +3726,17 @@ if st.button("  Run Coverage Agent", type="primary"):
             s["plan_visits"] = 0
 
         # Build day assignments
-        for rep_id in all_rep_ids:
+        _route_t0 = time.time()
+        for _ri, rep_id in enumerate(all_rep_ids):
             try:
                 rep_stores = [s for s in all_stores
                     if s.get("rep_id") == rep_id
                     and s.get("size_tier") in ("Large","Medium","Small")]
                 if rep_stores:
+                    status.info(
+                        f"Stage 6b — Rep {_ri+1}/{len(all_rep_ids)} "
+                        f"({len(rep_stores)} stores)..."
+                    )
                     build_daily_routes(rep_stores, daily_minutes=effective_daily,
                                        avg_speed_kmh=avg_speed, city_lat=city_lat, city_lng=city_lng)
             except Exception as e:
@@ -3622,7 +4027,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         # This is what drives rep count — must be consistent with what Results shows
         routed_stores = [s for s in all_stores if s.get("plan_visits",0) > 0 and s.get("rep_id",0) > 0]
         if routed_stores and rep_recommendation:
-            # Count actual reps with stores
+            # Count actual reps with routed stores
             kept_reps = sorted(set(s.get("rep_id",0) for s in routed_stores if s.get("rep_id",0)>0))
             n_kept    = len(kept_reps)
 
@@ -3637,7 +4042,11 @@ if st.button("  Run Coverage Agent", type="primary"):
             rep_recommendation["total_minutes_needed"] = round(zc_total)
             rep_recommendation["monthly_cap_per_rep"]  = round(_eff_cap)
             rep_recommendation["recommended_reps"]     = correct_reps
-            rep_recommendation["actual_routed_reps"]   = n_kept
+            # In fixed mode, preserve the user's configured rep count
+            if rep_recommendation.get("mode") == "fixed":
+                rep_recommendation["actual_routed_reps"] = rep_recommendation.get("rep_count", n_kept)
+            else:
+                rep_recommendation["actual_routed_reps"] = n_kept
 
         bar.progress(80)
 
