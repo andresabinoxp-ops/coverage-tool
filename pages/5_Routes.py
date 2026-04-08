@@ -266,7 +266,8 @@ try:
                    "Rep: {rep}",
             "style":{"backgroundColor":"#1A2B4A","color":"white","padding":"10px","borderRadius":"8px","fontSize":"13px"}
         }
-        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
+        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip,
+            map_style="mapbox://styles/mapbox/light-v11"))
     else:
         st.info("No stores match the current filters.")
 except ImportError:
