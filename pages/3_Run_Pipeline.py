@@ -1830,7 +1830,7 @@ else:
             _mkt_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
             _enriched_g = 0
 
-           for _ei, _s in enumerate(_all_universe):
+            for _ei, _s in enumerate(_all_universe):
                 try:
                     _sname = str(_s.get("store_name","")).strip()
                     _scity = str(_s.get("city","")).strip()
@@ -3647,7 +3647,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         _used_cache = st.session_state.get("universe_cache", {}).get(_run_cache_key) is not None
         if enrich_scope != "none" and not _used_cache:
             status.info(f"Stage 7/{total_steps} — Enriching stores with phone & opening hours...")
-            candidates   = [s for s in all_stores if s.get("place_id","") and not s.get("phone","")]
+            candidates   = [s for s in all_stores if s.get("place_id","")]
             enriched     = 0
             enrich_start = time.time()
             for i, store in enumerate(candidates):
