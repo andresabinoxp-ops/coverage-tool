@@ -1158,9 +1158,9 @@ else:
                         f"{len(_osm_shops):,} stores ·  {fmt_time(_rem).replace('~','')} remaining"
                     )
                     _scrape_bar.progress(_pct)
-                    # Checkpoint every 50 tiles — save to session state silently
-                    # Download button is shown above the Run button, outside this loop
-                    # so clicking it does NOT interrupt scraping
+                    # Checkpoint every 50 tiles — silent save to session state only
+                    # No download button here — clicking any button interrupts scraping
+                    # Resume banner at top of page handles recovery if scraping is cut off
                     if _done_tiles % 50 == 0 or _done_tiles == _total_tiles:
                         st.session_state["scrape_checkpoint"] = {
                             "universe": _osm_shops[:], "done_tiles": _done_tiles,
