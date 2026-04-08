@@ -267,7 +267,7 @@ try:
             "style":{"backgroundColor":"#1A2B4A","color":"white","padding":"10px","borderRadius":"8px","fontSize":"13px"}
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip,
-            map_style="mapbox://styles/mapbox/light-v11"))
+            map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"))
     else:
         st.info("No stores match the current filters.")
 except ImportError:
