@@ -3596,16 +3596,19 @@ if st.button("  Run Coverage Agent", type="primary"):
 
                     _actual_zones = len(set(labels))
 
+                # Remap labels to contiguous 0..N-1 so rep_ids are 1..N
+                _unique_labels = sorted(set(labels))
+                _label_map     = {old: new for new, old in enumerate(_unique_labels)}
+                labels         = [_label_map[l] for l in labels]
+
                 for s, lbl in zip(priority, labels):
                     s["rep_id"] = int(lbl) + 1
 
                 # Calculate time utilisation per rep
-                # Use actual labels present (guaranteed == rep_count now)
-                _zone_labels = sorted(set(labels))
                 zone_centres = []
                 monthly_cap  = effective_daily * working_days
-                for _zi, _lbl in enumerate(_zone_labels):
-                    zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == _lbl]
+                for zone in range(len(_unique_labels)):
+                    zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == zone]
                     if not zone_stores:
                         continue
                     centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
@@ -3613,7 +3616,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
                     zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
                     zone_centres.append({
-                        "zone":                 int(_lbl) + 1,
+                        "zone":                 zone + 1,
                         "centre_lat":           round(centre_lat, 4),
                         "centre_lng":           round(centre_lng, 4),
                         "store_count":          len(zone_stores),
@@ -3695,6 +3698,14 @@ if st.button("  Run Coverage Agent", type="primary"):
         city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
+
+        # In fixed mode, if all_rep_ids is fewer than configured, log a warning
+        _cfg_rep_count = cfg.get("rep_count", 0)
+        if rep_recommendation and rep_recommendation.get("mode") == "fixed" and len(all_rep_ids) < _cfg_rep_count:
+            status.warning(
+                f"Zone assignment produced {len(all_rep_ids)} rep IDs but {_cfg_rep_count} were configured. "
+                f"Rep IDs found: {all_rep_ids}. Zone centres: {len(zone_centres)}."
+            )
 
         _total_route_stores = sum(
             1 for s in all_stores
