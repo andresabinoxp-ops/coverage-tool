@@ -3552,7 +3552,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         else:
             # Fixed mode — cluster into configured rep count
             rep_count = max(1, cfg.get("rep_count", 1))
-            status.info(f"Stage 6/{total_steps} — Allocating {rep_count} rep routes (time-based workload)...")
+            status.info(f"Stage 6/{total_steps} [v3] — Allocating {rep_count} rep routes (fixed mode)...")
             if priority:
                 pts    = [(s["lat"],s["lng"]) for s in priority]
                 labels = kmeans_simple(pts, rep_count)
@@ -3712,7 +3712,7 @@ if st.button("  Run Coverage Agent", type="primary"):
             if s.get("rep_id", 0) > 0 and s.get("size_tier") in ("Large", "Medium", "Small")
         )
         status.info(
-            f"Stage 6b — Building {plan_period}-month route plan for "
+            f"Stage 6b [v3] — Building {plan_period}-month route plan for "
             f"{len(all_rep_ids)} reps · {_total_route_stores:,} stores..."
         )
 
