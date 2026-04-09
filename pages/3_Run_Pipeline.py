@@ -1017,6 +1017,139 @@ def assign_cross_city_stores(all_stores, zone_centres, daily_minutes=480,
             s["_cross_city"] = True
         # If no rep has capacity, store stays unassigned (plan_visits=0)
 
+def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
+                   break_minutes=30, avg_speed_kmh=30):
+    """
+    Apply Sales Force Structure rules to assign stores to dedicated reps.
+
+    Rules are applied in order (channel rules first, then customer).
+    First match wins — a store matched by rule 1 is not checked by rule 2.
+
+    Returns:
+      dedicated_stores  — list of stores assigned to dedicated reps
+      mixed_pool        — list of stores not matched (for geographic routing)
+      dedicated_zones   — list of zone_centre dicts for dedicated reps
+      next_rep_id       — next available rep_id for mixed pool
+      rule_warnings     — list of warning messages
+    """
+    if not rules:
+        return [], list(stores), [], 1, []
+
+    eff_cap       = (daily_minutes - break_minutes) * working_days
+    dedicated_all = []
+    matched_ids   = set()  # track by id(store) to avoid double-matching
+    next_rep_id   = 1
+    dedicated_zones = []
+    warnings      = []
+
+    for rule in rules:
+        match_col   = rule.get("match_column", "store_name")
+        match_type  = rule.get("match_type", "Contains").lower()
+        match_vals  = [v.strip().lower() for v in rule.get("match_value", "").split(",") if v.strip()]
+        geo_scope   = rule.get("geography", ["All"])
+        n_reps      = rule.get("dedicated_reps", 1)
+        rule_name   = rule.get("rule_name", "")
+        rule_type   = rule.get("rule_type", "")
+
+        if not match_vals:
+            continue
+
+        # Find matching stores (not already claimed by a higher-priority rule)
+        matched = []
+        for s in stores:
+            if id(s) in matched_ids:
+                continue
+
+            # Geography filter
+            if "All" not in geo_scope:
+                s_city = str(s.get("city", "")).strip().lower()
+                geo_match = any(g.strip().lower() == s_city for g in geo_scope)
+                if not geo_match:
+                    continue
+
+            # Field matching
+            field_val = str(s.get(match_col, "")).strip().lower()
+            if not field_val:
+                continue
+
+            if match_type == "exact":
+                if field_val in match_vals:
+                    matched.append(s)
+            else:  # contains
+                if any(kw in field_val for kw in match_vals):
+                    matched.append(s)
+
+        if not matched:
+            warnings.append(f"Rule '{rule_name}' matched 0 stores — skipped, rep(s) freed to mixed pool.")
+            continue
+
+        # Mark as matched
+        for s in matched:
+            matched_ids.add(id(s))
+
+        # Check if requested reps are enough for capacity
+        total_time = sum(
+            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+            for s in matched
+        )
+        needed_reps = max(1, math.ceil(total_time / eff_cap)) if eff_cap > 0 else 1
+        actual_reps = max(n_reps, needed_reps)
+
+        if actual_reps > n_reps:
+            warnings.append(
+                f"Rule '{rule_name}': {len(matched)} stores need {needed_reps} reps "
+                f"(capacity {eff_cap:,} min/rep) but only {n_reps} configured. "
+                f"Auto-expanded to {actual_reps} reps."
+            )
+
+        # Assign rep_ids using k-means if multiple reps, else single assignment
+        matched_geo = [s for s in matched if s.get("lat") and s.get("lng")]
+        if actual_reps > 1 and len(matched_geo) > actual_reps:
+            pts = [(s["lat"], s["lng"]) for s in matched_geo]
+            labels = kmeans_simple(pts, actual_reps)
+            for s, lbl in zip(matched_geo, labels):
+                s["rep_id"] = next_rep_id + int(lbl)
+                s["_rule_name"] = rule_name
+                s["_rule_type"] = rule_type
+        else:
+            for s in matched:
+                s["rep_id"] = next_rep_id
+                s["_rule_name"] = rule_name
+                s["_rule_type"] = rule_type
+
+        # Build zone centres for dedicated reps
+        for r in range(actual_reps):
+            rid = next_rep_id + r
+            rz = [s for s in matched if s.get("rep_id") == rid and s.get("lat") and s.get("lng")]
+            if not rz:
+                continue
+            rz_time = sum(
+                s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+                for s in rz
+            )
+            dedicated_zones.append({
+                "zone":             rid,
+                "centre_lat":       round(sum(s["lat"] for s in rz) / len(rz), 4),
+                "centre_lng":       round(sum(s["lng"] for s in rz) / len(rz), 4),
+                "store_count":      len(rz),
+                "visits_per_month": sum(s.get("visits_per_month", 1) for s in rz),
+                "time_needed_min":  round(rz_time),
+                "capacity_min":     eff_cap,
+                "utilisation_pct":  round(rz_time / eff_cap * 100) if eff_cap > 0 else 0,
+                "rule_name":        rule_name,
+                "rule_type":        rule_type,
+                "dedicated":        True,
+            })
+
+        dedicated_all.extend(matched)
+        next_rep_id += actual_reps
+
+    # Build mixed pool — everything not matched
+    mixed_pool = [s for s in stores if id(s) not in matched_ids]
+
+    return dedicated_all, mixed_pool, dedicated_zones, next_rep_id, warnings
+
+
 def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
                           working_days=22, avg_speed_kmh=30, min_util_pct=65,
                           max_passes=5):
@@ -3463,9 +3596,6 @@ if st.button("  Run Coverage Agent", type="primary"):
         # Group 1 = Current Coverage (portfolio), Group 2 = Scraped/Gap
         # Normalise each group separately then COMBINE for routing
         priority_all = [s for s in all_stores
-
-
-
                         if s.get("size_tier") in ("Large","Medium","Small")
                         and s.get("lat") and s.get("lng")]
 
@@ -3484,11 +3614,11 @@ if st.button("  Run Coverage Agent", type="primary"):
         _normalise_group(group_gap)
 
         if rep_mode == "recommended":
-            # Combine both groups then take top 60% by normalised score
-            # Per Jaimin: "top 60% of numeric coverage from combined ranking Current + Gap"
+            # Combine both groups then take top N% by normalised score
             combined = group_cc + group_gap
             combined_sorted = sorted(combined, key=lambda x: x.get("_norm_score",0), reverse=True)
-            _store_pct = st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 60)
+            _store_pct = cfg.get("store_select_pct",
+                st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 60))
             n_select = max(1, round(len(combined_sorted) * _store_pct / 100))
             priority = combined_sorted[:n_select]
         else:
@@ -3504,33 +3634,66 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         current_reps  = cfg.get("rep_count", 0)
 
+        # ── PHASE 1: Sales Force Structure — Dedicated Rep Assignment ────
+        _sf_rules = cfg.get("sf_rules", [])
+        _dedicated_stores = []
+        _mixed_pool       = priority
+        _dedicated_zones  = []
+        _next_rep_id      = 1
+        _sf_warnings      = []
+
+        if _sf_rules:
+            status.info(f"Stage 6/{total_steps} — Applying {len(_sf_rules)} sales force rules...")
+            _dedicated_stores, _mixed_pool, _dedicated_zones, _next_rep_id, _sf_warnings = \
+                apply_sf_rules(
+                    priority, _sf_rules,
+                    daily_minutes=daily_minutes,
+                    working_days=working_days,
+                    break_minutes=break_minutes,
+                    avg_speed_kmh=avg_speed,
+                )
+            for _w in _sf_warnings:
+                status.warning(f"  {_w}")
+            if _dedicated_stores:
+                status.info(
+                    f"Stage 6/{total_steps} — Dedicated: {len(_dedicated_stores):,} stores → "
+                    f"{_next_rep_id - 1} dedicated rep(s) | "
+                    f"Mixed pool: {len(_mixed_pool):,} stores remaining"
+                )
+
+        _n_dedicated_reps = _next_rep_id - 1
+
+        # ── PHASE 2: Mixed Pool Routing ──────────────────────────────────
         if rep_mode == "recommended":
-            status.info(f"Stage 6/{total_steps} — Calculating recommended rep count (time-based)...")
+            status.info(f"Stage 6/{total_steps} — Calculating recommended rep count for mixed pool (time-based)...")
 
             rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
-                priority, daily_minutes, working_days, avg_speed
+                _mixed_pool, daily_minutes, working_days, avg_speed
             )
 
-            # ── City-bound zone clustering (Jaimin doc) ──────────────────────
-            # Phase 1: Group stores into super-cities by 15km proximity
-
-
-
-            # Phase 2: Merge under-threshold super-cities into nearest neighbour
-            # Phase 3: Assign reps within each merged super-city
-            zone_centres = []
-            actual_reps  = 0
-            if priority:
-                status.info(f"Stage 6/{total_steps} — Building geographic rep territories...")
-                # Geographic k-means: k = optimal_reps, one cluster per rep.
-                # No city grouping, no supercities — pure geographic split.
-                zone_centres, actual_reps = plan_reps_by_supercity(
-                    None, priority,
+            zone_centres = list(_dedicated_zones)  # start with dedicated zones
+            actual_reps  = _n_dedicated_reps
+            if _mixed_pool:
+                status.info(f"Stage 6/{total_steps} — Building geographic rep territories for mixed pool...")
+                _mixed_zones, _mixed_reps = plan_reps_by_supercity(
+                    None, _mixed_pool,
                     daily_minutes=daily_minutes,
                     working_days=working_days,
                     avg_speed_kmh=avg_speed,
                     all_stores_ref=all_stores,
                 )
+                # Offset mixed zone IDs to avoid collision with dedicated rep_ids
+                for _mz in _mixed_zones:
+                    _old_zone = _mz["zone"]
+                    _mz["zone"] = _old_zone + _n_dedicated_reps
+                    _mz["dedicated"] = False
+                    _mz["rule_name"] = "Mixed"
+                    _mz["rule_type"] = ""
+                    for s in all_stores:
+                        if s.get("rep_id") == _old_zone and not s.get("_rule_name"):
+                            s["rep_id"] = _mz["zone"]
+                zone_centres.extend(_mixed_zones)
+                actual_reps += _mixed_reps
 
                 min_util_pct = 40  # informational only for merging
 
@@ -3543,26 +3706,39 @@ if st.button("  Run Coverage Agent", type="primary"):
                 "avg_speed_kmh":        avg_speed,
                 "break_minutes":        break_minutes,
                 "recommended_reps":     actual_reps,
+                "dedicated_reps":       _n_dedicated_reps,
+                "mixed_reps":           actual_reps - _n_dedicated_reps,
                 "requested_reps":       rec_reps,
                 "current_reps":         current_reps,
                 "shortfall":            actual_reps - current_reps if current_reps > 0 else 0,
-                "min_utilisation_pct":  min_util_pct,
+                "min_utilisation_pct":  min_util_pct if _mixed_pool else 0,
                 "zone_centres":         zone_centres,
+                "sf_rules_applied":     len(_sf_rules),
+                "sf_warnings":          _sf_warnings,
+                "store_select_pct":     _store_pct,
             }
         else:
             # Fixed mode — cluster into configured rep count
             rep_count = max(1, cfg.get("rep_count", 1))
-            status.info(f"Stage 6/{total_steps} [v3] — Allocating {rep_count} rep routes (fixed mode)...")
-            if priority:
-                pts    = [(s["lat"],s["lng"]) for s in priority]
-                labels = kmeans_simple(pts, rep_count)
+            _mixed_rep_count = max(1, rep_count - _n_dedicated_reps)
+            if _n_dedicated_reps > 0:
+                status.info(
+                    f"Stage 6/{total_steps} — Fixed mode: {rep_count} total reps = "
+                    f"{_n_dedicated_reps} dedicated + {_mixed_rep_count} mixed"
+                )
+                if _mixed_rep_count <= 0:
+                    status.error(
+                        f"Dedicated rules require {_n_dedicated_reps} reps but only "
+                        f"{rep_count} total configured. No reps left for mixed pool."
+                    )
+            status.info(f"Stage 6/{total_steps} [v3] — Allocating {_mixed_rep_count} mixed rep routes (fixed mode)...")
+            if _mixed_pool:
+                pts    = [(s["lat"],s["lng"]) for s in _mixed_pool]
+                labels = kmeans_simple(pts, _mixed_rep_count)
 
-                # ── GUARANTEE exactly rep_count non-empty zones ──────────────
-                # K-means can produce empty clusters when stores are
-                # geographically concentrated. Force-split the largest
-                # cluster until we have exactly rep_count non-empty zones.
+                # ── GUARANTEE exactly _mixed_rep_count non-empty zones ──────
                 _actual_zones = len(set(labels))
-                while _actual_zones < rep_count and len(priority) >= rep_count:
+                while _actual_zones < _mixed_rep_count and len(_mixed_pool) >= _mixed_rep_count:
                     # Find the largest cluster
                     from collections import Counter as _Counter
                     _counts = _Counter(labels)
@@ -3573,7 +3749,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     # Find an unused label
                     _used = set(labels)
                     _new_lbl = None
-                    for _candidate in range(rep_count):
+                    for _candidate in range(_mixed_rep_count):
                         if _candidate not in _used:
                             _new_lbl = _candidate
                             break
@@ -3601,22 +3777,24 @@ if st.button("  Run Coverage Agent", type="primary"):
                 _label_map     = {old: new for new, old in enumerate(_unique_labels)}
                 labels         = [_label_map[l] for l in labels]
 
-                for s, lbl in zip(priority, labels):
-                    s["rep_id"] = int(lbl) + 1
+                # Offset rep_ids by dedicated reps count
+                for s, lbl in zip(_mixed_pool, labels):
+                    s["rep_id"] = int(lbl) + 1 + _n_dedicated_reps
 
                 # Calculate time utilisation per rep
-                zone_centres = []
+                zone_centres = list(_dedicated_zones)  # start with dedicated zones
                 monthly_cap  = effective_daily * working_days
                 for zone in range(len(_unique_labels)):
-                    zone_stores = [priority[i] for i in range(len(priority)) if labels[i] == zone]
+                    zone_stores = [_mixed_pool[i] for i in range(len(_mixed_pool)) if labels[i] == zone]
                     if not zone_stores:
                         continue
+                    _zid = zone + 1 + _n_dedicated_reps
                     centre_lat  = sum(s["lat"] for s in zone_stores) / len(zone_stores)
                     centre_lng  = sum(s["lng"] for s in zone_stores) / len(zone_stores)
                     zone_mins   = calculate_rep_time_budget(zone_stores, avg_speed)
                     zone_visits = sum(s.get("visits_per_month",1) for s in zone_stores)
                     zone_centres.append({
-                        "zone":                 zone + 1,
+                        "zone":                 _zid,
                         "centre_lat":           round(centre_lat, 4),
                         "centre_lng":           round(centre_lng, 4),
                         "store_count":          len(zone_stores),
@@ -3624,18 +3802,18 @@ if st.button("  Run Coverage Agent", type="primary"):
                         "time_needed_min":      round(zone_mins),
                         "capacity_min":         monthly_cap,
                         "utilisation_pct":      round(zone_mins / monthly_cap * 100) if monthly_cap > 0 else 0,
+                        "dedicated":            False,
+                        "rule_name":            "Mixed",
+                        "rule_type":            "",
                     })
 
-                # Fixed mode: respect the user's configured rep count — do NOT
-                # remove under-utilised zones. The user explicitly chose this count.
-                #
-                # Rebalance: ensure no rep is below 65% utilisation by moving
-                # stores from neighbouring over-65% zones. Stores only move
-                # to geographically close zones (never across the city).
+                # Rebalance: ensure no MIXED rep is below 65% utilisation.
+                # Never moves stores across rule boundaries (dedicated reps untouched).
                 min_util_pct   = 65
-                status.info(f"Stage 6/{total_steps} — Rebalancing zones to ≥{min_util_pct}% utilisation...")
+                _mixed_zones_only = [z for z in zone_centres if not z.get("dedicated")]
+                status.info(f"Stage 6/{total_steps} — Rebalancing {len(_mixed_zones_only)} mixed zones to ≥{min_util_pct}% utilisation...")
                 _n_moved = rebalance_zones_65pct(
-                    all_stores, zone_centres,
+                    all_stores, _mixed_zones_only,
                     daily_minutes=daily_minutes,
                     working_days=working_days,
                     avg_speed_kmh=avg_speed,
@@ -3645,13 +3823,38 @@ if st.button("  Run Coverage Agent", type="primary"):
                 if _n_moved > 0:
                     status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved} stores to raise under-utilised zones.")
 
+                # Update mixed zones back into zone_centres after rebalancing
+                for _mz in _mixed_zones_only:
+                    for _zi, _zc in enumerate(zone_centres):
+                        if _zc["zone"] == _mz["zone"]:
+                            zone_centres[_zi] = _mz
+                            break
+
                 min_util_mins  = (daily_minutes - break_minutes) * working_days * min_util_pct / 100
-                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins]
+                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins
+                                  and not z.get("dedicated")]
                 kept_zones_f   = zone_centres  # keep ALL zones in fixed mode
+
+                # Check for overloaded dedicated reps
+                _overloaded = [z for z in zone_centres if z.get("dedicated")
+                               and z.get("utilisation_pct", 0) > 100]
+                _overload_warnings = []
+                for _oz in _overloaded:
+                    _extra_needed = max(1, math.ceil(_oz["time_needed_min"] / monthly_cap)) - 1
+                    _overload_warnings.append(
+                        f"Rep {_oz['zone']} ({_oz.get('rule_name','')}) is at "
+                        f"{_oz['utilisation_pct']}% utilisation. "
+                        f"Consider adding {_extra_needed} more dedicated rep(s) for this rule, "
+                        f"or reduce dedicated reps elsewhere to free capacity."
+                    )
+                for _ow in _overload_warnings:
+                    status.warning(f"  {_ow}")
 
                 rep_recommendation = {
                     "mode":                "fixed",
-                    "rep_count":           rep_count,  # always the user's configured value
+                    "rep_count":           rep_count,
+                    "dedicated_reps":      _n_dedicated_reps,
+                    "mixed_reps":          _mixed_rep_count,
                     "daily_minutes":       daily_minutes,
                     "working_days":        working_days,
                     "avg_speed_kmh":       avg_speed,
@@ -3661,9 +3864,11 @@ if st.button("  Run Coverage Agent", type="primary"):
                     "under_utilised_zones": [z["zone"] for z in under_util],
                     "zone_centres":        kept_zones_f,
                     "stores_rebalanced":   _n_moved,
+                    "sf_rules_applied":    len(_sf_rules),
+                    "sf_warnings":         _sf_warnings + _overload_warnings,
                 }
             else:
-                rep_recommendation = {"mode":"fixed","rep_count":rep_count,"zone_centres":[]}
+                rep_recommendation = {"mode":"fixed","rep_count":rep_count,"zone_centres":list(_dedicated_zones)}
 
         for s in all_stores:
             if "rep_id" not in s: s["rep_id"] = 0
