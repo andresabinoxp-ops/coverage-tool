@@ -816,9 +816,8 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("8. Sales force structure")
 st.caption(
-    "Define how reps are assigned before geographic routing. "
-    "Channel rules are applied first (highest priority), then customer rules. "
-    "Stores not matched by any rule go to the mixed pool for standard geographic routing."
+    "Define dedicated reps for specific accounts, channels, or store groups. "
+    "Stores not matched by any rule are automatically assigned to mixed geographic reps."
 )
 
 # Initialise rules in session state
@@ -827,44 +826,36 @@ if "sf_rules" not in st.session_state:
 
 _sf_rules = st.session_state["sf_rules"]
 
-# Available match fields — auto-detect extra columns from portfolio CSV
-_CORE_MATCH_FIELDS = ["Store Name", "Category"]
-_EXTRA_COLUMNS     = []
+# ── Auto-detect matchable columns + their unique values from portfolio ──────
 _portfolio_for_rules = st.session_state.get("portfolio_df")
+_STANDARD_COLS = {
+    "store_id", "store_name", "address", "city", "lat", "lng",
+    "annual_sales_usd", "lines_per_store", "category",
+    "district", "area", "neighbourhood", "neighborhood", "bairro",
+    "zone", "suburb", "quarter", "region", "state", "governorate",
+    "province", "county", "wilaya", "emirate", "prefecture",
+}
+
+# Build "Match on" options: portfolio columns with their unique values
+_match_options = {}  # display_name → {"column": col_name, "values": [unique_vals]}
+
+# Always available: Store Name keyword (free text)
+_match_options["Store name keyword"] = {"column": "store_name", "values": []}
+# Always available: Scraping category
+_match_options["Category"] = {"column": "category", "values": list(final_categories) if final_categories else []}
+
 if _portfolio_for_rules is not None:
-    # Standard columns that are always present — don't show as match options
-    _STANDARD_COLS = {
-        "store_id", "store_name", "address", "city", "lat", "lng",
-        "annual_sales_usd", "lines_per_store", "category",
-        "district", "area", "neighbourhood", "neighborhood", "bairro",
-        "zone", "suburb", "quarter", "region", "state", "governorate",
-        "province", "county", "wilaya", "emirate", "prefecture",
-    }
-    _extra_cols_raw = [c for c in _portfolio_for_rules.columns if c not in _STANDARD_COLS]
-    # Format nicely for display (e.g., "channel" → "Channel", "account_name" → "Account Name")
-    for _col in _extra_cols_raw:
+    _extra_cols = [c for c in _portfolio_for_rules.columns if c not in _STANDARD_COLS]
+    for _col in _extra_cols:
         _display = _col.replace("_", " ").title()
-        _EXTRA_COLUMNS.append({"display": _display, "column": _col})
+        _unique_vals = sorted(
+            _portfolio_for_rules[_col].dropna().astype(str).str.strip()
+            .loc[lambda x: x != ""].unique().tolist()
+        )
+        if _unique_vals:  # only show columns that have data
+            _match_options[_display] = {"column": _col, "values": _unique_vals}
 
-_MATCH_FIELDS = _CORE_MATCH_FIELDS + [ec["display"] for ec in _EXTRA_COLUMNS]
-if not _EXTRA_COLUMNS:
-    _MATCH_FIELDS.append("Chain / Customer Column")  # fallback label when no portfolio loaded
-
-_MATCH_TYPES  = ["Contains", "Exact"]
-_RULE_TYPES   = ["Channel", "Customer"]
-
-# Show detected columns info
-if _EXTRA_COLUMNS:
-    _col_names = ", ".join([f"**{ec['display']}**" for ec in _EXTRA_COLUMNS])
-    st.markdown(
-        f'<div style="background:#E3F2FD;border:1px solid #90CAF9;border-left:4px solid #1565C0;'
-        f'border-radius:8px;padding:0.6rem 1rem;margin:0.5rem 0;font-size:0.85rem;color:#0D47A1">'
-        f'Detected portfolio columns available for matching: {_col_names}'
-        f'</div>',
-        unsafe_allow_html=True
-    )
-
-# Collect city names from configured regions/cities
+# Collect city names for geography filter
 _configured_cities = sorted(set(
     [e.get("name","") for e in st.session_state.get("city_entries", [])] +
     [e.get("name","") for e in st.session_state.get("region_entries", [])]
@@ -874,18 +865,16 @@ _geo_options = ["All"] + _configured_cities
 
 # ── Display existing rules ──────────────────────────────────────────────────
 if _sf_rules:
-    st.markdown("**Current rules** *(ordered by priority — channel rules run first, then customer)*")
+    st.markdown("**Current rules:**")
     for idx, rule in enumerate(_sf_rules):
         _geo_display = ", ".join(rule.get("geography", ["All"]))
-        _badge_color = "#0D47A1" if rule.get("rule_type") == "Channel" else "#E65100"
+        _match_on    = rule.get("match_field", "")
+        _match_val   = rule.get("match_value", "")
         st.markdown(
-            f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid {_badge_color};'
+            f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #1565C0;'
             f'border-radius:8px;padding:0.7rem 1rem;margin:0.4rem 0;font-size:0.88rem">'
-            f'<span style="background:{_badge_color};color:white;padding:2px 10px;border-radius:12px;'
-            f'font-size:0.78rem;font-weight:600;margin-right:8px">{rule.get("rule_type","")}</span> '
             f'<strong>{rule.get("rule_name","")}</strong> — '
-            f'{rule.get("match_field","")} {rule.get("match_type","").lower()} '
-            f'"<em>{rule.get("match_value","")}</em>" — '
+            f'{_match_on}: "<em>{_match_val}</em>" — '
             f'Geography: {_geo_display} — '
             f'<strong>{rule.get("dedicated_reps",1)} dedicated rep(s)</strong>'
             f'</div>',
@@ -904,57 +893,78 @@ if _sf_rules:
     st.markdown("---")
 
 # ── Add new rule form ────────────────────────────────────────────────────────
-with st.expander("Add a rep assignment rule", expanded=len(_sf_rules) == 0):
+with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
     st.caption(
-        "Channel rules (e.g., Pharmacy) have higher priority than Customer rules (e.g., Lulu). "
-        "If a store matches both, the Channel rule wins."
+        "Select what to match on — if your portfolio has columns like Account or Channel, "
+        "their values will appear automatically. Matching is always flexible: "
+        "typing \"Lulu\" will match \"Lulu Hypermarket\", \"lulu express\", \"LULU\" etc."
     )
+
     _ar1, _ar2 = st.columns(2)
     with _ar1:
-        _new_rule_name = st.text_input("Rule name", placeholder="e.g., Lulu Exclusive", key="new_rule_name")
-        _new_rule_type = st.selectbox("Rule type", _RULE_TYPES, key="new_rule_type",
-            help="Channel rules are applied first (higher priority). Customer rules second.")
+        _new_rule_name = st.text_input(
+            "Rule name", placeholder="e.g., Lulu Exclusive",
+            key="new_rule_name"
+        )
     with _ar2:
-        _new_match_field = st.selectbox("Match field", _MATCH_FIELDS, key="new_match_field",
-            help="'Store Name' matches on the store_name column. 'Category' matches the scraping category. "
-                 "Any extra columns from your portfolio CSV (e.g., Channel, Account) are auto-detected and available here.")
-        _new_match_type = st.selectbox("Match type", _MATCH_TYPES, key="new_match_type",
-            help="'Contains' = store field includes the keyword. 'Exact' = must match exactly.")
+        _match_on_options = list(_match_options.keys())
+        _new_match_on = st.selectbox(
+            "Match on", _match_on_options, key="new_match_on",
+            help="Select which field to match stores on. Portfolio columns like Account, Channel are auto-detected."
+        )
 
     _ar3, _ar4, _ar5 = st.columns(3)
+
+    # Get the values for the selected match field
+    _selected_opt = _match_options.get(_new_match_on, {})
+    _available_values = _selected_opt.get("values", [])
+
     with _ar3:
-        _new_match_value = st.text_input("Match value(s)", placeholder="e.g., Lulu, LuLu Hypermarket",
-            key="new_match_value",
-            help="Comma-separated keywords. For 'Contains', any keyword match counts.")
+        if _available_values:
+            # Show dropdown of actual values from the data
+            _new_match_value = st.selectbox(
+                "Select value", _available_values,
+                key="new_match_value_select",
+                help="Values detected from your uploaded portfolio."
+            )
+        else:
+            # Free text input (for Store name keyword or empty columns)
+            _new_match_value = st.text_input(
+                "Enter keyword", placeholder="e.g., Lulu",
+                key="new_match_value_text",
+                help="Type a keyword — matching is flexible (case-insensitive, partial match)."
+            )
     with _ar4:
-        _new_geography = st.multiselect("Geography scope", _geo_options, default=["All"],
+        _new_geography = st.multiselect(
+            "Geography", _geo_options, default=["All"],
             key="new_geography",
-            help="Select 'All' to apply everywhere, or pick specific cities/regions.")
+            help="Where does this rule apply? Select 'All' for everywhere."
+        )
     with _ar5:
-        _new_dedicated_reps = st.number_input("Dedicated reps", min_value=1, max_value=50, value=1,
+        _new_dedicated_reps = st.number_input(
+            "Dedicated reps", min_value=1, max_value=50, value=1,
             key="new_dedicated_reps",
-            help="How many reps to dedicate to this group. System will auto-adjust if stores exceed capacity.")
+            help="How many reps for this group. System auto-adjusts if stores exceed capacity."
+        )
 
     if st.button("Add rule", type="primary", key="btn_add_rule"):
         if not _new_rule_name.strip():
             st.error("Please enter a rule name.")
-        elif not _new_match_value.strip():
-            st.error("Please enter at least one match value.")
+        elif not str(_new_match_value).strip():
+            st.error("Please select or enter a match value.")
         else:
-            # Resolve match_field display name to actual column name
-            _field_to_col = {"Store Name": "store_name", "Category": "category",
-                             "Chain / Customer Column": "chain"}
-            for _ec in _EXTRA_COLUMNS:
-                _field_to_col[_ec["display"]] = _ec["column"]
-            _match_col = _field_to_col.get(_new_match_field, _new_match_field.lower().replace(" ", "_"))
+            _match_col = _selected_opt.get("column", "store_name")
+            # Determine rule type: channel-like columns get higher priority
+            _channel_cols = {"channel", "trade_channel", "sub_channel", "trade_type", "segment", "category"}
+            _rule_type = "Channel" if _match_col in _channel_cols else "Customer"
 
             _new_rule = {
                 "rule_name":      _new_rule_name.strip(),
-                "rule_type":      _new_rule_type,
-                "match_field":    _new_match_field,       # display name for UI
-                "match_column":   _match_col,             # actual column name for pipeline
-                "match_type":     _new_match_type,
-                "match_value":    _new_match_value.strip(),
+                "rule_type":      _rule_type,
+                "match_field":    _new_match_on,
+                "match_column":   _match_col,
+                "match_type":     "Contains",  # always flexible matching
+                "match_value":    str(_new_match_value).strip(),
                 "geography":      _new_geography if "All" not in _new_geography else ["All"],
                 "dedicated_reps": _new_dedicated_reps,
             }
