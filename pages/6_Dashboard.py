@@ -325,13 +325,25 @@ st.html('<div class="section-title">Store map &amp; routes</div>')
 all_reps = sorted([r for r in stores_df["rep_id"].dropna().unique() if int(r) > 0]) \
            if "rep_id" in stores_df.columns else []
 
+# Build rep labels with rule names from zone_centres
+_dash_rep_rec   = st.session_state.get("run_results", {}).get("rep_recommendation", {})
+_dash_zone_rule = {}
+for _z in _dash_rep_rec.get("zone_centres", []):
+    _dash_zone_rule[_z["zone"]] = _z.get("rule_name", "Mixed")
+
+def _dash_rep_label(rid):
+    rule = _dash_zone_rule.get(int(rid), "")
+    if rule and rule != "Mixed":
+        return f"Rep {int(rid)} ({rule})"
+    return f"Rep {int(rid)}"
+
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     colour_by = st.selectbox("Colour by",
         ["Rep route","Size tier","Coverage status","Score"], key="dash_colour")
 with col2:
     sel_rep = st.selectbox("Rep",
-        ["All reps"] + [f"Rep {int(r)}" for r in all_reps], key="dash_rep")
+        ["All reps"] + [_dash_rep_label(r) for r in all_reps], key="dash_rep")
 with col3:
     sel_month_label = st.selectbox("Month",
         ["Full plan"] + PLAN_LABELS, key="dash_month")
@@ -426,8 +438,10 @@ if not map_df.empty:
             for i, rep in enumerate(all_reps[:6]):
                 hx  = REP_COLORS[int(rep) % len(REP_COLORS)]
                 cnt = len(map_df[map_df["rep_id"]==rep]) if not map_df.empty else 0
+                _rl = _dash_zone_rule.get(int(rep), "")
+                _rl_tag = f" ({_rl})" if _rl and _rl != "Mixed" else ""
                 leg_cols[i].markdown(
-                    f'<span class="legend-chip" style="background:{hx}">Rep {int(rep)} · {cnt} stores</span>',
+                    f'<span class="legend-chip" style="background:{hx}">Rep {int(rep)}{_rl_tag} · {cnt} stores</span>',
                     unsafe_allow_html=True)
         elif colour_by == "Size tier":
             lc = st.columns(3)

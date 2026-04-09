@@ -173,7 +173,29 @@ _clusters_available = sorted(set(
 ))
 _cluster_options = ["All clusters"] + [f"Cluster {cid}: {cname}" for cid,cname in _clusters_available]
 
-col0, col1, col2, col3, col4, col5 = st.columns(6)
+# Build rep labels with rule names
+_rep_rec_routes = st.session_state.get("run_results", {}).get("rep_recommendation", {})
+_zc_routes      = _rep_rec_routes.get("zone_centres", [])
+_zone_rule_map_r = {}
+for _z in _zc_routes:
+    _zone_rule_map_r[_z["zone"]] = _z.get("rule_name", "Mixed")
+
+def _rep_label(rid):
+    rule = _zone_rule_map_r.get(rid, "")
+    if rule and rule != "Mixed":
+        return f"Rep {rid} ({rule})"
+    return f"Rep {rid}"
+
+# Assignment filter options
+_assignments = sorted(set(_zone_rule_map_r.get(r, "Mixed") for r in all_reps))
+_has_rules   = any(a != "Mixed" for a in _assignments)
+
+col0, col1, col2, col_assign, col3, col4, col5 = st.columns(7) if _has_rules else (lambda: (st.columns(6) + (st.empty(),)))()
+if not _has_rules:
+    col0, col1, col2, col3, col4, col5 = st.columns(6)
+    col_assign = None
+else:
+    col0, col1, col2, col_assign, col3, col4, col5 = st.columns(7)
 with col0:
     sel_cluster = st.selectbox("Cluster", _cluster_options)
     if sel_cluster != "All clusters":
@@ -183,7 +205,12 @@ with col0:
 with col1:
     colour_by = st.selectbox("Colour by", ["Rep route","Day of week","Size tier","Coverage status","Score"])
 with col2:
-    sel_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps])
+    sel_rep = st.selectbox("Rep", ["All reps"] + [_rep_label(r) for r in all_reps])
+if _has_rules and col_assign:
+    with col_assign:
+        sel_assignment = st.selectbox("Assignment", ["All"] + _assignments)
+else:
+    sel_assignment = "All"
 with col3:
     sel_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS)
 with col4:
@@ -215,8 +242,12 @@ elif _map_route_filter == "Not in route":
 else:
     map_stores = [s for s in all_stores if s.get("lat") and s.get("lng")]
 if sel_rep != "All reps":
-    rep_num    = int(sel_rep.split()[1])
+    rep_num    = int(sel_rep.split()[1])  # "Rep 3 (Lulu)" → 3
     map_stores = [s for s in map_stores if s.get("rep_id") == rep_num]
+# Assignment filter
+if sel_assignment != "All":
+    map_stores = [s for s in map_stores
+                  if (s.get("_rule_name") or _zone_rule_map_r.get(s.get("rep_id",0), "Mixed")) == sel_assignment]
 # Month filter — only stores with visits in that month
 if sel_month_key:
     map_stores = [s for s in map_stores if s.get(f"{sel_month_key}_visits",0) > 0]
@@ -241,11 +272,9 @@ map_data = [{
     "score":s.get("score",0),
     "size_tier":s.get("size_tier",""),
     "annual_visits":s.get("annual_visits",0),
-
-
-
     "status":s.get("coverage_status",""),
-    "rep":s.get("rep_id",0),
+    "rep": _rep_label(s.get("rep_id",0)),
+    "assignment": s.get("_rule_name") or _zone_rule_map_r.get(s.get("rep_id",0), "Mixed"),
     "day":s.get("assigned_day",""),
     "order":s.get("day_visit_order",0),
     "color":get_color(s, colour_by),
@@ -263,7 +292,7 @@ try:
         tooltip = {
             "html":"<b>{name}</b><br/>Score: <b>{score}</b><br/>Size: {size_tier}<br/>"
                    "Annual visits: {annual_visits}<br/>Day: {day}<br/>Visit order: {order}<br/>"
-                   "Rep: {rep}",
+                   "Rep: {rep}<br/>Assignment: {assignment}",
             "style":{"backgroundColor":"#1A2B4A","color":"white","padding":"10px","borderRadius":"8px","fontSize":"13px"}
         }
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip,
@@ -291,11 +320,14 @@ if colour_by == "Rep route":
                 visits_mo = sum(s.get("visits_per_month",0) for s in rs)
                 c         = REP_COLORS[rep % len(REP_COLORS)]
                 hx        = "#{:02x}{:02x}{:02x}".format(c[0],c[1],c[2])
+                _rule_lbl = _zone_rule_map_r.get(rep, "")
+                _rule_tag = f' <span style="opacity:0.85;font-size:0.72rem">({_rule_lbl})</span>' if _rule_lbl and _rule_lbl != "Mixed" else ""
                 cols[i].markdown(
-
-
-
-                    f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'                    f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}</div>'                    f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'                    f'Plan stores: {plan_n} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'                    f'</div></div>',
+                    f'<div style="background:{hx};border-radius:8px;padding:8px 12px;color:white;text-align:center;margin:3px">'
+                    f'<div style="font-weight:700;font-size:0.85rem">Rep {rep}{_rule_tag}</div>'
+                    f'<div style="font-size:0.75rem;margin-top:3px;opacity:0.9">'
+                    f'Plan stores: {plan_n} &nbsp;·&nbsp; Visits/mo: {visits_mo:.0f}'
+                    f'</div></div>',
                     unsafe_allow_html=True)
 elif colour_by == "Day of week":
     lc = st.columns(5)

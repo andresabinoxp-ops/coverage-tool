@@ -224,13 +224,53 @@ if rep_rec:
     st.markdown("**Rep workload breakdown:**")
     st.caption(f"Stores recommended = unique stores in the {plan_label} route plan.")
 
+    # ── Sales Force Structure summary ────────────────────────────────────
+    _n_sf_rules   = rep_rec.get("sf_rules_applied", 0)
+    _n_ded_reps   = rep_rec.get("dedicated_reps", 0)
+    _n_mix_reps   = rep_rec.get("mixed_reps", rec_reps - _n_ded_reps if _n_ded_reps else rec_reps)
+    _sf_warnings  = rep_rec.get("sf_warnings", [])
+
+    if _n_sf_rules > 0:
+        st.markdown("**Sales force structure:**")
+        _ded_zones = [z for z in zone_cs if z.get("dedicated")]
+        _mix_zones = [z for z in zone_cs if not z.get("dedicated")]
+        st.info(
+            f"  **{_n_sf_rules} rule(s)** applied · "
+            f"**{_n_ded_reps} dedicated** rep(s) · "
+            f"**{len(_mix_zones)} mixed** rep(s)"
+        )
+        if _ded_zones:
+            for _dz in _ded_zones:
+                _util_color = "#2E7D32" if _dz.get("utilisation_pct", 0) <= 100 else "#B71C1C"
+                st.markdown(
+                    f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #0D47A1;'
+                    f'border-radius:6px;padding:0.5rem 0.8rem;margin:0.3rem 0;font-size:0.85rem">'
+                    f'Rep {_dz["zone"]} — <strong>{_dz.get("rule_name","")}</strong> '
+                    f'({_dz.get("rule_type","")}) · '
+                    f'{_dz.get("store_count",0)} stores · '
+                    f'{_dz.get("time_needed_min",0):,} min · '
+                    f'<span style="color:{_util_color};font-weight:700">'
+                    f'{_dz.get("utilisation_pct",0)}% utilisation</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+        for _sw in _sf_warnings:
+            st.warning(f"  {_sw}")
+
+    # Build zone→rule_name map for the workload table
+    _zone_rule_map = {}
+    for _z in zone_cs:
+        _zone_rule_map[_z["zone"]] = _z.get("rule_name", "Mixed")
+
     rep_rows = {}
     for s in all_stores:
         rid = s.get("rep_id", 0)
         if not rid or rid == 0: continue
         if s.get("plan_visits", 0) == 0: continue
         if rid not in rep_rows:
-            rep_rows[rid] = {"Rep": rid, "Stores": 0, "Current": 0,
+            _rule_label = s.get("_rule_name") or _zone_rule_map.get(rid, "Mixed")
+            rep_rows[rid] = {"Rep": rid, "Assignment": _rule_label,
+                             "Stores": 0, "Current": 0,
                              "Gap (new)": 0, "Execution (min)": 0}
         rep_rows[rid]["Stores"]          += 1
         rep_rows[rid]["Execution (min)"] += (
@@ -272,12 +312,16 @@ if rep_rec:
             f"{real_total:,.0f} min",
             help=f"Execution: {real_et:,} min + Break: {real_brk:,} min = {real_total:,} min total.")
 
-        col_order = ["Rep","Stores","Current","Gap (new)",
+        col_order = ["Rep","Assignment","Stores","Current","Gap (new)",
                      "Execution (min)","Travel (min)","Break (min)",
                      "Total needed (min)", cap_col, "Utilisation %"]
+        # Only include Assignment column if rules were applied
+        if _n_sf_rules == 0:
+            col_order = [c for c in col_order if c != "Assignment"]
 
         total_row = {
             "Rep":                "TOTAL",
+            "Assignment":         "",
             "Stores":             int(rdf["Stores"].sum()),
             "Current":            int(rdf["Current"].sum()),
             "Gap (new)":          int(rdf["Gap (new)"].sum()),
