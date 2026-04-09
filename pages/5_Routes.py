@@ -190,12 +190,11 @@ def _rep_label(rid):
 _assignments = sorted(set(_zone_rule_map_r.get(r, "Mixed") for r in all_reps))
 _has_rules   = any(a != "Mixed" for a in _assignments)
 
-col0, col1, col2, col_assign, col3, col4, col5 = st.columns(7) if _has_rules else (lambda: (st.columns(6) + (st.empty(),)))()
-if not _has_rules:
+if _has_rules:
+    col0, col1, col2, col_assign, col3, col4, col5 = st.columns(7)
+else:
     col0, col1, col2, col3, col4, col5 = st.columns(6)
     col_assign = None
-else:
-    col0, col1, col2, col_assign, col3, col4, col5 = st.columns(7)
 with col0:
     sel_cluster = st.selectbox("Cluster", _cluster_options)
     if sel_cluster != "All clusters":
@@ -206,7 +205,7 @@ with col1:
     colour_by = st.selectbox("Colour by", ["Rep route","Day of week","Size tier","Coverage status","Score"])
 with col2:
     sel_rep = st.selectbox("Rep", ["All reps"] + [_rep_label(r) for r in all_reps])
-if _has_rules and col_assign:
+if col_assign:
     with col_assign:
         sel_assignment = st.selectbox("Assignment", ["All"] + _assignments)
 else:

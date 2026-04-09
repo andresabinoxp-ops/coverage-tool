@@ -921,43 +921,64 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
             "daily_breakdown": rz_daily,
         })
 
-    # ── Step 4: Single underload check ────────────────────────────────────────
-    # If a zone has < 40% capacity AND a neighbour can absorb it under 110%,
-    # merge once. This handles the "5 stores, 1350 min" edge case.
-    # Only one pass — no loop that could keep reducing rep count.
-    MIN_LOAD     = eff_cap * 0.40   # 3,960 min — genuinely too small
-    MAX_ABSORB   = eff_cap * 1.10   # 10,890 min — receiving zone ceiling
+    # ── Step 4: Split overloaded zones ──────────────────────────────────────
+    # If any zone exceeds 100% utilisation, split it into 2 zones using k-means.
+    # Repeat until no zone exceeds 110% (allow small buffer).
+    MAX_UTIL = eff_cap * 1.10  # 110% hard ceiling
 
-    zone_centres.sort(key=lambda z: z["time_needed_min"])
-    if len(zone_centres) > 1 and zone_centres[0]["time_needed_min"] < MIN_LOAD:
-        weak    = zone_centres[0]
-        others  = zone_centres[1:]
-        nearest = min(others, key=lambda z: haversine_m(
-            weak["centre_lat"], weak["centre_lng"],
-            z["centre_lat"],    z["centre_lng"]))
+    for _split_pass in range(5):  # max 5 split passes
+        _did_split = False
+        new_zone_centres = []
+        _next_zone = max(z["zone"] for z in zone_centres) + 1 if zone_centres else 1
 
-        if nearest["time_needed_min"] + weak["time_needed_min"] <= MAX_ABSORB:
-            # Merge weak into nearest
+        for zc in zone_centres:
+            if zc["time_needed_min"] <= MAX_UTIL:
+                new_zone_centres.append(zc)
+                continue
 
+            # This zone is overloaded — split it
+            zid = zc["zone"]
+            zstores = [s for s in priority_geo if s.get("rep_id") == zid]
+            if len(zstores) < 2:
+                new_zone_centres.append(zc)  # can't split 1 store
+                continue
 
+            # Split into ceil(needed/cap) sub-zones
+            n_split = max(2, math.ceil(zc["time_needed_min"] / eff_cap))
+            pts_z = [(s["lat"], s["lng"]) for s in zstores]
+            labels_z = kmeans_simple(pts_z, n_split)
 
-            for s in all_ref:
-                if s.get("rep_id") == weak["zone"]:
-                    s["rep_id"] = nearest["zone"]
-            # Recalculate receiving zone
-            nz = [s for s in priority_geo if s.get("rep_id") == nearest["zone"]]
-            nz_monthly, nz_daily = calc_zone_monthly_time(nz, avg_speed_kmh, daily_minutes)
-            nz_exec = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in nz)
-            nearest.update({
-                "store_count":     len(nz),
-                "time_needed_min": nz_monthly,
-                "exec_min":        round(nz_exec),
-                "utilisation_pct": round(nz_monthly / eff_cap * 100),
-                "daily_breakdown": nz_daily,
-                "centre_lat":      round(sum(s["lat"] for s in nz)/max(len(nz),1), 4),
-                "centre_lng":      round(sum(s["lng"] for s in nz)/max(len(nz),1), 4),
-            })
-            zone_centres = others  # weak zone removed
+            for sub in range(n_split):
+                sub_stores = [zstores[i] for i in range(len(zstores)) if labels_z[i] == sub]
+                if not sub_stores:
+                    continue
+                if sub == 0:
+                    sub_zid = zid  # keep original zone id for first sub
+                else:
+                    sub_zid = _next_zone
+                    _next_zone += 1
+
+                for s in sub_stores:
+                    s["rep_id"] = sub_zid
+
+                sub_monthly, sub_daily = calc_zone_monthly_time(sub_stores, avg_speed_kmh, daily_minutes)
+                sub_exec = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in sub_stores)
+                new_zone_centres.append({
+                    "zone":            sub_zid,
+                    "centre_lat":      round(sum(s["lat"] for s in sub_stores)/len(sub_stores), 4),
+                    "centre_lng":      round(sum(s["lng"] for s in sub_stores)/len(sub_stores), 4),
+                    "store_count":     len(sub_stores),
+                    "time_needed_min": sub_monthly,
+                    "exec_min":        round(sub_exec),
+                    "capacity_min":    eff_cap,
+                    "utilisation_pct": round(sub_monthly / eff_cap * 100),
+                    "daily_breakdown": sub_daily,
+                })
+            _did_split = True
+
+        zone_centres = new_zone_centres
+        if not _did_split:
+            break
 
     actual_reps = len(zone_centres)
     return zone_centres, actual_reps
@@ -3618,7 +3639,8 @@ if st.button("  Run Coverage Agent", type="primary"):
             combined = group_cc + group_gap
             combined_sorted = sorted(combined, key=lambda x: x.get("_norm_score",0), reverse=True)
             _store_pct = cfg.get("store_select_pct",
-                st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 60))
+                st.session_state.get("store_select_pct_input",
+                st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 60)))
             n_select = max(1, round(len(combined_sorted) * _store_pct / 100))
             priority = combined_sorted[:n_select]
         else:
@@ -3635,7 +3657,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         current_reps  = cfg.get("rep_count", 0)
 
         # ── PHASE 1: Sales Force Structure — Dedicated Rep Assignment ────
-        _sf_rules = cfg.get("sf_rules", [])
+        _sf_rules = cfg.get("sf_rules", []) or st.session_state.get("sf_rules", [])
         _dedicated_stores = []
         _mixed_pool       = priority
         _dedicated_zones  = []
