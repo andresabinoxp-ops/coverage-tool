@@ -811,10 +811,163 @@ else:
 
 st.markdown("---")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 8: SALES FORCE STRUCTURE
+# ─────────────────────────────────────────────────────────────────────────────
+st.subheader("8. Sales force structure")
+st.caption(
+    "Define how reps are assigned before geographic routing. "
+    "Channel rules are applied first (highest priority), then customer rules. "
+    "Stores not matched by any rule go to the mixed pool for standard geographic routing."
+)
+
+# Initialise rules in session state
+if "sf_rules" not in st.session_state:
+    st.session_state["sf_rules"] = []
+
+_sf_rules = st.session_state["sf_rules"]
+
+# Available match fields
+_MATCH_FIELDS = ["Store Name", "Category", "Chain / Customer Column"]
+_MATCH_TYPES  = ["Contains", "Exact"]
+_RULE_TYPES   = ["Channel", "Customer"]
+
+# Collect city names from configured regions/cities
+_configured_cities = sorted(set(
+    [e.get("name","") for e in st.session_state.get("city_entries", [])] +
+    [e.get("name","") for e in st.session_state.get("region_entries", [])]
+))
+_configured_cities = [c for c in _configured_cities if c]
+_geo_options = ["All"] + _configured_cities
+
+# ── Display existing rules ──────────────────────────────────────────────────
+if _sf_rules:
+    st.markdown("**Current rules** *(ordered by priority — channel rules run first, then customer)*")
+    for idx, rule in enumerate(_sf_rules):
+        _geo_display = ", ".join(rule.get("geography", ["All"]))
+        _badge_color = "#0D47A1" if rule.get("rule_type") == "Channel" else "#E65100"
+        st.markdown(
+            f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid {_badge_color};'
+            f'border-radius:8px;padding:0.7rem 1rem;margin:0.4rem 0;font-size:0.88rem">'
+            f'<span style="background:{_badge_color};color:white;padding:2px 10px;border-radius:12px;'
+            f'font-size:0.78rem;font-weight:600;margin-right:8px">{rule.get("rule_type","")}</span> '
+            f'<strong>{rule.get("rule_name","")}</strong> — '
+            f'{rule.get("match_field","")} {rule.get("match_type","").lower()} '
+            f'"<em>{rule.get("match_value","")}</em>" — '
+            f'Geography: {_geo_display} — '
+            f'<strong>{rule.get("dedicated_reps",1)} dedicated rep(s)</strong>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    # Remove rule buttons
+    _del_cols = st.columns(min(len(_sf_rules), 5))
+    for idx, rule in enumerate(_sf_rules):
+        with _del_cols[idx % 5]:
+            if st.button(f"Remove: {rule.get('rule_name','')}", key=f"del_rule_{idx}"):
+                _sf_rules.pop(idx)
+                st.session_state["sf_rules"] = _sf_rules
+                st.rerun()
+
+    st.markdown("---")
+
+# ── Add new rule form ────────────────────────────────────────────────────────
+with st.expander("Add a rep assignment rule", expanded=len(_sf_rules) == 0):
+    st.caption(
+        "Channel rules (e.g., Pharmacy) have higher priority than Customer rules (e.g., Lulu). "
+        "If a store matches both, the Channel rule wins."
+    )
+    _ar1, _ar2 = st.columns(2)
+    with _ar1:
+        _new_rule_name = st.text_input("Rule name", placeholder="e.g., Lulu Exclusive", key="new_rule_name")
+        _new_rule_type = st.selectbox("Rule type", _RULE_TYPES, key="new_rule_type",
+            help="Channel rules are applied first (higher priority). Customer rules second.")
+    with _ar2:
+        _new_match_field = st.selectbox("Match field", _MATCH_FIELDS, key="new_match_field",
+            help="'Store Name' matches on the store_name column. 'Category' matches the scraping category. "
+                 "'Chain / Customer Column' matches a chain or customer column if present in the portfolio CSV.")
+        _new_match_type = st.selectbox("Match type", _MATCH_TYPES, key="new_match_type",
+            help="'Contains' = store field includes the keyword. 'Exact' = must match exactly.")
+
+    _ar3, _ar4, _ar5 = st.columns(3)
+    with _ar3:
+        _new_match_value = st.text_input("Match value(s)", placeholder="e.g., Lulu, LuLu Hypermarket",
+            key="new_match_value",
+            help="Comma-separated keywords. For 'Contains', any keyword match counts.")
+    with _ar4:
+        _new_geography = st.multiselect("Geography scope", _geo_options, default=["All"],
+            key="new_geography",
+            help="Select 'All' to apply everywhere, or pick specific cities/regions.")
+    with _ar5:
+        _new_dedicated_reps = st.number_input("Dedicated reps", min_value=1, max_value=50, value=1,
+            key="new_dedicated_reps",
+            help="How many reps to dedicate to this group. System will auto-adjust if stores exceed capacity.")
+
+    if st.button("Add rule", type="primary", key="btn_add_rule"):
+        if not _new_rule_name.strip():
+            st.error("Please enter a rule name.")
+        elif not _new_match_value.strip():
+            st.error("Please enter at least one match value.")
+        else:
+            _new_rule = {
+                "rule_name":      _new_rule_name.strip(),
+                "rule_type":      _new_rule_type,
+                "match_field":    _new_match_field,
+                "match_type":     _new_match_type,
+                "match_value":    _new_match_value.strip(),
+                "geography":      _new_geography if "All" not in _new_geography else ["All"],
+                "dedicated_reps": _new_dedicated_reps,
+            }
+            _sf_rules.append(_new_rule)
+            # Auto-sort: Channel rules first, then Customer
+            _sf_rules.sort(key=lambda r: 0 if r.get("rule_type") == "Channel" else 1)
+            st.session_state["sf_rules"] = _sf_rules
+            st.success(f"Rule added: {_new_rule_name}")
+            st.rerun()
+
+# ── Numeric distribution % (recommended mode only) ──────────────────────────
+if rep_mode_key == "recommended":
+    st.markdown("---")
+    st.markdown("**Numeric distribution cutoff**")
+    st.caption(
+        "In recommended mode, only the top N% of stores (by combined score ranking) "
+        "are included in routing. A higher % means more stores routed and more reps needed. "
+        "Lower % focuses reps on only the highest-value stores."
+    )
+    _store_select_pct = st.slider(
+        "Store selection % for routing",
+        min_value=10, max_value=100, value=60, step=5,
+        key="store_select_pct_input",
+        help="Top N% of stores by normalised score. Default 60%."
+    )
+else:
+    _store_select_pct = 100  # fixed mode routes all stores
+
+# ── Summary ─────────────────────────────────────────────────────────────────
+_n_dedicated = sum(r.get("dedicated_reps", 1) for r in _sf_rules)
+if _sf_rules:
+    _mixed_label = ""
+    if rep_mode_key == "fixed":
+        _mixed_reps = max(0, int(rep_count) - _n_dedicated)
+        _mixed_label = f" · **{_mixed_reps} mixed reps** remaining"
+        if _mixed_reps <= 0:
+            st.error(
+                f"Dedicated rules require {_n_dedicated} reps but you only have {int(rep_count)} total. "
+                "Increase total reps or reduce dedicated rules."
+            )
+        elif _mixed_reps < 2:
+            st.warning(
+                f"Only {_mixed_reps} rep(s) left for mixed stores. Consider increasing total reps."
+            )
+    st.info(
+        f"**{len(_sf_rules)} rule(s)** · {_n_dedicated} dedicated rep(s)"
+        f"{_mixed_label}"
+        + (f" · Top **{_store_select_pct}%** of stores selected for routing" if rep_mode_key == "recommended" else "")
+    )
+
 total = 100  # weights managed in Admin Settings
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 8: SAVE
-# ─────────────────────────────────────────────────────────────────────────────
+# STEP 9: SAVE
 # ─────────────────────────────────────────────────────────────────────────────
 st.subheader("9. Save configuration")
 
@@ -852,10 +1005,10 @@ else:
             "lng_max":                 lng_max,
             "rep_count":               int(rep_count),
             "rep_mode":                rep_mode_key,
-            "daily_minutes":           int(daily_minutes) if rep_mode_key == "recommended" else 480,
-            "break_minutes":           int(break_minutes) if rep_mode_key == "recommended" else 30,
-            "working_days":            int(working_days)  if rep_mode_key == "recommended" else 22,
-            "avg_speed_kmh":           int(avg_speed_kmh) if rep_mode_key == "recommended" else 30,
+            "daily_minutes":           int(daily_minutes),
+            "break_minutes":           int(break_minutes),
+            "working_days":            int(working_days),
+            "avg_speed_kmh":           int(avg_speed_kmh),
             "categories":              final_categories,
             "market_api_key":          market_api_key,
             "detected_from_portfolio": detected_categories,
@@ -868,6 +1021,8 @@ else:
                 {"rating":20,"reviews":25,"affluence":15,"poi":15,"sales":15,"lines":10}).items()},
             "weights_gap": {k: v/100 for k,v in st.session_state.get("admin_scoring_weights_gap",
                 {"rating":25,"reviews":25,"affluence":25,"poi":25}).items()},
+            "sf_rules":                st.session_state.get("sf_rules", []),
+            "store_select_pct":        _store_select_pct,
         }
         st.markdown(f"""
         <div style="background:#E8F5E9;border:1.5px solid #66BB6A;border-left:5px solid #2E7D32;
