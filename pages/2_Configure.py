@@ -827,10 +827,42 @@ if "sf_rules" not in st.session_state:
 
 _sf_rules = st.session_state["sf_rules"]
 
-# Available match fields
-_MATCH_FIELDS = ["Store Name", "Category", "Chain / Customer Column"]
+# Available match fields — auto-detect extra columns from portfolio CSV
+_CORE_MATCH_FIELDS = ["Store Name", "Category"]
+_EXTRA_COLUMNS     = []
+_portfolio_for_rules = st.session_state.get("portfolio_df")
+if _portfolio_for_rules is not None:
+    # Standard columns that are always present — don't show as match options
+    _STANDARD_COLS = {
+        "store_id", "store_name", "address", "city", "lat", "lng",
+        "annual_sales_usd", "lines_per_store", "category",
+        "district", "area", "neighbourhood", "neighborhood", "bairro",
+        "zone", "suburb", "quarter", "region", "state", "governorate",
+        "province", "county", "wilaya", "emirate", "prefecture",
+    }
+    _extra_cols_raw = [c for c in _portfolio_for_rules.columns if c not in _STANDARD_COLS]
+    # Format nicely for display (e.g., "channel" → "Channel", "account_name" → "Account Name")
+    for _col in _extra_cols_raw:
+        _display = _col.replace("_", " ").title()
+        _EXTRA_COLUMNS.append({"display": _display, "column": _col})
+
+_MATCH_FIELDS = _CORE_MATCH_FIELDS + [ec["display"] for ec in _EXTRA_COLUMNS]
+if not _EXTRA_COLUMNS:
+    _MATCH_FIELDS.append("Chain / Customer Column")  # fallback label when no portfolio loaded
+
 _MATCH_TYPES  = ["Contains", "Exact"]
 _RULE_TYPES   = ["Channel", "Customer"]
+
+# Show detected columns info
+if _EXTRA_COLUMNS:
+    _col_names = ", ".join([f"**{ec['display']}**" for ec in _EXTRA_COLUMNS])
+    st.markdown(
+        f'<div style="background:#E3F2FD;border:1px solid #90CAF9;border-left:4px solid #1565C0;'
+        f'border-radius:8px;padding:0.6rem 1rem;margin:0.5rem 0;font-size:0.85rem;color:#0D47A1">'
+        f'Detected portfolio columns available for matching: {_col_names}'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 # Collect city names from configured regions/cities
 _configured_cities = sorted(set(
@@ -885,7 +917,7 @@ with st.expander("Add a rep assignment rule", expanded=len(_sf_rules) == 0):
     with _ar2:
         _new_match_field = st.selectbox("Match field", _MATCH_FIELDS, key="new_match_field",
             help="'Store Name' matches on the store_name column. 'Category' matches the scraping category. "
-                 "'Chain / Customer Column' matches a chain or customer column if present in the portfolio CSV.")
+                 "Any extra columns from your portfolio CSV (e.g., Channel, Account) are auto-detected and available here.")
         _new_match_type = st.selectbox("Match type", _MATCH_TYPES, key="new_match_type",
             help="'Contains' = store field includes the keyword. 'Exact' = must match exactly.")
 
@@ -909,10 +941,18 @@ with st.expander("Add a rep assignment rule", expanded=len(_sf_rules) == 0):
         elif not _new_match_value.strip():
             st.error("Please enter at least one match value.")
         else:
+            # Resolve match_field display name to actual column name
+            _field_to_col = {"Store Name": "store_name", "Category": "category",
+                             "Chain / Customer Column": "chain"}
+            for _ec in _EXTRA_COLUMNS:
+                _field_to_col[_ec["display"]] = _ec["column"]
+            _match_col = _field_to_col.get(_new_match_field, _new_match_field.lower().replace(" ", "_"))
+
             _new_rule = {
                 "rule_name":      _new_rule_name.strip(),
                 "rule_type":      _new_rule_type,
-                "match_field":    _new_match_field,
+                "match_field":    _new_match_field,       # display name for UI
+                "match_column":   _match_col,             # actual column name for pipeline
                 "match_type":     _new_match_type,
                 "match_value":    _new_match_value.strip(),
                 "geography":      _new_geography if "All" not in _new_geography else ["All"],
