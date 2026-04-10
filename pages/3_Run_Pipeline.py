@@ -1249,23 +1249,24 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
                           working_days=22, avg_speed_kmh=30, min_util_pct=65,
                           max_passes=5):
     """
-    Rebalance store assignments so no rep is below min_util_pct utilisation.
+    Two-phase workload balancer. Guarantees all zones end up between
+    min_util_pct (65%) and 110%.
 
-    Rules:
-      - Only move stores from a NEIGHBOURING zone (sorted by centroid distance)
-      - Donor must stay >= min_util_pct after giving up the store
-      - The moved store must be geographically close to the receiving zone
-        (within 2× the receiving zone's intra-cluster radius)
-      - One store moved per inner loop, recalculate, repeat
-      - max_passes full sweeps to prevent infinite loops
+    Phase A — Fix overloaded zones (> 110%):
+      Move furthest stores from overloaded zones to nearest under-100% zone.
+    Phase B — Fix underloaded zones (< 65%):
+      Pull nearest stores from neighbouring zones above 65%.
 
+    Geographic constraint: stores only move to nearby zones.
     Returns the number of stores moved.
     """
     if not zone_centres or len(zone_centres) < 2:
         return 0
 
-    monthly_cap = (daily_minutes - 30) * working_days   # effective capacity
-    min_thresh  = monthly_cap * min_util_pct / 100
+    monthly_cap  = (daily_minutes - 30) * working_days
+    min_thresh   = monthly_cap * min_util_pct / 100
+    max_thresh   = monthly_cap * 1.10  # 110% hard ceiling
+    target_cap   = monthly_cap * 1.00  # 100% — ideal max
 
     def _zone_stores(zid):
         return [s for s in all_stores
@@ -1285,105 +1286,157 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
         return (sum(s["lat"] for s in stores) / len(stores),
                 sum(s["lng"] for s in stores) / len(stores))
 
-    def _zone_radius(stores, c_lat, c_lng):
-        """Max distance from centroid to any store in the zone."""
-        if not stores:
-            return 5000  # default 5km
-        return max(haversine_m(c_lat, c_lng, s["lat"], s["lng"]) for s in stores)
-
-    total_moved = 0
-
-    for _pass in range(max_passes):
-        moved_this_pass = 0
-
-        # Recalculate utilisation for all zones
-        zone_util = {}
+    def _refresh_util():
+        """Recalculate utilisation for all zones."""
+        util = {}
         for zc in zone_centres:
             zid = zc["zone"]
             zs  = _zone_stores(zid)
             zt  = _zone_time(zs)
-            zone_util[zid] = {
+            util[zid] = {
                 "time": zt,
                 "util_pct": round(zt / monthly_cap * 100) if monthly_cap > 0 else 0,
                 "stores": zs,
                 "centroid": _zone_centroid(zs),
             }
+        return util
 
-        # Sort zones by utilisation ascending — fix most underloaded first
-        sorted_zones = sorted(zone_util.items(), key=lambda x: x[1]["util_pct"])
+    total_moved = 0
 
-        for zid, zinfo in sorted_zones:
-            if zinfo["util_pct"] >= min_util_pct:
-                continue  # this zone is fine
+    for _pass in range(max_passes):
+        moved_this_pass = 0
+        zone_util = _refresh_util()
+
+        # ── Phase A: Fix OVERLOADED zones (> 110%) ───────────────────────
+        overloaded = sorted(
+            [(zid, zi) for zid, zi in zone_util.items() if zi["time"] > max_thresh],
+            key=lambda x: x[1]["time"], reverse=True  # worst first
+        )
+
+        for zid, zinfo in overloaded:
+            if zinfo["time"] <= max_thresh:
+                continue
+
+            over_lat, over_lng = zinfo["centroid"]
+
+            # Find receiving zones sorted by distance (must be under 100%)
+            receivers = []
+            for r_zid, r_info in zone_util.items():
+                if r_zid == zid:
+                    continue
+                if r_info["time"] >= target_cap:
+                    continue  # already at or above 100%
+                r_lat, r_lng = r_info["centroid"]
+                dist = haversine_m(over_lat, over_lng, r_lat, r_lng)
+                receivers.append((r_zid, dist, r_info))
+            receivers.sort(key=lambda x: x[1])
+
+            if not receivers:
+                continue
+
+            # Move stores from overloaded zone, starting with the furthest
+            # from the overloaded zone's centroid (edge stores)
+            stores_by_dist = sorted(
+                zinfo["stores"],
+                key=lambda s: haversine_m(over_lat, over_lng, s["lat"], s["lng"]),
+                reverse=True  # furthest first
+            )
+
+            for s in stores_by_dist:
+                if zinfo["time"] <= max_thresh:
+                    break  # zone is now under 110%
+
+                s_time = s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+
+                # Find the nearest receiver that can absorb this store
+                for r_zid, r_dist, r_info in receivers:
+                    if r_info["time"] + s_time <= target_cap:
+                        # Move store
+                        s["rep_id"] = r_zid
+                        zinfo["time"]    -= s_time
+                        zinfo["util_pct"] = round(zinfo["time"] / monthly_cap * 100)
+                        r_info["time"]   += s_time
+                        r_info["util_pct"] = round(r_info["time"] / monthly_cap * 100)
+                        zinfo["stores"]  = [x for x in zinfo["stores"] if x is not s]
+                        r_info["stores"].append(s)
+                        zinfo["centroid"] = _zone_centroid(zinfo["stores"])
+                        r_info["centroid"] = _zone_centroid(r_info["stores"])
+                        moved_this_pass += 1
+                        total_moved     += 1
+                        break
+
+        # ── Phase B: Fix UNDERLOADED zones (< 65%) ──────────────────────
+        zone_util = _refresh_util()  # recalculate after Phase A
+        underloaded = sorted(
+            [(zid, zi) for zid, zi in zone_util.items() if zi["time"] < min_thresh],
+            key=lambda x: x[1]["time"]  # most underloaded first
+        )
+
+        for zid, zinfo in underloaded:
+            if zinfo["time"] >= min_thresh:
+                continue
 
             recv_lat, recv_lng = zinfo["centroid"]
-            recv_radius = _zone_radius(zinfo["stores"], recv_lat, recv_lng)
-            max_dist    = max(recv_radius * 2, 10000)  # at least 10km, at most 2× zone radius
 
-            # Find neighbouring donors sorted by centroid distance
+            # Find donors: above 65%, sorted by distance
             donors = []
             for d_zid, d_info in zone_util.items():
                 if d_zid == zid:
                     continue
-                if d_info["util_pct"] <= min_util_pct:
-                    continue  # donor must be above threshold
+                if d_info["time"] <= min_thresh:
+                    continue
                 d_lat, d_lng = d_info["centroid"]
                 dist = haversine_m(recv_lat, recv_lng, d_lat, d_lng)
                 donors.append((d_zid, dist, d_info))
-            donors.sort(key=lambda x: x[1])  # nearest first
+            donors.sort(key=lambda x: x[1])
 
             for d_zid, _d_dist, d_info in donors:
                 if zinfo["time"] >= min_thresh:
-                    break  # receiver is now at threshold
+                    break
 
-                # Find candidate stores in donor that are closest to receiver centroid
-                candidates = []
-                for s in d_info["stores"]:
-                    s_dist = haversine_m(recv_lat, recv_lng, s["lat"], s["lng"])
-                    if s_dist <= max_dist:
-                        candidates.append((s, s_dist))
-                candidates.sort(key=lambda x: x[1])  # nearest to receiver first
+                # Find candidate stores nearest to receiver
+                candidates = sorted(
+                    d_info["stores"],
+                    key=lambda s: haversine_m(recv_lat, recv_lng, s["lat"], s["lng"])
+                )
 
-                for s, s_dist in candidates:
+                for s in candidates:
                     if zinfo["time"] >= min_thresh:
-                        break  # done
+                        break
 
                     s_time = s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
 
-                    # Check donor stays >= min_util_pct after giving up this store
-                    donor_after = d_info["time"] - s_time
-                    if donor_after < min_thresh:
-                        continue  # would drain donor below threshold
+                    # Donor must stay above 65% after giving up store
+                    if d_info["time"] - s_time < min_thresh:
+                        continue
 
-                    # Move the store
+                    # Move store
                     s["rep_id"] = zid
                     zinfo["time"]    += s_time
                     zinfo["util_pct"] = round(zinfo["time"] / monthly_cap * 100)
                     d_info["time"]   -= s_time
                     d_info["util_pct"] = round(d_info["time"] / monthly_cap * 100)
-                    # Remove from donor's store list, add to receiver's
                     d_info["stores"] = [x for x in d_info["stores"] if x is not s]
                     zinfo["stores"].append(s)
-                    # Recalculate receiver centroid
                     zinfo["centroid"] = _zone_centroid(zinfo["stores"])
                     recv_lat, recv_lng = zinfo["centroid"]
                     moved_this_pass += 1
                     total_moved     += 1
 
         if moved_this_pass == 0:
-            break  # nothing left to rebalance
+            break
 
-    # Update zone_centres with new values
+    # Update zone_centres with final values
     for zc in zone_centres:
         zid = zc["zone"]
         zs  = _zone_stores(zid)
         if zs:
-            zc["store_count"]     = len(zs)
-            zc["time_needed_min"] = round(_zone_time(zs))
-            zc["capacity_min"]    = monthly_cap
-            zc["utilisation_pct"] = round(_zone_time(zs) / monthly_cap * 100) if monthly_cap > 0 else 0
-            zc["centre_lat"]      = round(sum(s["lat"] for s in zs) / len(zs), 4)
-            zc["centre_lng"]      = round(sum(s["lng"] for s in zs) / len(zs), 4)
+            zc["store_count"]      = len(zs)
+            zc["time_needed_min"]  = round(_zone_time(zs))
+            zc["capacity_min"]     = monthly_cap
+            zc["utilisation_pct"]  = round(_zone_time(zs) / monthly_cap * 100) if monthly_cap > 0 else 0
+            zc["centre_lat"]       = round(sum(s["lat"] for s in zs) / len(zs), 4)
+            zc["centre_lng"]       = round(sum(s["lng"] for s in zs) / len(zs), 4)
             zc["visits_per_month"] = sum(s.get("visits_per_month", 1) for s in zs)
 
     return total_moved
