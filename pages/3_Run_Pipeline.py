@@ -3775,25 +3775,32 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # ── PHASE 2: Mixed Pool Routing ──────────────────────────────────
         if rep_mode == "recommended":
-            # Step 1: Calculate total reps needed for ALL stores (before carving out dedicated)
-            # This gives the stable base number (e.g., 10 reps)
-            status.info(f"Stage 6/{total_steps} — Calculating total recommended reps for all {len(priority)} stores...")
-            rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
-                priority, daily_minutes, working_days, avg_speed
-            )
+            # Calculate reps for the MIXED pool based on its actual workload
+            # (not total minus dedicated — that breaks with large dedicated groups)
+            if _mixed_pool:
+                status.info(f"Stage 6/{total_steps} — Calculating recommended reps for {len(_mixed_pool)} mixed stores...")
+                _mixed_rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
+                    _mixed_pool, daily_minutes, working_days, avg_speed
+                )
+                _mixed_rep_count = max(1, _mixed_rec_reps)
+            else:
+                _mixed_rep_count = 0
+                total_mins = 0
+                monthly_cap = (daily_minutes - break_minutes) * working_days
 
-            # Step 2: Subtract dedicated reps → mixed rep count
-            _mixed_rep_count = max(1, rec_reps - _n_dedicated_reps)
+            rec_reps = _n_dedicated_reps + _mixed_rep_count  # total for display
+
             if _n_dedicated_reps > 0:
                 status.info(
-                    f"Stage 6/{total_steps} — Total recommended: {rec_reps} reps. "
-                    f"Dedicated: {_n_dedicated_reps}. Mixed pool: {_mixed_rep_count} reps "
-                    f"for {len(_mixed_pool)} stores."
+                    f"Stage 6/{total_steps} — Dedicated: {_n_dedicated_reps} rep(s). "
+                    f"Mixed: {_mixed_rep_count} reps for {len(_mixed_pool)} stores. "
+                    f"Total: {rec_reps} reps."
                 )
 
             # Step 3: Route mixed pool with exactly _mixed_rep_count reps (like fixed mode)
             zone_centres = list(_dedicated_zones)
             actual_reps  = _n_dedicated_reps
+            min_util_pct = 65  # default, used in rep_recommendation
             if _mixed_pool:
                 status.info(f"Stage 6/{total_steps} — Clustering {len(_mixed_pool)} mixed stores into {_mixed_rep_count} reps...")
                 _mixed_pts    = [(s["lat"], s["lng"]) for s in _mixed_pool]
