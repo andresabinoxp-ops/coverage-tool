@@ -489,7 +489,7 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 
     return visit_time + travel_time
 
-def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30):
+def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30, break_minutes=30):
     """
     Calculate recommended rep count including geographic travel time estimate.
     Uses visits_per_month (pre-route) — reliable estimate before daily budget cuts.
@@ -498,7 +498,8 @@ def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days
     if not priority_stores:
         return 1, 0.0, 0.0
 
-    monthly_capacity = daily_minutes * working_days
+    # Effective capacity = daily minutes minus break, times working days
+    monthly_capacity = (daily_minutes - break_minutes) * working_days
 
 
 
@@ -2667,7 +2668,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         dry_rep_mode  = cfg.get("rep_mode","fixed")
 
         if dry_rep_mode == "recommended":
-            rec_reps, total_mins, monthly_cap = recommended_reps_time_based(dry_priority, daily_mins, work_days, speed_kmh)
+            rec_reps, total_mins, monthly_cap = recommended_reps_time_based(dry_priority, daily_mins, work_days, speed_kmh, 30)
             dry_rec = {
                 "mode":                 "recommended",
                 "total_minutes_needed": total_mins,
@@ -3780,7 +3781,7 @@ if st.button("  Run Coverage Agent", type="primary"):
             if _mixed_pool:
                 status.info(f"Stage 6/{total_steps} — Calculating recommended reps for {len(_mixed_pool)} mixed stores...")
                 _mixed_rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
-                    _mixed_pool, daily_minutes, working_days, avg_speed
+                    _mixed_pool, daily_minutes, working_days, avg_speed, break_minutes
                 )
                 _mixed_rep_count = max(1, _mixed_rec_reps)
             else:
