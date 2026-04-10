@@ -1142,11 +1142,19 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             if len(_debug_sample_vals) < 5:
                 _debug_sample_vals.append(str(s.get(match_col, "—MISSING—"))[:50])
 
-            # Geography filter
+            # Geography filter — check all location fields, not just city
             if "All" not in geo_scope:
-                s_city = str(s.get("city", "")).strip().lower()
-                geo_match = any(g.strip().lower() in s_city or s_city in g.strip().lower()
-                                for g in geo_scope)
+                _loc_fields = [
+                    str(s.get("city", "")).strip().lower(),
+                    str(s.get("region", "")).strip().lower(),
+                    str(s.get("address", "")).strip().lower(),
+                    str(s.get("district", "")).strip().lower(),
+                    str(s.get("area", "")).strip().lower(),
+                    str(s.get("governorate", "")).strip().lower(),
+                    str(s.get("province", "")).strip().lower(),
+                ]
+                _loc_combined = " ".join(_loc_fields)
+                geo_match = any(g.strip().lower() in _loc_combined for g in geo_scope)
                 if not geo_match:
                     _debug_geo_skip += 1
                     continue
