@@ -3719,13 +3719,108 @@ if st.button("  Run Coverage Agent", type="primary"):
         visit_benchmarks  = cfg.get("visit_benchmarks", {})
         size_percentiles  = cfg.get("size_percentiles", {"large_pct":20,"medium_pct":60,"small_pct":20})
         cat_percentiles   = build_category_percentiles(all_stores)
+
+        # ── Smart tier assignment: 3 tiers of logic ─────────────────────
+        # Generic account names that should NOT force Large
+        _GENERIC_ACCOUNTS = {
+            "others", "other", "independent", "unknown", "n/a", "na", "none",
+            "general", "misc", "miscellaneous", "unassigned", "blank", "",
+            "general trade", "traditional trade", "open market",
+        }
+
+        def _get_visit_params(tier, cat):
+            """Get visits_per_month and visit_duration for a tier + category."""
+            bench = visit_benchmarks.get(cat, visit_benchmarks.get("default", {
+                "large_visits":4,"large_duration":40,
+                "medium_visits":2,"medium_duration":25,
+                "small_visits":1,"small_duration":15,
+            }))
+            if tier == "Large":
+                return float(bench.get("large_visits", 4)), int(bench.get("large_duration", 40))
+            elif tier == "Medium":
+                return float(bench.get("medium_visits", 2)), int(bench.get("medium_duration", 25))
+            else:
+                return float(bench.get("small_visits", 1)), int(bench.get("small_duration", 15))
+
+        # Tier 1: Named accounts → force Large
+        _n_account_large = 0
         for s in all_stores:
+            acct = str(s.get("account", "") or "").strip().lower()
+            if acct and acct not in _GENERIC_ACCOUNTS:
+                s["size_tier"] = "Large"
+                s["_tier_reason"] = "named_account"
+                visits, duration = _get_visit_params("Large", s.get("category", ""))
+                s["visits_per_month"]   = visits
+                s["visit_duration_min"] = duration
+                _n_account_large += 1
+
+        # Tier 2: Portfolio stores with sales data (no named account) → split by sales percentile
+        _portfolio_with_sales = [s for s in all_stores
+                                 if s.get("source") == "portfolio"
+                                 and s.get("_tier_reason") != "named_account"
+                                 and float(s.get("annual_sales_usd", 0) or 0) > 0]
+
+        if _portfolio_with_sales:
+            # Build sales percentiles per category
+            _sales_by_cat = {}
+            for s in _portfolio_with_sales:
+                cat = s.get("category", "")
+                if cat not in _sales_by_cat:
+                    _sales_by_cat[cat] = []
+                _sales_by_cat[cat].append(float(s.get("annual_sales_usd", 0) or 0))
+            for cat in _sales_by_cat:
+                _sales_by_cat[cat].sort()
+
+            large_pct  = size_percentiles.get("large_pct", 20)
+            medium_pct = size_percentiles.get("medium_pct", 40)
+
+            for s in _portfolio_with_sales:
+                cat = s.get("category", "")
+                sales = float(s.get("annual_sales_usd", 0) or 0)
+                cat_sales = _sales_by_cat.get(cat, [])
+                n = len(cat_sales)
+                if n == 0:
+                    pct = 50.0
+                else:
+                    rank = sum(1 for v in cat_sales if v <= sales)
+                    pct = (rank / n) * 100
+
+                if pct >= (100 - large_pct):
+                    tier = "Large"
+                elif pct >= (100 - large_pct - medium_pct):
+                    tier = "Medium"
+                else:
+                    tier = "Small"
+
+                s["size_tier"] = tier
+                s["_tier_reason"] = "sales_percentile"
+                visits, duration = _get_visit_params(tier, cat)
+                s["visits_per_month"]   = visits
+                s["visit_duration_min"] = duration
+
+        # Tier 3: Everything else (scraped stores, portfolio without sales) → score percentile
+        _remaining = [s for s in all_stores
+                      if s.get("_tier_reason") not in ("named_account", "sales_percentile")]
+        for s in _remaining:
             tier, visits, duration = assign_size_tier(s, cat_percentiles, visit_benchmarks, size_percentiles)
             s["size_tier"]          = tier
+            s["_tier_reason"]       = "score_percentile"
             s["visits_per_month"]   = visits
             s["visit_duration_min"] = duration
-            s["calls_per_month"]    = visits   # keep for backward compatibility
-            s["visit_frequency"]    = tier     # keep for backward compatibility
+
+        # Set backward-compatibility fields for ALL stores
+        for s in all_stores:
+            s["calls_per_month"]  = s.get("visits_per_month", 1)
+            s["visit_frequency"]  = s.get("size_tier", "Small")
+
+        _n_sales_tier = len(_portfolio_with_sales)
+        _n_score_tier = len(_remaining)
+        status.info(
+            f"Stage 5/{total_steps} — Tier assignment: "
+            f"{_n_account_large} named accounts → Large, "
+            f"{_n_sales_tier} portfolio stores by sales, "
+            f"{_n_score_tier} stores by score percentile"
+        )
         bar.progress(72)
 
         # Stage 6: Routes + Time-Based Rep Planning
