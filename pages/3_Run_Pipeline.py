@@ -1127,20 +1127,34 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
 
         # Find matching stores (not already claimed by a higher-priority rule)
         matched = []
+        _debug_geo_skip  = 0
+        _debug_col_empty = 0
+        _debug_no_match  = 0
+        _debug_checked   = 0
+        _debug_sample_vals = []
+
         for s in stores:
             if id(s) in matched_ids:
                 continue
+            _debug_checked += 1
+
+            # Collect sample values for debugging (first 5 stores)
+            if len(_debug_sample_vals) < 5:
+                _debug_sample_vals.append(str(s.get(match_col, "—MISSING—"))[:50])
 
             # Geography filter
             if "All" not in geo_scope:
                 s_city = str(s.get("city", "")).strip().lower()
-                geo_match = any(g.strip().lower() == s_city for g in geo_scope)
+                geo_match = any(g.strip().lower() in s_city or s_city in g.strip().lower()
+                                for g in geo_scope)
                 if not geo_match:
+                    _debug_geo_skip += 1
                     continue
 
             # Field matching
             field_val = str(s.get(match_col, "")).strip().lower()
-            if not field_val:
+            if not field_val or field_val in ("nan", "none", "0", "0.0"):
+                _debug_col_empty += 1
                 continue
 
             if match_type == "exact":
@@ -1149,6 +1163,18 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             else:  # contains
                 if any(kw in field_val for kw in match_vals):
                     matched.append(s)
+                else:
+                    _debug_no_match += 1
+
+        # Debug summary for this rule
+        _debug_msg = (
+            f"Rule '{rule_name}': checked {_debug_checked} stores, "
+            f"column '{match_col}' looking for '{','.join(match_vals)}' — "
+            f"matched {len(matched)}, geo-skipped {_debug_geo_skip}, "
+            f"column-empty {_debug_col_empty}, no-match {_debug_no_match}. "
+            f"Sample values in '{match_col}': {_debug_sample_vals}"
+        )
+        warnings.append(_debug_msg)
 
         if not matched:
             warnings.append(f"Rule '{rule_name}' matched 0 stores — skipped, rep(s) freed to mixed pool.")
@@ -3705,11 +3731,18 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         if _sf_rules:
             status.info(f"Stage 6/{total_steps} — Applying {len(_sf_rules)} sales force rules...")
+            # Debug: show what columns are available on portfolio stores
+            _portfolio_in_priority = [s for s in priority if s.get("source") == "portfolio"]
+            if _portfolio_in_priority:
+                _sample_keys = sorted(_portfolio_in_priority[0].keys())
+                status.info(f"  Portfolio store columns: {', '.join(_sample_keys[:20])}")
+            else:
+                status.warning("  No portfolio stores found in priority set!")
             # Debug: show what rules we're applying
             for _ri, _r in enumerate(_sf_rules):
                 status.info(
                     f"  Rule {_ri+1}: '{_r.get('rule_name','')}' — "
-                    f"match {_r.get('match_field','')} ({_r.get('match_column','')}) "
+                    f"match column='{_r.get('match_column','')}' "
                     f"contains '{_r.get('match_value','')}' — "
                     f"geography: {_r.get('geography',['All'])}"
                 )
