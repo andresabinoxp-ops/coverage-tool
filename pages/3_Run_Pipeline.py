@@ -1307,63 +1307,61 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
         moved_this_pass = 0
         zone_util = _refresh_util()
 
-        # ── Phase A: Fix OVERLOADED zones (> 110%) ───────────────────────
-        overloaded = sorted(
-            [(zid, zi) for zid, zi in zone_util.items() if zi["time"] > max_thresh],
-            key=lambda x: x[1]["time"], reverse=True  # worst first
-        )
+        # ── Phase A: Fix OVERLOADED zones (> 110%) via cascade ─────────
+        # Each overloaded zone pushes stores ONLY to its nearest neighbour.
+        # If that neighbour becomes overloaded, it cascades to ITS neighbour
+        # on the next iteration. Stores move one zone at a time = geographic integrity.
+        for _cascade in range(50):  # max 50 single-store moves per pass
+            zone_util = _refresh_util()
+            # Find the most overloaded zone
+            worst = None
+            worst_time = 0
+            for zid, zi in zone_util.items():
+                if zi["time"] > max_thresh and zi["time"] > worst_time:
+                    worst = (zid, zi)
+                    worst_time = zi["time"]
 
-        for zid, zinfo in overloaded:
-            if zinfo["time"] <= max_thresh:
-                continue
+            if not worst:
+                break  # no overloaded zones
 
+            zid, zinfo = worst
             over_lat, over_lng = zinfo["centroid"]
 
-            # Find receiving zones sorted by distance (must be under 100%)
-            receivers = []
-            for r_zid, r_info in zone_util.items():
-                if r_zid == zid:
+            # Find nearest neighbour (ANY zone, regardless of its utilisation)
+            neighbour = None
+            best_dist = float("inf")
+            for n_zid, n_info in zone_util.items():
+                if n_zid == zid:
                     continue
-                if r_info["time"] >= target_cap:
-                    continue  # already at or above 100%
-                r_lat, r_lng = r_info["centroid"]
-                dist = haversine_m(over_lat, over_lng, r_lat, r_lng)
-                receivers.append((r_zid, dist, r_info))
-            receivers.sort(key=lambda x: x[1])
+                n_lat, n_lng = n_info["centroid"]
+                d = haversine_m(over_lat, over_lng, n_lat, n_lng)
+                if d < best_dist:
+                    best_dist = d
+                    neighbour = (n_zid, n_info)
 
-            if not receivers:
-                continue
+            if not neighbour:
+                break
 
-            # Move stores from overloaded zone, starting with the furthest
-            # from the overloaded zone's centroid (edge stores)
-            stores_by_dist = sorted(
-                zinfo["stores"],
-                key=lambda s: haversine_m(over_lat, over_lng, s["lat"], s["lng"]),
-                reverse=True  # furthest first
-            )
+            n_zid, n_info = neighbour
 
-            for s in stores_by_dist:
-                if zinfo["time"] <= max_thresh:
-                    break  # zone is now under 110%
+            # Pick the store closest to the boundary (nearest to neighbour centroid)
+            n_lat, n_lng = n_info["centroid"]
+            best_store = None
+            best_s_dist = float("inf")
+            for s in zinfo["stores"]:
+                sd = haversine_m(s["lat"], s["lng"], n_lat, n_lng)
+                if sd < best_s_dist:
+                    best_s_dist = sd
+                    best_store = s
 
-                s_time = s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+            if not best_store:
+                break
 
-                # Find the nearest receiver that can absorb this store
-                for r_zid, r_dist, r_info in receivers:
-                    if r_info["time"] + s_time <= target_cap:
-                        # Move store
-                        s["rep_id"] = r_zid
-                        zinfo["time"]    -= s_time
-                        zinfo["util_pct"] = round(zinfo["time"] / monthly_cap * 100)
-                        r_info["time"]   += s_time
-                        r_info["util_pct"] = round(r_info["time"] / monthly_cap * 100)
-                        zinfo["stores"]  = [x for x in zinfo["stores"] if x is not s]
-                        r_info["stores"].append(s)
-                        zinfo["centroid"] = _zone_centroid(zinfo["stores"])
-                        r_info["centroid"] = _zone_centroid(r_info["stores"])
-                        moved_this_pass += 1
-                        total_moved     += 1
-                        break
+            # Move one store
+            s_time = best_store.get("visits_per_month", 1) * best_store.get("visit_duration_min", 25)
+            best_store["rep_id"] = n_zid
+            moved_this_pass += 1
+            total_moved     += 1
 
         # ── Phase B: Fix UNDERLOADED zones (< 65%) ──────────────────────
         zone_util = _refresh_util()  # recalculate after Phase A
