@@ -842,7 +842,7 @@ _match_options = {}  # display_name → {"column": col_name, "values": [unique_v
 # Always available: Store Name keyword (free text)
 _match_options["Store name keyword"] = {"column": "store_name", "values": []}
 # Always available: Scraping category
-_match_options["Category"] = {"column": "category", "values": list(final_categories) if final_categories else []}
+_match_options["Category"] = {"column": "category", "values": list(final_categories) if 'final_categories' in dir() and final_categories else []}
 
 if _portfolio_for_rules is not None:
     _extra_cols = [c for c in _portfolio_for_rules.columns if c not in _STANDARD_COLS]

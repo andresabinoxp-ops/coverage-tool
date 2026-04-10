@@ -245,7 +245,7 @@ if rep_rec:
                 st.markdown(
                     f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #0D47A1;'
                     f'border-radius:6px;padding:0.5rem 0.8rem;margin:0.3rem 0;font-size:0.85rem">'
-                    f'Rep {_dz["zone"]} — <strong>{_dz.get("rule_name","")}</strong> '
+                    f'Rep {_dz.get("zone","?")} — <strong>{_dz.get("rule_name","")}</strong> '
                     f'({_dz.get("rule_type","")}) · '
                     f'{_dz.get("store_count",0)} stores · '
                     f'{_dz.get("time_needed_min",0):,} min · '
@@ -260,7 +260,8 @@ if rep_rec:
     # Build zone→rule_name map for the workload table
     _zone_rule_map = {}
     for _z in zone_cs:
-        _zone_rule_map[_z["zone"]] = _z.get("rule_name", "Mixed")
+        if _z.get("zone") is not None:
+            _zone_rule_map[_z["zone"]] = _z.get("rule_name", "Mixed")
 
     rep_rows = {}
     for s in all_stores:
@@ -284,7 +285,7 @@ if rep_rec:
 
         rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
 
-        zc_map = {int(z["zone"]): z.get("time_needed_min", 0)
+        zc_map = {int(z.get("zone",0)): z.get("time_needed_min", 0)
                   for z in rep_rec.get("zone_centres", [])}
 
         cap_per_period = daily_mins * work_days * max(_plan_pp, 1)   # 10,560 × plan_period

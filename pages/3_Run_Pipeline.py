@@ -1247,13 +1247,13 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
 
 def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
                           working_days=22, avg_speed_kmh=30, min_util_pct=65,
-                          max_passes=5):
+                          max_passes=5, break_minutes=30):
     """
     Two-phase workload balancer. Guarantees all zones end up between
     min_util_pct (65%) and 110%.
 
-    Phase A — Fix overloaded zones (> 110%):
-      Move furthest stores from overloaded zones to nearest under-100% zone.
+    Phase A — Fix overloaded zones (> 110%) via cascade:
+      Move edge stores to nearest neighbour, one at a time.
     Phase B — Fix underloaded zones (< 65%):
       Pull nearest stores from neighbouring zones above 65%.
 
@@ -1263,7 +1263,7 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
     if not zone_centres or len(zone_centres) < 2:
         return 0
 
-    monthly_cap  = (daily_minutes - 30) * working_days
+    monthly_cap  = (daily_minutes - break_minutes) * working_days
     min_thresh   = monthly_cap * min_util_pct / 100
     max_thresh   = monthly_cap * 1.10  # 110% hard ceiling
     target_cap   = monthly_cap * 1.00  # 100% — ideal max
@@ -3921,6 +3921,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                         avg_speed_kmh=avg_speed,
                         min_util_pct=min_util_pct,
                         max_passes=5,
+                        break_minutes=break_minutes,
                     )
                     if _n_moved_rec > 0:
                         status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved_rec} stores.")
@@ -3954,17 +3955,19 @@ if st.button("  Run Coverage Agent", type="primary"):
         else:
             # Fixed mode — cluster into configured rep count
             rep_count = max(1, cfg.get("rep_count", 1))
-            _mixed_rep_count = max(1, rep_count - _n_dedicated_reps)
+            _mixed_rep_count = rep_count - _n_dedicated_reps
             if _n_dedicated_reps > 0:
                 status.info(
                     f"Stage 6/{total_steps} — Fixed mode: {rep_count} total reps = "
                     f"{_n_dedicated_reps} dedicated + {_mixed_rep_count} mixed"
                 )
-                if _mixed_rep_count <= 0:
-                    status.error(
-                        f"Dedicated rules require {_n_dedicated_reps} reps but only "
-                        f"{rep_count} total configured. No reps left for mixed pool."
-                    )
+            if _mixed_rep_count <= 0:
+                status.error(
+                    f"Dedicated rules require {_n_dedicated_reps} reps but only "
+                    f"{rep_count} total configured. No reps left for mixed pool. "
+                    f"Increase total reps or reduce dedicated rules."
+                )
+                _mixed_rep_count = max(1, _mixed_rep_count)  # fallback to 1
             status.info(f"Stage 6/{total_steps} [v3] — Allocating {_mixed_rep_count} mixed rep routes (fixed mode)...")
             if _mixed_pool:
                 pts    = [(s["lat"],s["lng"]) for s in _mixed_pool]
@@ -4053,6 +4056,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     avg_speed_kmh=avg_speed,
                     min_util_pct=min_util_pct,
                     max_passes=5,
+                    break_minutes=break_minutes,
                 )
                 if _n_moved > 0:
                     status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved} stores to raise under-utilised zones.")
@@ -4464,7 +4468,7 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             # Correct rep count = ceil(total_exec_travel / eff_cap_per_rep)
             # eff_cap = (daily_minutes - break) × working_days — exec+travel only
-            _eff_cap = (daily_minutes - 30) * working_days  # 9,900
+            _eff_cap = (daily_minutes - break_minutes) * working_days
             correct_reps = max(1, math.ceil(zc_total / _eff_cap)) if zc_total > 0 else n_kept
 
             rep_recommendation["total_minutes_needed"] = round(zc_total)

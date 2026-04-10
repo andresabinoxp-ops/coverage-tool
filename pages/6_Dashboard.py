@@ -329,7 +329,8 @@ all_reps = sorted([r for r in stores_df["rep_id"].dropna().unique() if int(r) > 
 _dash_rep_rec   = st.session_state.get("run_results", {}).get("rep_recommendation", {})
 _dash_zone_rule = {}
 for _z in _dash_rep_rec.get("zone_centres", []):
-    _dash_zone_rule[_z["zone"]] = _z.get("rule_name", "Mixed")
+    if _z.get("zone") is not None:
+        _dash_zone_rule[_z["zone"]] = _z.get("rule_name", "Mixed")
 
 def _dash_rep_label(rid):
     rule = _dash_zone_rule.get(int(rid), "")

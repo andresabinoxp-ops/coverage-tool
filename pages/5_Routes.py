@@ -178,7 +178,8 @@ _rep_rec_routes = st.session_state.get("run_results", {}).get("rep_recommendatio
 _zc_routes      = _rep_rec_routes.get("zone_centres", [])
 _zone_rule_map_r = {}
 for _z in _zc_routes:
-    _zone_rule_map_r[_z["zone"]] = _z.get("rule_name", "Mixed")
+    if _z.get("zone") is not None:
+        _zone_rule_map_r[_z["zone"]] = _z.get("rule_name", "Mixed")
 
 def _rep_label(rid):
     rule = _zone_rule_map_r.get(rid, "")
@@ -556,7 +557,7 @@ if not display_df.empty:
 
     # Pull zone_centres travel data for this rep if available
     _zc_list   = st.session_state.get("run_results", {}).get("rep_recommendation", {}).get("zone_centres", [])
-    _zc_by_rep = {int(z["zone"]): z for z in _zc_list}
+    _zc_by_rep = {int(z.get("zone",0)): z for z in _zc_list if z.get("zone") is not None}
 
     # Routed stores only
     if tbl_rep_id:
