@@ -1327,17 +1327,24 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
             zid, zinfo = worst
             over_lat, over_lng = zinfo["centroid"]
 
-            # Find nearest neighbour (ANY zone, regardless of its utilisation)
+            # Find nearest neighbour — prefer zones under 100%, fallback to any
             neighbour = None
-            best_dist = float("inf")
+            best_dist_under = float("inf")
+            best_under      = None
+            best_dist_any   = float("inf")
+            best_any        = None
             for n_zid, n_info in zone_util.items():
                 if n_zid == zid:
                     continue
                 n_lat, n_lng = n_info["centroid"]
                 d = haversine_m(over_lat, over_lng, n_lat, n_lng)
-                if d < best_dist:
-                    best_dist = d
-                    neighbour = (n_zid, n_info)
+                if d < best_dist_any:
+                    best_dist_any = d
+                    best_any = (n_zid, n_info)
+                if n_info["time"] < target_cap and d < best_dist_under:
+                    best_dist_under = d
+                    best_under = (n_zid, n_info)
+            neighbour = best_under or best_any  # prefer under-100%, fallback to nearest
 
             if not neighbour:
                 break
@@ -1436,6 +1443,12 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
             zc["centre_lat"]       = round(sum(s["lat"] for s in zs) / len(zs), 4)
             zc["centre_lng"]       = round(sum(s["lng"] for s in zs) / len(zs), 4)
             zc["visits_per_month"] = sum(s.get("visits_per_month", 1) for s in zs)
+        else:
+            # Zone became empty after rebalancing — reset fields
+            zc["store_count"]      = 0
+            zc["time_needed_min"]  = 0
+            zc["utilisation_pct"]  = 0
+            zc["visits_per_month"] = 0
 
     return total_moved
 
@@ -3726,6 +3739,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             "others", "other", "independent", "unknown", "n/a", "na", "none",
             "general", "misc", "miscellaneous", "unassigned", "blank", "",
             "general trade", "traditional trade", "open market",
+            "retail", "retailer", "dealer", "distributor", "wholesaler",
+            "generic", "standard", "local", "local shop", "not applicable",
+            "tbd", "to be confirmed", "pending",
         }
 
         def _get_visit_params(tier, cat):
@@ -3742,11 +3758,30 @@ if st.button("  Run Coverage Agent", type="primary"):
             else:
                 return float(bench.get("small_visits", 1)), int(bench.get("small_duration", 15))
 
-        # Tier 1: Named accounts → force Large
+        # Tier 1: Named accounts OR stores matching SF rules → force Large
+        # Build a set of rule match keywords for store_name matching
+        # so scraped Lulu stores (no account field) also get forced Large
+        _sf_rules_for_tier = cfg.get("sf_rules", []) or st.session_state.get("sf_rules", [])
+        _rule_name_keywords = set()
+        for _r in _sf_rules_for_tier:
+            if _r.get("match_column") in ("store_name", "account"):
+                for kw in str(_r.get("match_value", "")).split(","):
+                    kw = kw.strip().lower()
+                    if kw:
+                        _rule_name_keywords.add(kw)
+
         _n_account_large = 0
         for s in all_stores:
+            # Check 1: Has named account column
             acct = str(s.get("account", "") or "").strip().lower()
-            if acct and acct not in _GENERIC_ACCOUNTS:
+            _is_named = acct and acct not in _GENERIC_ACCOUNTS
+
+            # Check 2: Store name matches a SF rule keyword (catches scraped chain stores)
+            if not _is_named and _rule_name_keywords:
+                sname = str(s.get("store_name", "") or "").strip().lower()
+                _is_named = any(kw in sname for kw in _rule_name_keywords)
+
+            if _is_named:
                 s["size_tier"] = "Large"
                 s["_tier_reason"] = "named_account"
                 visits, duration = _get_visit_params("Large", s.get("category", ""))
@@ -3779,7 +3814,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                 sales = float(s.get("annual_sales_usd", 0) or 0)
                 cat_sales = _sales_by_cat.get(cat, [])
                 n = len(cat_sales)
-                if n == 0:
+                if n <= 2:
+                    # Too few stores to rank meaningfully — use Medium as safe default
                     pct = 50.0
                 else:
                     rank = sum(1 for v in cat_sales if v <= sales)
