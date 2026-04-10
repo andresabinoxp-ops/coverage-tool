@@ -1158,20 +1158,9 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
         for s in matched:
             matched_ids.add(id(s))
 
-        # Check if requested reps are enough for capacity
-        total_time = sum(
-            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
-            for s in matched
-        )
-        needed_reps = max(1, math.ceil(total_time / eff_cap)) if eff_cap > 0 else 1
-        actual_reps = max(n_reps, needed_reps)
-
-        if actual_reps > n_reps:
-            warnings.append(
-                f"Rule '{rule_name}': {len(matched)} stores need {needed_reps} reps "
-                f"(capacity {eff_cap:,} min/rep) but only {n_reps} configured. "
-                f"Auto-expanded to {actual_reps} reps."
-            )
+        # Dedicated reps: use exactly the user's configured count.
+        # No utilisation enforcement — just optimize for geographic day-grouping.
+        actual_reps = n_reps
 
         # Assign rep_ids using k-means if multiple reps, else single assignment
         matched_geo = [s for s in matched if s.get("lat") and s.get("lng")]
@@ -3936,20 +3925,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                                   and not z.get("dedicated")]
                 kept_zones_f   = zone_centres  # keep ALL zones in fixed mode
 
-                # Check for overloaded dedicated reps
-                _overloaded = [z for z in zone_centres if z.get("dedicated")
-                               and z.get("utilisation_pct", 0) > 100]
+                # Dedicated reps: no utilisation enforcement.
+                # Just flag for informational purposes (no warnings).
                 _overload_warnings = []
-                for _oz in _overloaded:
-                    _extra_needed = max(1, math.ceil(_oz["time_needed_min"] / monthly_cap)) - 1
-                    _overload_warnings.append(
-                        f"Rep {_oz['zone']} ({_oz.get('rule_name','')}) is at "
-                        f"{_oz['utilisation_pct']}% utilisation. "
-                        f"Consider adding {_extra_needed} more dedicated rep(s) for this rule, "
-                        f"or reduce dedicated reps elsewhere to free capacity."
-                    )
-                for _ow in _overload_warnings:
-                    status.warning(f"  {_ow}")
 
                 rep_recommendation = {
                     "mode":                "fixed",
