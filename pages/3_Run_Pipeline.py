@@ -3775,35 +3775,80 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # ── PHASE 2: Mixed Pool Routing ──────────────────────────────────
         if rep_mode == "recommended":
-            status.info(f"Stage 6/{total_steps} — Calculating recommended rep count for mixed pool (time-based)...")
-
+            # Step 1: Calculate total reps needed for ALL stores (before carving out dedicated)
+            # This gives the stable base number (e.g., 10 reps)
+            status.info(f"Stage 6/{total_steps} — Calculating total recommended reps for all {len(priority)} stores...")
             rec_reps, total_mins, monthly_cap = recommended_reps_time_based(
-                _mixed_pool, daily_minutes, working_days, avg_speed
+                priority, daily_minutes, working_days, avg_speed
             )
 
-            zone_centres = list(_dedicated_zones)  # start with dedicated zones
+            # Step 2: Subtract dedicated reps → mixed rep count
+            _mixed_rep_count = max(1, rec_reps - _n_dedicated_reps)
+            if _n_dedicated_reps > 0:
+                status.info(
+                    f"Stage 6/{total_steps} — Total recommended: {rec_reps} reps. "
+                    f"Dedicated: {_n_dedicated_reps}. Mixed pool: {_mixed_rep_count} reps "
+                    f"for {len(_mixed_pool)} stores."
+                )
+
+            # Step 3: Route mixed pool with exactly _mixed_rep_count reps (like fixed mode)
+            zone_centres = list(_dedicated_zones)
             actual_reps  = _n_dedicated_reps
             if _mixed_pool:
-                status.info(f"Stage 6/{total_steps} — Building geographic rep territories for mixed pool...")
-                _mixed_zones, _mixed_reps = plan_reps_by_supercity(
-                    None, _mixed_pool,
-                    daily_minutes=daily_minutes,
-                    working_days=working_days,
-                    avg_speed_kmh=avg_speed,
-                    all_stores_ref=all_stores,
-                )
-                # Offset mixed zone IDs to avoid collision with dedicated rep_ids
-                for _mz in _mixed_zones:
-                    _old_zone = _mz["zone"]
-                    _mz["zone"] = _old_zone + _n_dedicated_reps
-                    _mz["dedicated"] = False
-                    _mz["rule_name"] = "Mixed"
-                    _mz["rule_type"] = ""
-                    for s in all_stores:
-                        if s.get("rep_id") == _old_zone and not s.get("_rule_name"):
-                            s["rep_id"] = _mz["zone"]
-                zone_centres.extend(_mixed_zones)
-                actual_reps += _mixed_reps
+                status.info(f"Stage 6/{total_steps} — Clustering {len(_mixed_pool)} mixed stores into {_mixed_rep_count} reps...")
+                _mixed_pts    = [(s["lat"], s["lng"]) for s in _mixed_pool]
+                _mixed_labels = kmeans_simple(_mixed_pts, _mixed_rep_count)
+
+                # Guarantee exactly _mixed_rep_count non-empty zones
+                _mz_actual = len(set(_mixed_labels))
+                while _mz_actual < _mixed_rep_count and len(_mixed_pool) >= _mixed_rep_count:
+                    from collections import Counter as _Counter
+                    _counts = _Counter(_mixed_labels)
+                    _biggest = max(_counts, key=lambda x: _counts[x])
+                    if _counts[_biggest] < 2:
+                        break
+                    _used = set(_mixed_labels)
+                    _new_lbl = next((c for c in range(_mixed_rep_count) if c not in _used), None)
+                    if _new_lbl is None:
+                        break
+                    _big_idx = [i for i, l in enumerate(_mixed_labels) if l == _biggest]
+                    _c_lat = sum(_mixed_pts[i][0] for i in _big_idx) / len(_big_idx)
+                    _c_lng = sum(_mixed_pts[i][1] for i in _big_idx) / len(_big_idx)
+                    _big_idx.sort(key=lambda i: haversine_m(_mixed_pts[i][0], _mixed_pts[i][1], _c_lat, _c_lng), reverse=True)
+                    for _idx in _big_idx[:len(_big_idx)//2]:
+                        _mixed_labels[_idx] = _new_lbl
+                    _mz_actual = len(set(_mixed_labels))
+
+                # Remap to contiguous labels
+                _unique_ml = sorted(set(_mixed_labels))
+                _ml_map    = {old: new for new, old in enumerate(_unique_ml)}
+                _mixed_labels = [_ml_map[l] for l in _mixed_labels]
+
+                # Assign rep_ids offset by dedicated count
+                eff_cap_rec = (daily_minutes - break_minutes) * working_days
+                for s, lbl in zip(_mixed_pool, _mixed_labels):
+                    s["rep_id"] = int(lbl) + 1 + _n_dedicated_reps
+
+                for zone in range(len(_unique_ml)):
+                    zs = [_mixed_pool[i] for i in range(len(_mixed_pool)) if _mixed_labels[i] == zone]
+                    if not zs:
+                        continue
+                    _zid = zone + 1 + _n_dedicated_reps
+                    z_time = sum(s.get("visits_per_month",1) * s.get("visit_duration_min",25) for s in zs)
+                    zone_centres.append({
+                        "zone":             _zid,
+                        "centre_lat":       round(sum(s["lat"] for s in zs) / len(zs), 4),
+                        "centre_lng":       round(sum(s["lng"] for s in zs) / len(zs), 4),
+                        "store_count":      len(zs),
+                        "visits_per_month": sum(s.get("visits_per_month",1) for s in zs),
+                        "time_needed_min":  round(z_time),
+                        "capacity_min":     eff_cap_rec,
+                        "utilisation_pct":  round(z_time / eff_cap_rec * 100) if eff_cap_rec > 0 else 0,
+                        "dedicated":        False,
+                        "rule_name":        "Mixed",
+                        "rule_type":        "",
+                    })
+                actual_reps += len(_unique_ml)
 
                 # Rebalance mixed zones — ensure no mixed rep < 65% utilisation
                 min_util_pct = 65
@@ -3820,7 +3865,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     )
                     if _n_moved_rec > 0:
                         status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved_rec} stores.")
-                    # Update zone_centres with rebalanced data
                     for _mz in _mixed_zones_rec:
                         for _zi, _zc in enumerate(zone_centres):
                             if _zc["zone"] == _mz["zone"]:
