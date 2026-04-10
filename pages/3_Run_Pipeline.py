@@ -980,6 +980,56 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
         if not _did_split:
             break
 
+    # ── Step 5: Merge underloaded zones ──────────────────────────────────────
+    # After splitting, some zones may be very small. Merge any zone < 40%
+    # utilisation into its nearest neighbour, as long as the merged zone
+    # stays under 100% utilisation. Single pass only.
+    MIN_LOAD   = eff_cap * 0.40
+    MAX_MERGED = eff_cap * 1.00
+
+    zone_centres.sort(key=lambda z: z["time_needed_min"])
+    merged_ids = set()
+
+    for zc in zone_centres:
+        if zc["zone"] in merged_ids:
+            continue
+        if zc["time_needed_min"] >= MIN_LOAD:
+            continue  # not underloaded
+
+        # Find nearest zone that can absorb without exceeding 100%
+        candidates = [z for z in zone_centres
+                      if z["zone"] != zc["zone"]
+                      and z["zone"] not in merged_ids
+                      and z["time_needed_min"] + zc["time_needed_min"] <= MAX_MERGED]
+        if not candidates:
+            continue
+
+        nearest = min(candidates, key=lambda z: haversine_m(
+            zc["centre_lat"], zc["centre_lng"],
+            z["centre_lat"], z["centre_lng"]))
+
+        # Merge: move stores from weak zone to nearest
+        for s in priority_geo:
+            if s.get("rep_id") == zc["zone"]:
+                s["rep_id"] = nearest["zone"]
+
+        # Recalculate nearest zone
+        nz = [s for s in priority_geo if s.get("rep_id") == nearest["zone"]]
+        if nz:
+            nz_monthly, nz_daily = calc_zone_monthly_time(nz, avg_speed_kmh, daily_minutes)
+            nz_exec = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in nz)
+            nearest.update({
+                "store_count":     len(nz),
+                "time_needed_min": nz_monthly,
+                "exec_min":        round(nz_exec),
+                "utilisation_pct": round(nz_monthly / eff_cap * 100),
+                "centre_lat":      round(sum(s["lat"] for s in nz)/len(nz), 4),
+                "centre_lng":      round(sum(s["lng"] for s in nz)/len(nz), 4),
+            })
+        merged_ids.add(zc["zone"])
+
+    zone_centres = [z for z in zone_centres if z["zone"] not in merged_ids]
+
     actual_reps = len(zone_centres)
     return zone_centres, actual_reps
 
@@ -3666,6 +3716,14 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         if _sf_rules:
             status.info(f"Stage 6/{total_steps} — Applying {len(_sf_rules)} sales force rules...")
+            # Debug: show what rules we're applying
+            for _ri, _r in enumerate(_sf_rules):
+                status.info(
+                    f"  Rule {_ri+1}: '{_r.get('rule_name','')}' — "
+                    f"match {_r.get('match_field','')} ({_r.get('match_column','')}) "
+                    f"contains '{_r.get('match_value','')}' — "
+                    f"geography: {_r.get('geography',['All'])}"
+                )
             _dedicated_stores, _mixed_pool, _dedicated_zones, _next_rep_id, _sf_warnings = \
                 apply_sf_rules(
                     priority, _sf_rules,
@@ -3717,7 +3775,28 @@ if st.button("  Run Coverage Agent", type="primary"):
                 zone_centres.extend(_mixed_zones)
                 actual_reps += _mixed_reps
 
-                min_util_pct = 40  # informational only for merging
+                # Rebalance mixed zones — ensure no mixed rep < 65% utilisation
+                min_util_pct = 65
+                _mixed_zones_rec = [z for z in zone_centres if not z.get("dedicated")]
+                if len(_mixed_zones_rec) > 1:
+                    status.info(f"Stage 6/{total_steps} — Rebalancing {len(_mixed_zones_rec)} mixed zones to ≥{min_util_pct}%...")
+                    _n_moved_rec = rebalance_zones_65pct(
+                        all_stores, _mixed_zones_rec,
+                        daily_minutes=daily_minutes,
+                        working_days=working_days,
+                        avg_speed_kmh=avg_speed,
+                        min_util_pct=min_util_pct,
+                        max_passes=5,
+                    )
+                    if _n_moved_rec > 0:
+                        status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved_rec} stores.")
+                    # Update zone_centres with rebalanced data
+                    for _mz in _mixed_zones_rec:
+                        for _zi, _zc in enumerate(zone_centres):
+                            if _zc["zone"] == _mz["zone"]:
+                                zone_centres[_zi] = _mz
+                                break
+                    actual_reps = len(zone_centres)
 
             rep_recommendation = {
                 "mode":                "recommended",

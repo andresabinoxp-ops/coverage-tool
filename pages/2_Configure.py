@@ -973,6 +973,7 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
             _sf_rules.sort(key=lambda r: 0 if r.get("rule_type") == "Channel" else 1)
             st.session_state["sf_rules"] = _sf_rules
             st.success(f"Rule added: {_new_rule_name}")
+            st.warning("  **Remember to click 'Save market configuration' below** for rules to take effect in the pipeline.")
             st.rerun()
 
 # ── Numeric distribution % (recommended mode only) ──────────────────────────
