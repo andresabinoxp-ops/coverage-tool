@@ -3789,11 +3789,25 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["visit_duration_min"] = duration
                 _n_account_large += 1
 
+        def _safe_sales(v):
+            """Safely convert annual_sales_usd to float, handling commas, text, None."""
+            if v is None:
+                return 0.0
+            if isinstance(v, (int, float)):
+                return float(v) if v == v else 0.0  # handles NaN
+            try:
+                s = str(v).strip().replace(",", "").replace("$", "").replace(" ", "")
+                if not s or s.lower() in ("n/a", "na", "none", "nan", "-", "tbd"):
+                    return 0.0
+                return float(s)
+            except (ValueError, TypeError):
+                return 0.0
+
         # Tier 2: Portfolio stores with sales data (no named account) → split by sales percentile
         _portfolio_with_sales = [s for s in all_stores
                                  if s.get("source") == "portfolio"
                                  and s.get("_tier_reason") != "named_account"
-                                 and float(s.get("annual_sales_usd", 0) or 0) > 0]
+                                 and _safe_sales(s.get("annual_sales_usd", 0)) > 0]
 
         if _portfolio_with_sales:
             # Build sales percentiles per category
@@ -3802,7 +3816,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                 cat = s.get("category", "")
                 if cat not in _sales_by_cat:
                     _sales_by_cat[cat] = []
-                _sales_by_cat[cat].append(float(s.get("annual_sales_usd", 0) or 0))
+                _sales_by_cat[cat].append(_safe_sales(s.get("annual_sales_usd", 0)))
             for cat in _sales_by_cat:
                 _sales_by_cat[cat].sort()
 
@@ -3811,7 +3825,7 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             for s in _portfolio_with_sales:
                 cat = s.get("category", "")
-                sales = float(s.get("annual_sales_usd", 0) or 0)
+                sales = _safe_sales(s.get("annual_sales_usd", 0))
                 cat_sales = _sales_by_cat.get(cat, [])
                 n = len(cat_sales)
                 if n <= 2:
