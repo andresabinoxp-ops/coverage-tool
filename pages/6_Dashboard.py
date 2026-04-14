@@ -658,8 +658,17 @@ if all_reps and "plan_visits" in stores_df.columns:
         _brk_per_period = _break_w * _wdays_w * max(_plan_pp, 1)
         _cap_col_w = f"Capacity {_plan_pp}mo (min)"
 
+        # Use exact zone_centres travel when available (live or JSON snapshot),
+        # fallback to coordinate-based computation for CSV snapshots.
+        _zc_map_t = {int(z.get("zone", 0)): float(z.get("time_needed_min", 0) or 0)
+                     for z in _zc_w if z.get("zone") is not None}
+
         def _exec_w(rid):  return _rep_rows.get(int(rid), {}).get("Execution (min)", 0)
         def _travel_w(rid):
+            if int(rid) in _zc_map_t:
+                # zone["time_needed_min"] is monthly exec+travel from routing
+                _et = _zc_map_t[int(rid)] * max(_plan_pp, 1)
+                return max(0, int(_et) - _exec_w(int(rid)))
             return _compute_rep_travel(int(rid))
         def _total_w(rid): return _exec_w(rid) + _travel_w(rid) + _brk_per_period
 
