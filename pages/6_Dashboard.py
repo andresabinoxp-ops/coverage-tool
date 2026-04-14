@@ -569,40 +569,49 @@ if all_reps and "plan_visits" in stores_df.columns:
     if _rep_rows:
         import pandas as _pd_w
 
-        # Compute travel time per rep from store coordinates (matches Results logic)
-        # Travel = sum of inter-store distances within each day, × number of visits
+        # Compute travel time per rep from store coordinates (matches pipeline's
+        # calc_zone_monthly_time logic). For each day, compute inter-store travel,
+        # then distribute it per-store based on visit duration share × visits_per_month.
         def _compute_rep_travel(rid):
             _rep_stores = _routed_w[_routed_w["rep_id"] == rid].copy()
             if _rep_stores.empty or "lat" not in _rep_stores.columns:
                 return 0
-            _rep_stores = _rep_stores.sort_values(
-                [c for c in ["assigned_day","day_visit_order"] if c in _rep_stores.columns]
-            )
-            _travel_min = 0.0
-            _prev = None
-            _prev_day = None
-            for _, s in _rep_stores.iterrows():
-                try:
-                    _lat = float(s.get("lat", 0) or 0)
-                    _lng = float(s.get("lng", 0) or 0)
-                    _day = str(s.get("assigned_day", "") or "")
-                except (ValueError, TypeError):
-                    continue
-                if not _lat or not _lng:
-                    continue
-                if _prev is not None and _prev_day == _day:
-                    # inter-store travel on the same day
-                    _p = math.pi / 180
-                    _a = (math.sin((_lat - _prev[0]) * _p / 2) ** 2 +
-                          math.cos(_prev[0] * _p) * math.cos(_lat * _p) *
-                          math.sin((_lng - _prev[1]) * _p / 2) ** 2)
-                    _km = 2 * 6371 * math.asin(math.sqrt(max(0, _a)))
-                    _travel_min += (_km / 30.0) * 60.0  # 30 km/h
-                _prev = (_lat, _lng)
-                _prev_day = _day
-            # Multiply by weeks × plan_pp to get total travel over plan period
-            # Each weekday appears 4 times/month × plan_pp months
-            return int(round(_travel_min * 4 * max(_plan_pp, 1)))
+            _monthly_travel = 0.0
+            _days = [d for d in _rep_stores.get("assigned_day", pd.Series()).dropna().unique() if d]
+            for _day in _days:
+                _day_df = _rep_stores[_rep_stores["assigned_day"] == _day]
+                if "day_visit_order" in _day_df.columns:
+                    _day_df = _day_df.sort_values("day_visit_order")
+                # Inter-store travel for this day (one pass through the route)
+                _day_travel = 0.0
+                _prev = None
+                _stores_list = []
+                for _, s in _day_df.iterrows():
+                    try:
+                        _lat = float(s.get("lat", 0) or 0)
+                        _lng = float(s.get("lng", 0) or 0)
+                    except (ValueError, TypeError):
+                        continue
+                    if not _lat or not _lng:
+                        continue
+                    _stores_list.append(s)
+                    if _prev is not None:
+                        _p = math.pi / 180
+                        _a = (math.sin((_lat - _prev[0]) * _p / 2) ** 2 +
+                              math.cos(_prev[0] * _p) * math.cos(_lat * _p) *
+                              math.sin((_lng - _prev[1]) * _p / 2) ** 2)
+                        _km = 2 * 6371 * math.asin(math.sqrt(max(0, _a)))
+                        _day_travel += (_km / 30.0) * 60.0  # 30 km/h
+                    _prev = (_lat, _lng)
+                # Distribute travel: each store contributes vpm × (dur/total_dur) × day_travel
+                _total_dur = sum(float(s.get("visit_duration_min", 25) or 25) for s in _stores_list)
+                if _total_dur > 0:
+                    for s in _stores_list:
+                        _vpm = float(s.get("visits_per_month", 1) or 1)
+                        _dur = float(s.get("visit_duration_min", 25) or 25)
+                        _monthly_travel += _vpm * (_dur / _total_dur) * _day_travel
+            # Monthly travel × plan period
+            return int(round(_monthly_travel * max(_plan_pp, 1)))
 
         _rdf = _pd_w.DataFrame(list(_rep_rows.values())).sort_values("Rep")
 
