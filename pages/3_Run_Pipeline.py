@@ -1472,11 +1472,16 @@ def split_overloaded_reps_daily(all_stores, zone_centres, daily_minutes=480,
 
     # Only split when the zone is physically overloaded — i.e., the average
     # daily execution time alone exceeds the full daily capacity. At 70% of
-    # capacity the zone is FINE, not overloaded. Splitting at 70% creates
-    # way too many underutilized reps.
+    # capacity the zone is FINE, not overloaded.
     MAX_DAY_EXEC        = daily_minutes - break_minutes       # e.g., 450 min
     TARGET_DAILY_EXEC   = MAX_DAY_EXEC * 1.0                  # 450 min threshold
     MIN_STORES_TO_SPLIT = 15                                  # don't split small zones
+
+    # Monthly capacity and minimum util after split:
+    # Only split if BOTH halves would stay above 65% monthly utilisation.
+    # If total < 130% of monthly cap, splitting creates underutilised reps.
+    MONTHLY_CAP            = (daily_minutes - break_minutes) * 22
+    MIN_MONTHLY_POST_SPLIT = MONTHLY_CAP * 0.65 * 2  # 130% of cap → both halves ≥ 65%
 
     def _zone_stores(zid):
         return [s for s in all_stores
@@ -1508,6 +1513,13 @@ def split_overloaded_reps_daily(all_stores, zone_centres, daily_minutes=480,
             zs = _zone_stores(zid)
             if len(zs) < MIN_STORES_TO_SPLIT:
                 continue
+
+            # Monthly workload (exec only, travel added later)
+            monthly_exec = sum(s.get("visits_per_month",1) * s.get("visit_duration_min",25) for s in zs)
+            if monthly_exec < MIN_MONTHLY_POST_SPLIT:
+                # Splitting would create underutilized reps (< 65%)
+                continue
+
             per_day = _zone_exec_per_day(zs)
             ratio = per_day / TARGET_DAILY_EXEC if TARGET_DAILY_EXEC > 0 else 0
             if ratio > worst_ratio:
