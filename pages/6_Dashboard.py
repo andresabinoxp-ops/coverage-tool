@@ -92,9 +92,6 @@ def get_plan_keys(df):
             if mk in _keys:
                 label = _labels[_keys.index(mk)]
             else:
-
-
-
                 label = f"Month {i}"
             keys.append((mk, label))
     # Legacy format: jan, feb ...
@@ -299,6 +296,17 @@ stores_df      = snap["stores_df"].copy()
 
 # Detect plan keys from this dataframe
 PLAN_KEYS = get_plan_keys(stores_df)  # list of (key, label)
+
+# Override labels from the selected snapshot's plan_months if available
+_snap_plan_months = snap.get("plan_months", {}) if isinstance(snap, dict) else {}
+_snap_m_keys   = _snap_plan_months.get("month_keys", [])
+_snap_m_labels = _snap_plan_months.get("month_labels", [])
+if _snap_m_keys and _snap_m_labels:
+    PLAN_KEYS = [
+        (k, _snap_m_labels[_snap_m_keys.index(k)] if k in _snap_m_keys else l)
+        for k, l in PLAN_KEYS
+    ]
+
 PLAN_LABELS = [label for _, label in PLAN_KEYS]
 PLAN_KEY_MAP = {label: key for key, label in PLAN_KEYS}  # label -> key
 
@@ -798,7 +806,7 @@ st.caption("Select rep, month and date to see stores and visit schedule for a sp
 tr1, tr2, tr3, tr4 = st.columns(4)
 with tr1:
     tbl_rep = st.selectbox("Rep",
-        ["All reps"] + [f"Rep {int(r)}" for r in all_reps], key="tbl_rep_dash")
+        ["All reps"] + [_dash_rep_label(r) for r in all_reps], key="tbl_rep_dash")
 with tr2:
     tbl_month_label = st.selectbox("Month",
         ["Full plan"] + PLAN_LABELS, key="tbl_month_dash")
