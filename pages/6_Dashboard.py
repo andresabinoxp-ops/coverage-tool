@@ -568,17 +568,51 @@ if all_reps and "plan_visits" in stores_df.columns:
 
     if _rep_rows:
         import pandas as _pd_w
+
+        # Compute travel time per rep from store coordinates (matches Results logic)
+        # Travel = sum of inter-store distances within each day, × number of visits
+        def _compute_rep_travel(rid):
+            _rep_stores = _routed_w[_routed_w["rep_id"] == rid].copy()
+            if _rep_stores.empty or "lat" not in _rep_stores.columns:
+                return 0
+            _rep_stores = _rep_stores.sort_values(
+                [c for c in ["assigned_day","day_visit_order"] if c in _rep_stores.columns]
+            )
+            _travel_min = 0.0
+            _prev = None
+            _prev_day = None
+            for _, s in _rep_stores.iterrows():
+                try:
+                    _lat = float(s.get("lat", 0) or 0)
+                    _lng = float(s.get("lng", 0) or 0)
+                    _day = str(s.get("assigned_day", "") or "")
+                except (ValueError, TypeError):
+                    continue
+                if not _lat or not _lng:
+                    continue
+                if _prev is not None and _prev_day == _day:
+                    # inter-store travel on the same day
+                    _p = math.pi / 180
+                    _a = (math.sin((_lat - _prev[0]) * _p / 2) ** 2 +
+                          math.cos(_prev[0] * _p) * math.cos(_lat * _p) *
+                          math.sin((_lng - _prev[1]) * _p / 2) ** 2)
+                    _km = 2 * 6371 * math.asin(math.sqrt(max(0, _a)))
+                    _travel_min += (_km / 30.0) * 60.0  # 30 km/h
+                _prev = (_lat, _lng)
+                _prev_day = _day
+            # Multiply by weeks × plan_pp to get total travel over plan period
+            # Each weekday appears 4 times/month × plan_pp months
+            return int(round(_travel_min * 4 * max(_plan_pp, 1)))
+
         _rdf = _pd_w.DataFrame(list(_rep_rows.values())).sort_values("Rep")
 
-        _zc_map = {int(z.get("zone", 0)): z.get("time_needed_min", 0) for z in _zc_w}
         _cap_per_period = _daily_w * _wdays_w * max(_plan_pp, 1)
         _brk_per_period = _break_w * _wdays_w * max(_plan_pp, 1)
         _cap_col_w = f"Capacity {_plan_pp}mo (min)"
 
         def _exec_w(rid):  return _rep_rows.get(int(rid), {}).get("Execution (min)", 0)
         def _travel_w(rid):
-            et = _zc_map.get(int(rid), 0) * _plan_pp
-            return max(0, int(et) - _exec_w(rid))
+            return _compute_rep_travel(int(rid))
         def _total_w(rid): return _exec_w(rid) + _travel_w(rid) + _brk_per_period
 
         _rdf["Execution (min)"]    = _rdf["Rep"].apply(_exec_w).astype(int)
