@@ -460,9 +460,5 @@ with col3:
         f"rep_routes_{mkt_safe}.geojson", "application/json")
 
 st.markdown("---")
-st.markdown('<div class="section-title">Dashboard snapshot</div>', unsafe_allow_html=True)
-st.caption("Download this file and upload it to the Dashboard page to view results anytime.")
-st.download_button("  Download stores snapshot (upload to Dashboard)",
-    _clean_df.reset_index(drop=True).to_csv(index=False),
-    f"{mkt_safe}_{run_date}_stores.csv", "text/csv")
-st.info("Upload the stores CSV to the Dashboard page. Admin manages the market library from there.")
+st.info("  **To save this run for later** — go to the **Routes** page and click "
+        "**'Download full snapshot (JSON)'**. Upload it on the **Dashboard** page to view it anytime.")
