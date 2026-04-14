@@ -338,21 +338,26 @@ if all_reps:
     _n_mix      = (_dash_rep_rec or {}).get("mixed_reps", 0)
     _actual     = (_dash_rep_rec or {}).get("actual_routed_reps") or len(all_reps)
 
-    _total_cap  = _actual * _daily * _work_days
+    # Plan period for consistency with workload table below
+    _plan_pp_kpi = len(PLAN_KEYS) if PLAN_KEYS else 1
+    _total_cap   = _actual * _daily * _work_days * max(_plan_pp_kpi, 1)
 
+    # Execution over plan period = plan_visits × duration (matches workload table)
     _exec_total = 0
-    if "plan_visits" in stores_df.columns and "visit_duration_min" in stores_df.columns and "visits_per_month" in stores_df.columns:
+    if "plan_visits" in stores_df.columns and "visit_duration_min" in stores_df.columns:
         _routed = stores_df[stores_df["plan_visits"].fillna(0) > 0]
-        _exec_total = int((_routed["visit_duration_min"].fillna(0).astype(float) *
-                           _routed["visits_per_month"].fillna(0).astype(float)).sum())
+        _exec_total = int((_routed["plan_visits"].fillna(0).astype(float) *
+                           _routed["visit_duration_min"].fillna(0).astype(float)).sum())
+
+    _period_label = f"{_plan_pp_kpi}mo" if _plan_pp_kpi > 1 else "month"
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total reps", _actual,
         help=f"Dedicated: {_n_ded} · Mixed: {_n_mix}" if _n_ded else "")
-    k2.metric("Execution time / month", f"{_exec_total:,} min",
-        help="Sum of visit_duration × visits_per_month across all routed stores")
-    k3.metric("Total capacity / month", f"{_total_cap:,} min",
-        help=f"{_actual} reps × {_daily} min/day × {_work_days} days")
+    k2.metric(f"Execution time / {_period_label}", f"{_exec_total:,} min",
+        help=f"Sum of plan_visits × visit_duration across {_plan_pp_kpi} month(s) of plan")
+    k3.metric(f"Total capacity / {_period_label}", f"{_total_cap:,} min",
+        help=f"{_actual} reps × {_daily} min/day × {_work_days} days × {_plan_pp_kpi} month(s)")
     if _total_cap > 0:
         _util = round(_exec_total / _total_cap * 100)
         k4.metric("Utilisation", f"{_util}%")
@@ -610,8 +615,17 @@ if all_reps and "plan_visits" in stores_df.columns:
         _brk_per_period = _break_w * _wdays_w * max(_plan_pp, 1)
         _cap_col_w = f"Capacity {_plan_pp}mo (min)"
 
+        # Prefer zone_centres travel (exact, from routing algorithm) if available.
+        # Fall back to coordinate-based computation for uploaded snapshots.
+        _zc_map = {int(z.get("zone", 0)): z.get("time_needed_min", 0) for z in _zc_w}
+
         def _exec_w(rid):  return _rep_rows.get(int(rid), {}).get("Execution (min)", 0)
         def _travel_w(rid):
+            # If zone_centres has this rep, use the exact value from routing
+            if int(rid) in _zc_map:
+                et = _zc_map[int(rid)] * _plan_pp  # monthly exec+travel × plan_pp
+                return max(0, int(et) - _exec_w(int(rid)))
+            # Otherwise compute from coordinates (for snapshots without rep_rec)
             return _compute_rep_travel(int(rid))
         def _total_w(rid): return _exec_w(rid) + _travel_w(rid) + _brk_per_period
 
