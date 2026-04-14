@@ -209,6 +209,7 @@ if run_res and run_res.get("all_stores"):
         "run_date":    datetime.date.today().strftime("%d %b %Y"),
         "uploaded_at": "Live",
         "stores_df":   _live_df,
+        "rep_recommendation": run_res.get("rep_recommendation", {}),
         "key":         "live_session",
     }
 
@@ -319,14 +320,48 @@ if "size_tier" in stores_df.columns:
 
 st.markdown("---")
 
-# ── MAP + FILTERS ─────────────────────────────────────────────────────────────
-st.html('<div class="section-title">Store map &amp; routes</div>')
-
+# ── REP PLANNING (mirrors Results page) ──────────────────────────────────────
 all_reps = sorted([r for r in stores_df["rep_id"].dropna().unique() if int(r) > 0]) \
            if "rep_id" in stores_df.columns else []
 
-# Build rep labels with rule names from zone_centres
-_dash_rep_rec   = st.session_state.get("run_results", {}).get("rep_recommendation", {})
+# Build rep labels with rule names from zone_centres.
+# Prefer the current snapshot's rep_recommendation (if present),
+# fall back to live session rep_recommendation.
+_dash_rep_rec   = snap.get("rep_recommendation") or \
+                  st.session_state.get("run_results", {}).get("rep_recommendation", {})
+
+if _dash_rep_rec and all_reps:
+    st.html('<div class="section-title">Rep planning</div>')
+    _daily      = _dash_rep_rec.get("daily_minutes", 480)
+    _work_days  = _dash_rep_rec.get("working_days", 22)
+    _break_m    = _dash_rep_rec.get("break_minutes", 30)
+    _n_ded      = _dash_rep_rec.get("dedicated_reps", 0)
+    _n_mix      = _dash_rep_rec.get("mixed_reps", 0)
+    _actual     = _dash_rep_rec.get("actual_routed_reps") or len(all_reps)
+
+    _total_cap  = _actual * _daily * _work_days
+
+    _exec_total = 0
+    if "plan_visits" in stores_df.columns and "visit_duration_min" in stores_df.columns and "visits_per_month" in stores_df.columns:
+        _routed = stores_df[stores_df["plan_visits"].fillna(0) > 0]
+        _exec_total = int((_routed["visit_duration_min"].fillna(0).astype(float) *
+                           _routed["visits_per_month"].fillna(0).astype(float)).sum())
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total reps", _actual,
+        help=f"Dedicated: {_n_ded} · Mixed: {_n_mix}" if _n_ded else "")
+    k2.metric("Execution time / month", f"{_exec_total:,} min",
+        help="Sum of visit_duration × visits_per_month across all routed stores")
+    k3.metric("Total capacity / month", f"{_total_cap:,} min",
+        help=f"{_actual} reps × {_daily} min/day × {_work_days} days")
+    if _total_cap > 0:
+        _util = round(_exec_total / _total_cap * 100)
+        k4.metric("Utilisation", f"{_util}%")
+    else:
+        k4.metric("Utilisation", "—")
+    st.markdown("")
+
+st.html('<div class="section-title">Store map &amp; routes</div>')
 _dash_zone_rule = {}
 for _z in _dash_rep_rec.get("zone_centres", []):
     if _z.get("zone") is not None:
@@ -429,7 +464,8 @@ if not map_df.empty:
                 "style": {"backgroundColor":"#1A2B4A","color":"white",
                           "padding":"10px","borderRadius":"8px","fontSize":"13px"}
             }
-            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip))
+            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip,
+                map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"))
         except Exception:
             st.map(map_df.rename(columns={"lng":"lon"})[["lat","lon"]])
 
