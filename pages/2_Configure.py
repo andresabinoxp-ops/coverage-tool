@@ -875,12 +875,16 @@ if _sf_rules:
             _match_desc = " <strong>OR</strong> ".join(_cond_parts)
         else:
             _match_desc = f'{rule.get("match_field","")}: "<em>{rule.get("match_value","")}</em>"'
+        _size_filt = rule.get("size_filter", ["Large","Medium","Small"])
+        _size_text = ""
+        if set(_size_filt) != {"Large","Medium","Small"}:
+            _size_text = f' — Tiers: {", ".join(_size_filt)}'
         st.markdown(
             f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #1565C0;'
             f'border-radius:8px;padding:0.7rem 1rem;margin:0.4rem 0;font-size:0.88rem">'
             f'<strong>{rule.get("rule_name","")}</strong> — '
             f'{_match_desc} — '
-            f'Geography: {_geo_display} — '
+            f'Geography: {_geo_display}{_size_text} — '
             f'<strong>{rule.get("dedicated_reps",1)} dedicated rep(s)</strong>'
             f'</div>',
             unsafe_allow_html=True
@@ -967,7 +971,7 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
             st.session_state["rule_conditions_count"] = _n_cond + 1
             st.rerun()
 
-    _ar4, _ar5 = st.columns(2)
+    _ar4, _ar5, _ar6 = st.columns(3)
     with _ar4:
         _new_geography = st.multiselect(
             "Geography", _geo_options, default=["All"],
@@ -975,6 +979,15 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
             help="Where does this rule apply? Select 'All' for everywhere."
         )
     with _ar5:
+        _new_size_filter = st.multiselect(
+            "Size tier (optional)",
+            options=["Large", "Medium", "Small"],
+            default=["Large", "Medium", "Small"],
+            key="new_size_filter",
+            help="Only match stores of selected size tiers. Default: all tiers. "
+                 "Note: for scraped stores, 'Large' means top 20% by Google score, not physical size."
+        )
+    with _ar6:
         _new_dedicated_reps = st.number_input(
             "Dedicated reps", min_value=1, max_value=50, value=1,
             key="new_dedicated_reps",
@@ -1000,6 +1013,7 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
                 "match_conditions": _valid_conds,   # NEW: list of conditions (OR logic)
                 "match_type":       "Contains",     # always flexible matching
                 "geography":        _new_geography if "All" not in _new_geography else ["All"],
+                "size_filter":      _new_size_filter if _new_size_filter else ["Large","Medium","Small"],
                 "dedicated_reps":   _new_dedicated_reps,
                 # Legacy fields for backward compatibility with older code paths
                 "match_field":      _valid_conds[0]["match_field"],

@@ -1127,6 +1127,7 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
 
         match_type  = rule.get("match_type", "Contains").lower()
         geo_scope   = rule.get("geography", ["All"])
+        size_filter = set(rule.get("size_filter", ["Large","Medium","Small"]))
         n_reps      = rule.get("dedicated_reps", 1)
         rule_name   = rule.get("rule_name", "")
         rule_type   = rule.get("rule_type", "")
@@ -1145,6 +1146,7 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
         # Find matching stores (not already claimed by a higher-priority rule)
         matched = []
         _debug_geo_skip  = 0
+        _debug_size_skip = 0
         _debug_no_match  = 0
         _debug_checked   = 0
         _debug_by_cond   = {i: 0 for i in range(len(prepared_conditions))}
@@ -1153,6 +1155,13 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             if id(s) in matched_ids:
                 continue
             _debug_checked += 1
+
+            # Size tier filter
+            if size_filter != {"Large","Medium","Small"}:
+                s_tier = s.get("size_tier", "")
+                if s_tier not in size_filter:
+                    _debug_size_skip += 1
+                    continue
 
             # Geography filter — check all location fields
             if "All" not in geo_scope:
@@ -1199,7 +1208,8 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
         )
         _debug_msg = (
             f"Rule '{rule_name}': checked {_debug_checked} stores, "
-            f"matched {len(matched)} | geo-skipped {_debug_geo_skip} | no-match {_debug_no_match} | "
+            f"matched {len(matched)} | geo-skipped {_debug_geo_skip} | "
+            f"size-skipped {_debug_size_skip} | no-match {_debug_no_match} | "
             f"per-condition: {_cond_summary}"
         )
         warnings.append(_debug_msg)
