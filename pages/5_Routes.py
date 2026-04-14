@@ -356,21 +356,23 @@ st.caption("Each file includes store details, assigned day, visit dates, visit o
 
 mkt_safe = market.replace(" ","_").replace("-","_")
 
-def build_rep_df(stores, rep_id=None, day=None, month_key=None):
+def build_rep_df(stores, rep_id=None, day=None, month_key=None, skip_date_filter=False):
     # For "Not in route" / "All stores" views, include all stores passed in
     # rep_id filter only applied when a specific rep is selected
     filtered = list(stores)
     if rep_id:
         filtered = [s for s in filtered if s.get("rep_id") == rep_id]
-    if month_key and day and day not in ("Full month", "All dates", "All weeks", ""):
-        # Filter by real calendar date e.g. "07 Apr"
-        filtered = [s for s in filtered
-                    if day in parse_dates_val(s.get(f"{month_key}_dates", []))]
-    elif month_key:
-        filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
-    elif day and day not in ("Full month", "All dates", "All weeks", ""):
-        day_name = day.split("-")[-1].strip()
-        filtered = [s for s in filtered if s.get("assigned_day","").strip() == day_name]
+    # Skip date/month filters for "Not in route" view since those stores have no dates
+    if not skip_date_filter:
+        if month_key and day and day not in ("Full month", "All dates", "All weeks", ""):
+            # Filter by real calendar date e.g. "07 Apr"
+            filtered = [s for s in filtered
+                        if day in parse_dates_val(s.get(f"{month_key}_dates", []))]
+        elif month_key:
+            filtered = [s for s in filtered if s.get(f"{month_key}_visits",0) > 0]
+        elif day and day not in ("Full month", "All dates", "All weeks", ""):
+            day_name = day.split("-")[-1].strip()
+            filtered = [s for s in filtered if s.get("assigned_day","").strip() == day_name]
     if not filtered:
         return pd.DataFrame()
     filtered = sorted(filtered, key=lambda x: (x.get("assigned_day",""), x.get("day_visit_order",99)))
@@ -483,7 +485,8 @@ else:
 
 display_df    = build_rep_df(_tbl_src, rep_id=tbl_rep_id,
     day=tbl_day if tbl_day != "Full month" else None,
-    month_key=tbl_month_key)
+    month_key=tbl_month_key,
+    skip_date_filter=(route_filter == "Not in route"))
 
 # When a specific day is selected, trim table to stores that fit within daily budget
 cfg_tbl   = st.session_state.get("market_config", {})
