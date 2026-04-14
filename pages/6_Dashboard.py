@@ -508,6 +508,73 @@ if not map_df.empty:
 
 st.markdown("---")
 
+# ── DOWNLOAD REP ROUTE FILES (mirrors Routes page) ────────────────────────────
+if all_reps and "plan_visits" in stores_df.columns:
+    st.html('<div class="section-title">Download rep route files</div>')
+    st.caption("Each file includes store details, assigned day, visit dates, visit order and coordinates.")
+
+    _mkt_safe = str(snap.get("name","market")).replace(" ","_").replace("-","_")
+
+    # Columns to include in download
+    _dl_cols = [c for c in [
+        "rep_id","assigned_day","day_visit_order","store_name","category",
+        "size_tier","score","visits_per_month","visit_duration_min",
+        "coverage_status","rating","review_count","phone","opening_hours",
+        "address","city","lat","lng","plan_visits",
+    ] if c in stores_df.columns]
+    # Add month-specific date/visit columns
+    for _mk, _ in PLAN_KEYS:
+        for _suffix in ("_dates","_visits"):
+            _col = f"{_mk}{_suffix}"
+            if _col in stores_df.columns and _col not in _dl_cols:
+                _dl_cols.append(_col)
+
+    # Full download — all reps in route plan
+    _routed = stores_df[stores_df["plan_visits"].fillna(0) > 0]
+    if not _routed.empty:
+        _all_df = _routed[_dl_cols].sort_values(
+            [c for c in ["rep_id","assigned_day","day_visit_order"] if c in _dl_cols]
+        )
+        st.download_button(
+            "  Download all reps — full month CSV",
+            _all_df.to_csv(index=False),
+            f"all_reps_{_mkt_safe}.csv",
+            "text/csv",
+            key="dl_all_dash",
+        )
+
+    # Per-rep downloads
+    st.markdown("**Individual rep files:**")
+    _n_cols = min(len(all_reps), 4)
+    _rep_cols = st.columns(_n_cols)
+    for _i, _rep in enumerate(all_reps):
+        _rep_df = _routed[_routed["rep_id"] == _rep] if not _routed.empty else pd.DataFrame()
+        if _rep_df.empty:
+            continue
+        _rep_df = _rep_df[_dl_cols].sort_values(
+            [c for c in ["assigned_day","day_visit_order"] if c in _dl_cols]
+        )
+        _tv = _rep_df["visits_per_month"].sum() if "visits_per_month" in _rep_df.columns else 0
+        _rule_label = _dash_zone_rule.get(int(_rep), "")
+        _rule_tag = f" ({_rule_label})" if _rule_label and _rule_label != "Mixed" else ""
+        _hx = REP_COLORS[int(_rep) % len(REP_COLORS)]
+        with _rep_cols[_i % _n_cols]:
+            st.markdown(f"""
+            <div style="background:{_hx}18;border:1.5px solid {_hx};border-radius:8px;
+            padding:10px 12px;margin-bottom:8px;text-align:center">
+                <div style="font-weight:700;color:#1A2B4A">Rep {int(_rep)}{_rule_tag}</div>
+                <div style="font-size:0.78rem;color:#6B7280">{len(_rep_df)} stores · {_tv:.0f} visits/mo</div>
+            </div>""", unsafe_allow_html=True)
+            st.download_button(
+                f"  Rep {int(_rep)} CSV",
+                _rep_df.to_csv(index=False),
+                f"rep_{int(_rep)}_{_mkt_safe}.csv",
+                "text/csv",
+                key=f"dl_rep_{_rep}_dash",
+            )
+
+    st.markdown("---")
+
 # ── ROUTES TABLE ──────────────────────────────────────────────────────────────
 st.html('<div class="section-title">Route detail</div>')
 st.caption("Select rep, month and date to see stores and visit schedule for a specific day.")
