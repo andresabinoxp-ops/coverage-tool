@@ -349,17 +349,28 @@ if all_reps:
         _exec_total = int((_routed["plan_visits"].fillna(0).astype(float) *
                            _routed["visit_duration_min"].fillna(0).astype(float)).sum())
 
+    # Total time = exec + travel + break (matches workload table "Total needed")
+    # Travel from zone_centres when available, else estimate ~20% of exec
+    _zc_top = _dash_rep_rec.get("zone_centres", []) if _dash_rep_rec else []
+    if _zc_top:
+        _travel_total = max(0, sum(int(z.get("time_needed_min",0)) for z in _zc_top) * _plan_pp_kpi - _exec_total)
+    else:
+        _travel_total = int(_exec_total * 0.20)  # rough fallback
+    _break_total = _actual * _break_m * _work_days * max(_plan_pp_kpi, 1)
+    _time_needed_total = _exec_total + _travel_total + _break_total
+
     _period_label = f"{_plan_pp_kpi}mo" if _plan_pp_kpi > 1 else "month"
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total reps", _actual,
         help=f"Dedicated: {_n_ded} · Mixed: {_n_mix}" if _n_ded else "")
-    k2.metric(f"Execution time / {_period_label}", f"{_exec_total:,} min",
-        help=f"Sum of plan_visits × visit_duration across {_plan_pp_kpi} month(s) of plan")
+    k2.metric(f"Total time needed / {_period_label}", f"{_time_needed_total:,} min",
+        help=f"Exec ({_exec_total:,}) + Travel ({_travel_total:,}) + Break ({_break_total:,}) "
+             f"over {_plan_pp_kpi} month(s)")
     k3.metric(f"Total capacity / {_period_label}", f"{_total_cap:,} min",
         help=f"{_actual} reps × {_daily} min/day × {_work_days} days × {_plan_pp_kpi} month(s)")
     if _total_cap > 0:
-        _util = round(_exec_total / _total_cap * 100)
+        _util = round(_time_needed_total / _total_cap * 100)
         k4.metric("Utilisation", f"{_util}%")
     else:
         k4.metric("Utilisation", "—")
