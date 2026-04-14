@@ -266,8 +266,8 @@ PLAN_KEY_MAP = {label: key for key, label in PLAN_KEYS}  # label -> key
 st.caption(f"Viewing: **{snap['name']}** — {snap['category']} — {snap['run_date']} · "
            f"{len(stores_df):,} stores · plan months: {', '.join(PLAN_LABELS) if PLAN_LABELS else 'none detected'}")
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
-st.html('<div class="section-title">Summary KPIs</div>')
+# ── KPIs (mirror Results page) ───────────────────────────────────────────────
+st.html('<div class="section-title">Results Output</div>')
 
 n_total      = len(stores_df)
 n_covered    = len(stores_df[stores_df["coverage_status"]=="covered"]) if "coverage_status" in stores_df.columns else 0
@@ -280,24 +280,42 @@ n_removed    = len(stores_df[(stores_df.get("covered", pd.Series(dtype=bool))==T
 n_new        = len(stores_df[(stores_df.get("covered", pd.Series(dtype=bool))==False) &
                               (stores_df["plan_visits"].fillna(0)>0)]) \
                if "covered" in stores_df.columns and "plan_visits" in stores_df.columns else 0
+monthly_visits = int(stores_df[stores_df["plan_visits"].fillna(0) > 0]["visits_per_month"].fillna(0).sum()) \
+                 if "plan_visits" in stores_df.columns and "visits_per_month" in stores_df.columns else 0
 
-c1,c2,c3,c4,c5,c6 = st.columns(6)
-for col, val, label in [
-    (c1, f"{n_total:,}",        "Total Universe"),
-    (c2, f"{n_covered:,}",      "Current Coverage"),
-    (c3, f"{n_proposed:,}",     "Proposed Coverage"),
-    (c4, f"{proposed_pct}%",    "Proposed Coverage Rate"),
-    (c5, f"{n_removed:,}",      "Stores Removed"),
-    (c6, f"{n_new:,}",          "New Stores Added"),
+# Row 1: Total Universe / Current Coverage / Proposed Coverage
+cols_r1 = st.columns(3)
+for col, val, label, color in [
+    (cols_r1[0], f"{n_total:,}",    "Total Universe",    "#1565C0"),
+    (cols_r1[1], f"{n_covered:,}",  "Current Coverage",  "#2E7D32"),
+    (cols_r1[2], f"{n_proposed:,}", "Proposed Coverage", "#1A2B4A"),
 ]:
     col.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-value">{val}</div>
-
-
-
+    <div class="kpi-card" style="border-top-color:{color}">
+        <div class="kpi-value" style="color:{color}">{val}</div>
         <div class="kpi-label">{label}</div>
     </div>""", unsafe_allow_html=True)
+
+# Row 2: Coverage rate / Stores removed / New added
+cols_r2 = st.columns(3)
+for col, val, label, color in [
+    (cols_r2[0], f"{proposed_pct}%",  "Proposed Coverage Rate",              "#1565C0"),
+    (cols_r2[1], f"{n_removed:,}",    "Stores Removed from Original Coverage","#C62828"),
+    (cols_r2[2], f"{n_new:,}",        "New Stores Added from Gap List",       "#2E7D32"),
+]:
+    col.markdown(f"""
+    <div class="kpi-card" style="border-top-color:{color}">
+        <div class="kpi-value" style="color:{color}">{val}</div>
+        <div class="kpi-label">{label}</div>
+    </div>""", unsafe_allow_html=True)
+
+# Row 3: Planned Visits / Month (full-width)
+col_pv = st.columns(1)[0]
+col_pv.markdown(f"""
+<div class="kpi-card" style="border-top-color:#6A1B9A">
+    <div class="kpi-value" style="color:#6A1B9A">{monthly_visits:,}</div>
+    <div class="kpi-label">Planned Visits / Month</div>
+</div>""", unsafe_allow_html=True)
 
 st.markdown("")
 
