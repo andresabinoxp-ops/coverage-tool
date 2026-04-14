@@ -413,8 +413,29 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None, skip_date_filter
 if all_reps:
     all_df = build_rep_df(all_stores)
     if not all_df.empty:
-        st.download_button("  Download all reps — full month CSV",
-            all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
+        _dl1, _dl2 = st.columns(2)
+        with _dl1:
+            st.download_button("  Download all reps — full month CSV",
+                all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
+        with _dl2:
+            # Full snapshot JSON — stores + rep_recommendation for Dashboard upload
+            import json as _json_snap
+            _rec_snap = st.session_state.get("run_results", {}).get("rep_recommendation", {})
+            _snap_payload = {
+                "version":             "1.0",
+                "market":              market,
+                "exported_at":         datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "all_stores":          all_stores,
+                "rep_recommendation":  _rec_snap,
+                "plan_months":         st.session_state.get("route_plan_months", {}),
+            }
+            try:
+                _snap_json = _json_snap.dumps(_snap_payload, default=str, ensure_ascii=False, indent=2)
+            except Exception:
+                _snap_json = "{}"
+            st.download_button("  Download full snapshot (JSON)",
+                _snap_json, f"snapshot_{mkt_safe}.json", "application/json", key="dl_snap_json",
+                help="Includes stores + rep planning data. Upload on Dashboard for exact numbers.")
 
     st.markdown("**Individual rep files:**")
     n_cols   = min(len(all_reps), 4)

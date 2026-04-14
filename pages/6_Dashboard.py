@@ -134,10 +134,49 @@ if "snapshot_library" not in st.session_state:
 
 # ── UPLOAD SECTION (all users can upload) ─────────────────────────────────────
 st.html('<div class="section-title">Upload market snapshot</div>')
-st.caption("Upload the stores CSV downloaded from the Results page to view it here. "
-           "Snapshots are stored in this session only.")
+st.caption("Upload a snapshot from the Routes page (JSON recommended for exact numbers) "
+           "or the legacy CSV export. Snapshots are stored in this session only.")
 
-with st.expander("  Upload snapshot CSV", expanded=not bool(st.session_state["snapshot_library"])):
+# ── Upload full snapshot JSON (preferred — includes rep_recommendation) ───
+with st.expander("  Upload full snapshot (JSON) — recommended", expanded=not bool(st.session_state["snapshot_library"])):
+    _json_file = st.file_uploader("Snapshot JSON (snapshot_*.json from Routes page)",
+                                   type=["json"], key="upload_snap_json")
+    col_j1, col_j2 = st.columns(2)
+    with col_j1:
+        _snap_j_cat = st.text_input("Sub-channel (optional)", placeholder="e.g. Supermarket", key="snap_j_cat")
+    with col_j2:
+        _snap_j_date = st.date_input("Run date", value=datetime.date.today(), key="snap_j_date")
+    if st.button("  Save JSON snapshot", type="primary", key="btn_save_snap_json"):
+        if not _json_file:
+            st.error("Please upload a snapshot JSON first.")
+        else:
+            try:
+                import json as _json_load
+                _json_file.seek(0)
+                _snap_data = _json_load.loads(_json_file.read().decode("utf-8"))
+                _all_stores_j = _snap_data.get("all_stores", [])
+                if not _all_stores_j:
+                    st.error("Snapshot JSON has no stores.")
+                else:
+                    _stores_df_j = pd.DataFrame(_all_stores_j)
+                    _market_j = _snap_data.get("market", "Market")
+                    _snap_key_j = f"{_market_j}_{_snap_j_cat}_{_snap_j_date}".replace(" ","_")
+                    st.session_state["snapshot_library"][_snap_key_j] = {
+                        "name":               _market_j,
+                        "category":           _snap_j_cat or "Snapshot",
+                        "run_date":           str(_snap_j_date),
+                        "stores_df":          _stores_df_j,
+                        "rep_recommendation": _snap_data.get("rep_recommendation", {}),
+                        "plan_months":        _snap_data.get("plan_months", {}),
+                        "uploaded_at":        datetime.datetime.now().strftime("%d %b %Y %H:%M"),
+                        "key":                _snap_key_j,
+                    }
+                    st.success(f"  Full snapshot saved: {_market_j} — {len(_all_stores_j)} stores")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error reading JSON: {e}")
+
+with st.expander("  Upload legacy CSV snapshot"):
     stores_file = st.file_uploader("Stores CSV (*_stores.csv from Results page)",
                                    type=["csv"], key="upload_stores")
     if stores_file:
