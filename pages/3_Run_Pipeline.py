@@ -1453,6 +1453,120 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
     return total_moved
 
 
+def split_overloaded_reps_daily(all_stores, zone_centres, daily_minutes=480,
+                                break_minutes=30, max_splits=10):
+    """
+    Split mixed reps whose daily schedule would exceed MAX_DAY capacity.
+
+    A rep's daily execution time ≈ sum(visit_duration) / 5 weekdays.
+    If this exceeds ~70% of (daily_minutes - break_minutes), the rep has
+    too many stores to fit into 5 days and needs to be split.
+
+    Only mixed reps are split — dedicated reps are left alone per the
+    rule that dedicated reps don't get utilisation enforcement.
+
+    Returns the number of splits performed.
+    """
+    if not zone_centres:
+        return 0
+
+    MAX_DAY_EXEC      = daily_minutes - break_minutes        # e.g., 450 min
+    TARGET_DAILY_EXEC = MAX_DAY_EXEC * 0.70                   # 315 min target
+    MIN_STORES_TO_SPLIT = 12                                  # don't split tiny zones
+
+    def _zone_stores(zid):
+        return [s for s in all_stores
+                if s.get("rep_id") == zid
+                and s.get("size_tier") in ("Large", "Medium", "Small")
+                and s.get("lat") and s.get("lng")]
+
+    def _zone_exec_per_day(stores):
+        """Average daily execution time (total exec / 5 weekdays)."""
+        if not stores:
+            return 0
+        total_exec = sum(s.get("visit_duration_min", 25) for s in stores)
+        return total_exec / 5.0
+
+    total_splits = 0
+
+    for _pass in range(max_splits):
+        # Find the most overloaded mixed zone
+        worst_zc      = None
+        worst_ratio   = 1.0
+        worst_stores  = []
+
+        for zc in zone_centres:
+            if zc.get("dedicated"):
+                continue
+            zid = zc.get("zone")
+            if zid is None:
+                continue
+            zs = _zone_stores(zid)
+            if len(zs) < MIN_STORES_TO_SPLIT:
+                continue
+            per_day = _zone_exec_per_day(zs)
+            ratio = per_day / TARGET_DAILY_EXEC if TARGET_DAILY_EXEC > 0 else 0
+            if ratio > worst_ratio:
+                worst_ratio  = ratio
+                worst_zc     = zc
+                worst_stores = zs
+
+        if not worst_zc or worst_ratio <= 1.0:
+            break  # no more overloaded zones
+
+        # Split the worst zone into 2 using k-means
+        pts = [(s["lat"], s["lng"]) for s in worst_stores]
+        labels = kmeans_simple(pts, 2)
+
+        # Determine next available zone ID
+        new_zid = max(z.get("zone", 0) for z in zone_centres) + 1
+
+        # Reassign half the stores to the new zone
+        for s, lbl in zip(worst_stores, labels):
+            if lbl == 1:
+                s["rep_id"] = new_zid
+
+        # Recalculate original zone
+        orig_zid = worst_zc["zone"]
+        orig_stores = _zone_stores(orig_zid)
+        if orig_stores:
+            orig_exec = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in orig_stores)
+            orig_time = orig_exec  # monthly exec (travel added during routing)
+            eff_cap   = (daily_minutes - break_minutes) * 22
+            worst_zc.update({
+                "store_count":     len(orig_stores),
+                "centre_lat":      round(sum(s["lat"] for s in orig_stores)/len(orig_stores), 4),
+                "centre_lng":      round(sum(s["lng"] for s in orig_stores)/len(orig_stores), 4),
+                "time_needed_min": round(orig_time),
+                "capacity_min":    eff_cap,
+                "utilisation_pct": round(orig_time / eff_cap * 100) if eff_cap > 0 else 0,
+                "visits_per_month": sum(s.get("visits_per_month",1) for s in orig_stores),
+            })
+
+        # Add new zone
+        new_stores = _zone_stores(new_zid)
+        if new_stores:
+            new_exec = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in new_stores)
+            eff_cap  = (daily_minutes - break_minutes) * 22
+            zone_centres.append({
+                "zone":             new_zid,
+                "centre_lat":       round(sum(s["lat"] for s in new_stores)/len(new_stores), 4),
+                "centre_lng":       round(sum(s["lng"] for s in new_stores)/len(new_stores), 4),
+                "store_count":      len(new_stores),
+                "visits_per_month": sum(s.get("visits_per_month",1) for s in new_stores),
+                "time_needed_min":  round(new_exec),
+                "capacity_min":     eff_cap,
+                "utilisation_pct":  round(new_exec / eff_cap * 100) if eff_cap > 0 else 0,
+                "dedicated":        False,
+                "rule_name":        "Mixed",
+                "rule_type":        "",
+            })
+
+        total_splits += 1
+
+    return total_splits
+
+
 def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg_speed_kmh=30, city_lat=0, city_lng=0):
     """
     Assign stores to days (Mon-Fri) and sequence them within each day.
@@ -4274,6 +4388,28 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
+
+        # ── Split overloaded reps whose daily schedule exceeds capacity ─
+        # Only mixed reps are split; dedicated reps are left as-is.
+        if zone_centres:
+            _n_splits = split_overloaded_reps_daily(
+                all_stores, zone_centres,
+                daily_minutes=daily_minutes,
+                break_minutes=break_minutes,
+                max_splits=10,
+            )
+            if _n_splits > 0:
+                status.info(
+                    f"Stage 6 — Split {_n_splits} overloaded rep(s) whose daily schedule "
+                    f"would exceed {daily_minutes-break_minutes} min capacity."
+                )
+                # Update rep_recommendation counts
+                if rep_recommendation:
+                    rep_recommendation["zone_centres"] = zone_centres
+                    if rep_recommendation.get("mode") == "recommended":
+                        rep_recommendation["mixed_reps"] = rep_recommendation.get("mixed_reps", 0) + _n_splits
+                        rep_recommendation["recommended_reps"] = rep_recommendation.get("recommended_reps", 0) + _n_splits
+
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
         # In fixed mode, if all_rep_ids is fewer than configured, log a warning
