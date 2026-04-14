@@ -159,12 +159,16 @@ if rep_rec:
 
     # Correct rec_reps from numbers (guard against pipeline bugs)
     import math as _math
-    correct_reps = max(1, _math.ceil(exec_travel_total / monthly_eff_cap)) if exec_travel_total > 0 else rec_reps
+    _ideal_reps = max(1, _math.ceil(exec_travel_total / monthly_eff_cap)) if exec_travel_total > 0 else rec_reps
+    # Use actual_routed_reps if available (includes dedicated + splits), else recommended_reps, else ideal
+    _actual_routed = rep_rec.get("actual_routed_reps", rec_reps)
+    correct_reps = _actual_routed if _actual_routed else _ideal_reps
 
     m1, m2, m3, m4 = st.columns(4)
     if mode == "recommended":
         m1.metric("Recommended reps", correct_reps,
-            help=f"ceil({exec_travel_total:,} min ÷ {monthly_eff_cap:,} min/rep) = {correct_reps}")
+            help=f"{correct_reps} reps = dedicated + mixed (after capacity splits). "
+                 f"Ideal by pure capacity math: {_ideal_reps}")
     else:
         m1.metric("Fixed reps", rec_reps)
 
