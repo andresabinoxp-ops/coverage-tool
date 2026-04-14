@@ -1470,9 +1470,13 @@ def split_overloaded_reps_daily(all_stores, zone_centres, daily_minutes=480,
     if not zone_centres:
         return 0
 
-    MAX_DAY_EXEC      = daily_minutes - break_minutes        # e.g., 450 min
-    TARGET_DAILY_EXEC = MAX_DAY_EXEC * 0.70                   # 315 min target
-    MIN_STORES_TO_SPLIT = 12                                  # don't split tiny zones
+    # Only split when the zone is physically overloaded — i.e., the average
+    # daily execution time alone exceeds the full daily capacity. At 70% of
+    # capacity the zone is FINE, not overloaded. Splitting at 70% creates
+    # way too many underutilized reps.
+    MAX_DAY_EXEC        = daily_minutes - break_minutes       # e.g., 450 min
+    TARGET_DAILY_EXEC   = MAX_DAY_EXEC * 1.0                  # 450 min threshold
+    MIN_STORES_TO_SPLIT = 15                                  # don't split small zones
 
     def _zone_stores(zid):
         return [s for s in all_stores
