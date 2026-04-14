@@ -868,13 +868,18 @@ if _sf_rules:
     st.markdown("**Current rules:**")
     for idx, rule in enumerate(_sf_rules):
         _geo_display = ", ".join(rule.get("geography", ["All"]))
-        _match_on    = rule.get("match_field", "")
-        _match_val   = rule.get("match_value", "")
+        # Build match description — support both new (match_conditions) and legacy
+        _conditions = rule.get("match_conditions")
+        if _conditions:
+            _cond_parts = [f'{c.get("match_field","")}: "<em>{c.get("match_value","")}</em>"' for c in _conditions]
+            _match_desc = " <strong>OR</strong> ".join(_cond_parts)
+        else:
+            _match_desc = f'{rule.get("match_field","")}: "<em>{rule.get("match_value","")}</em>"'
         st.markdown(
             f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #1565C0;'
             f'border-radius:8px;padding:0.7rem 1rem;margin:0.4rem 0;font-size:0.88rem">'
             f'<strong>{rule.get("rule_name","")}</strong> — '
-            f'{_match_on}: "<em>{_match_val}</em>" — '
+            f'{_match_desc} — '
             f'Geography: {_geo_display} — '
             f'<strong>{rule.get("dedicated_reps",1)} dedicated rep(s)</strong>'
             f'</div>',
@@ -897,43 +902,72 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
     st.caption(
         "Select what to match on — if your portfolio has columns like Account or Channel, "
         "their values will appear automatically. Matching is always flexible: "
-        "typing \"Lulu\" will match \"Lulu Hypermarket\", \"lulu express\", \"LULU\" etc."
+        "typing \"Lulu\" will match \"Lulu Hypermarket\", \"lulu express\", \"LULU\" etc. "
+        "Add multiple match conditions to combine different store groups into one rep team."
     )
 
-    _ar1, _ar2 = st.columns(2)
-    with _ar1:
-        _new_rule_name = st.text_input(
-            "Rule name", placeholder="e.g., Lulu Exclusive",
-            key="new_rule_name"
-        )
-    with _ar2:
-        _match_on_options = list(_match_options.keys())
-        _new_match_on = st.selectbox(
-            "Match on", _match_on_options, key="new_match_on",
-            help="Select which field to match stores on. Portfolio columns like Account, Channel are auto-detected."
-        )
+    # Track number of conditions in session state
+    if "rule_conditions_count" not in st.session_state:
+        st.session_state["rule_conditions_count"] = 1
+    _n_cond = st.session_state["rule_conditions_count"]
 
-    _ar3, _ar4, _ar5 = st.columns(3)
+    _new_rule_name = st.text_input(
+        "Rule name", placeholder="e.g., Lulu + Pharmacy Specialist",
+        key="new_rule_name"
+    )
 
-    # Get the values for the selected match field
-    _selected_opt = _match_options.get(_new_match_on, {})
-    _available_values = _selected_opt.get("values", [])
+    # Render each match condition
+    _match_on_options = list(_match_options.keys())
+    _conditions_data = []  # collect condition values
 
-    with _ar3:
-        if _available_values:
-            # Show dropdown of actual values from the data
-            _new_match_value = st.selectbox(
-                "Select value", _available_values,
-                key="new_match_value_select",
-                help="Values detected from your uploaded portfolio."
+    for i in range(_n_cond):
+        _cond_cols = st.columns([2, 2, 0.5])
+        with _cond_cols[0]:
+            if i == 0:
+                _mon_label = "Match on"
+            else:
+                _mon_label = f"OR Match on #{i+1}"
+            _ci_match_on = st.selectbox(
+                _mon_label, _match_on_options,
+                key=f"cond_match_on_{i}",
+                help="Select which field to match. Values below auto-populate from your data."
             )
-        else:
-            # Free text input (for Store name keyword or empty columns)
-            _new_match_value = st.text_input(
-                "Enter keyword", placeholder="e.g., Lulu",
-                key="new_match_value_text",
-                help="Type a keyword — matching is flexible (case-insensitive, partial match)."
-            )
+        with _cond_cols[1]:
+            _ci_opt = _match_options.get(_ci_match_on, {})
+            _ci_vals = _ci_opt.get("values", [])
+            if _ci_vals:
+                _ci_value = st.selectbox(
+                    "Value", _ci_vals, key=f"cond_value_sel_{i}",
+                    help="Values from your uploaded portfolio."
+                )
+            else:
+                _ci_value = st.text_input(
+                    "Keyword", placeholder="e.g., Lulu",
+                    key=f"cond_value_txt_{i}",
+                    help="Type a keyword — case-insensitive partial match."
+                )
+        with _cond_cols[2]:
+            st.write(" ")  # spacer
+            if _n_cond > 1 and i == _n_cond - 1:
+                if st.button("✕", key=f"cond_remove_{i}", help="Remove this condition"):
+                    st.session_state["rule_conditions_count"] = max(1, _n_cond - 1)
+                    st.rerun()
+
+        _conditions_data.append({
+            "match_field":  _ci_match_on,
+            "match_column": _ci_opt.get("column", "store_name"),
+            "match_value":  str(_ci_value).strip(),
+        })
+
+    # Add condition button
+    _cond_add_col1, _cond_add_col2 = st.columns([1, 4])
+    with _cond_add_col1:
+        if st.button("+ Add match condition", key="btn_add_cond",
+                     help="Add another OR condition — store matches if ANY condition is satisfied"):
+            st.session_state["rule_conditions_count"] = _n_cond + 1
+            st.rerun()
+
+    _ar4, _ar5 = st.columns(2)
     with _ar4:
         _new_geography = st.multiselect(
             "Geography", _geo_options, default=["All"],
@@ -944,35 +978,41 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
         _new_dedicated_reps = st.number_input(
             "Dedicated reps", min_value=1, max_value=50, value=1,
             key="new_dedicated_reps",
-            help="How many reps for this group. System auto-adjusts if stores exceed capacity."
+            help="How many reps for this combined group."
         )
 
     if st.button("Add rule", type="primary", key="btn_add_rule"):
+        # Validate
+        _valid_conds = [c for c in _conditions_data if c["match_value"]]
         if not _new_rule_name.strip():
             st.error("Please enter a rule name.")
-        elif not str(_new_match_value).strip():
-            st.error("Please select or enter a match value.")
+        elif not _valid_conds:
+            st.error("Please enter at least one match value.")
         else:
-            _match_col = _selected_opt.get("column", "store_name")
-            # Determine rule type: channel-like columns get higher priority
+            # Determine rule type from the FIRST condition's column
             _channel_cols = {"channel", "trade_channel", "sub_channel", "trade_type", "segment", "category"}
-            _rule_type = "Channel" if _match_col in _channel_cols else "Customer"
+            _first_col = _valid_conds[0]["match_column"]
+            _rule_type = "Channel" if _first_col in _channel_cols else "Customer"
 
             _new_rule = {
-                "rule_name":      _new_rule_name.strip(),
-                "rule_type":      _rule_type,
-                "match_field":    _new_match_on,
-                "match_column":   _match_col,
-                "match_type":     "Contains",  # always flexible matching
-                "match_value":    str(_new_match_value).strip(),
-                "geography":      _new_geography if "All" not in _new_geography else ["All"],
-                "dedicated_reps": _new_dedicated_reps,
+                "rule_name":        _new_rule_name.strip(),
+                "rule_type":        _rule_type,
+                "match_conditions": _valid_conds,   # NEW: list of conditions (OR logic)
+                "match_type":       "Contains",     # always flexible matching
+                "geography":        _new_geography if "All" not in _new_geography else ["All"],
+                "dedicated_reps":   _new_dedicated_reps,
+                # Legacy fields for backward compatibility with older code paths
+                "match_field":      _valid_conds[0]["match_field"],
+                "match_column":     _valid_conds[0]["match_column"],
+                "match_value":      _valid_conds[0]["match_value"],
             }
             _sf_rules.append(_new_rule)
             # Auto-sort: Channel rules first, then Customer
             _sf_rules.sort(key=lambda r: 0 if r.get("rule_type") == "Channel" else 1)
             st.session_state["sf_rules"] = _sf_rules
-            st.success(f"Rule added: {_new_rule_name}")
+            # Reset conditions counter for next rule
+            st.session_state["rule_conditions_count"] = 1
+            st.success(f"Rule added: {_new_rule_name} ({len(_valid_conds)} condition(s))")
             st.warning("  **Remember to click 'Save market configuration' below** for rules to take effect in the pipeline.")
             st.rerun()
 

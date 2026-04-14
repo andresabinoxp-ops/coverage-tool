@@ -1115,35 +1115,46 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
     warnings      = []
 
     for rule in rules:
-        match_col   = rule.get("match_column", "store_name")
+        # Support both new (match_conditions list) and legacy (match_column + match_value) formats
+        match_conditions = rule.get("match_conditions")
+        if not match_conditions:
+            # Legacy single-condition rule — convert to conditions list
+            match_conditions = [{
+                "match_column": rule.get("match_column", "store_name"),
+                "match_field":  rule.get("match_field", "Store Name"),
+                "match_value":  rule.get("match_value", ""),
+            }]
+
         match_type  = rule.get("match_type", "Contains").lower()
-        match_vals  = [v.strip().lower() for v in rule.get("match_value", "").split(",") if v.strip()]
         geo_scope   = rule.get("geography", ["All"])
         n_reps      = rule.get("dedicated_reps", 1)
         rule_name   = rule.get("rule_name", "")
         rule_type   = rule.get("rule_type", "")
 
-        if not match_vals:
+        # Prepare conditions: list of (column, [lowercase values])
+        prepared_conditions = []
+        for c in match_conditions:
+            col = c.get("match_column", "store_name")
+            vals = [v.strip().lower() for v in str(c.get("match_value", "")).split(",") if v.strip()]
+            if col and vals:
+                prepared_conditions.append({"col": col, "vals": vals, "field": c.get("match_field", col)})
+
+        if not prepared_conditions:
             continue
 
         # Find matching stores (not already claimed by a higher-priority rule)
         matched = []
         _debug_geo_skip  = 0
-        _debug_col_empty = 0
         _debug_no_match  = 0
         _debug_checked   = 0
-        _debug_sample_vals = []
+        _debug_by_cond   = {i: 0 for i in range(len(prepared_conditions))}
 
         for s in stores:
             if id(s) in matched_ids:
                 continue
             _debug_checked += 1
 
-            # Collect sample values for debugging (first 5 stores)
-            if len(_debug_sample_vals) < 5:
-                _debug_sample_vals.append(str(s.get(match_col, "—MISSING—"))[:50])
-
-            # Geography filter — check all location fields, not just city
+            # Geography filter — check all location fields
             if "All" not in geo_scope:
                 _loc_fields = [
                     str(s.get("city", "")).strip().lower(),
@@ -1160,28 +1171,36 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
                     _debug_geo_skip += 1
                     continue
 
-            # Field matching
-            field_val = str(s.get(match_col, "")).strip().lower()
-            if not field_val or field_val in ("nan", "none", "0", "0.0"):
-                _debug_col_empty += 1
-                continue
-
-            if match_type == "exact":
-                if field_val in match_vals:
-                    matched.append(s)
-            else:  # contains
-                if any(kw in field_val for kw in match_vals):
-                    matched.append(s)
-                else:
-                    _debug_no_match += 1
+            # OR logic: match if ANY condition is satisfied
+            matched_this_store = False
+            for ci, cond in enumerate(prepared_conditions):
+                field_val = str(s.get(cond["col"], "")).strip().lower()
+                if not field_val or field_val in ("nan", "none", "0", "0.0"):
+                    continue
+                if match_type == "exact":
+                    if field_val in cond["vals"]:
+                        matched_this_store = True
+                        _debug_by_cond[ci] += 1
+                        break
+                else:  # contains
+                    if any(kw in field_val for kw in cond["vals"]):
+                        matched_this_store = True
+                        _debug_by_cond[ci] += 1
+                        break
+            if matched_this_store:
+                matched.append(s)
+            else:
+                _debug_no_match += 1
 
         # Debug summary for this rule
+        _cond_summary = " | ".join(
+            f"{prepared_conditions[i]['field']}:{prepared_conditions[i]['vals']}={_debug_by_cond[i]}"
+            for i in range(len(prepared_conditions))
+        )
         _debug_msg = (
             f"Rule '{rule_name}': checked {_debug_checked} stores, "
-            f"column '{match_col}' looking for '{','.join(match_vals)}' — "
-            f"matched {len(matched)}, geo-skipped {_debug_geo_skip}, "
-            f"column-empty {_debug_col_empty}, no-match {_debug_no_match}. "
-            f"Sample values in '{match_col}': {_debug_sample_vals}"
+            f"matched {len(matched)} | geo-skipped {_debug_geo_skip} | no-match {_debug_no_match} | "
+            f"per-condition: {_cond_summary}"
         )
         warnings.append(_debug_msg)
 
