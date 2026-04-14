@@ -1156,8 +1156,10 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
                 continue
             _debug_checked += 1
 
-            # Size tier filter
-            if size_filter != {"Large","Medium","Small"}:
+            # Size tier filter — only applies to scraped stores.
+            # Portfolio stores have known account/sales data, so they're
+            # always included regardless of size filter.
+            if size_filter != {"Large","Medium","Small"} and s.get("source") != "portfolio":
                 s_tier = s.get("size_tier", "")
                 if s_tier not in size_filter:
                     _debug_size_skip += 1

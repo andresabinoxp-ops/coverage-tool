@@ -984,8 +984,9 @@ with st.expander("Add a dedicated rep rule", expanded=len(_sf_rules) == 0):
             options=["Large", "Medium", "Small"],
             default=["Large", "Medium", "Small"],
             key="new_size_filter",
-            help="Only match stores of selected size tiers. Default: all tiers. "
-                 "Note: for scraped stores, 'Large' means top 20% by Google score, not physical size."
+            help="Filters SCRAPED stores only. Portfolio stores (with account/sales data) "
+                 "are always included regardless of this filter. "
+                 "Default: all tiers. Note: for scraped stores, 'Large' means top 20% by Google score."
         )
     with _ar6:
         _new_dedicated_reps = st.number_input(
