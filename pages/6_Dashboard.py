@@ -377,23 +377,38 @@ if all_reps:
     _n_mix      = (_dash_rep_rec or {}).get("mixed_reps", 0)
     _actual     = (_dash_rep_rec or {}).get("actual_routed_reps") or len(all_reps)
 
-    _total_cap  = _actual * _daily * _work_days
+    # Plan period for consistency with workload table below
+    _plan_pp_kpi = len(PLAN_KEYS) if PLAN_KEYS else 1
+    _total_cap   = _actual * _daily * _work_days * max(_plan_pp_kpi, 1)
 
-    _exec_total = 0
-    if "plan_visits" in stores_df.columns and "visit_duration_min" in stores_df.columns and "visits_per_month" in stores_df.columns:
-        _routed = stores_df[stores_df["plan_visits"].fillna(0) > 0]
-        _exec_total = int((_routed["visit_duration_min"].fillna(0).astype(float) *
-                           _routed["visits_per_month"].fillna(0).astype(float)).sum())
+    # Execution over plan period (matches workload table)
+    _exec_total_kpi = 0
+    if "plan_visits" in stores_df.columns and "visit_duration_min" in stores_df.columns:
+        _routed_kpi = stores_df[stores_df["plan_visits"].fillna(0) > 0]
+        _exec_total_kpi = int((_routed_kpi["plan_visits"].fillna(0).astype(float) *
+                               _routed_kpi["visit_duration_min"].fillna(0).astype(float)).sum())
+
+    # Travel: sum of zone_centres time_needed_min × plan_pp - exec (matches table)
+    _zc_kpi = (_dash_rep_rec or {}).get("zone_centres", [])
+    _travel_total_kpi = 0
+    if _zc_kpi:
+        _zc_time_sum = sum(float(z.get("time_needed_min", 0) or 0) for z in _zc_kpi)
+        _travel_total_kpi = max(0, int(_zc_time_sum * max(_plan_pp_kpi, 1)) - _exec_total_kpi)
+
+    _break_total_kpi = _actual * _break_m * _work_days * max(_plan_pp_kpi, 1)
+    _time_total_kpi  = _exec_total_kpi + _travel_total_kpi + _break_total_kpi
+
+    _period_label_kpi = f"{_plan_pp_kpi}mo" if _plan_pp_kpi > 1 else "month"
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total reps", _actual,
         help=f"Dedicated: {_n_ded} · Mixed: {_n_mix}" if _n_ded else "")
-    k2.metric("Execution time / month", f"{_exec_total:,} min",
-        help="Sum of visit_duration × visits_per_month across all routed stores")
-    k3.metric("Total capacity / month", f"{_total_cap:,} min",
-        help=f"{_actual} reps × {_daily} min/day × {_work_days} days")
+    k2.metric(f"Total time needed / {_period_label_kpi}", f"{_time_total_kpi:,} min",
+        help=f"Exec ({_exec_total_kpi:,}) + Travel ({_travel_total_kpi:,}) + Break ({_break_total_kpi:,})")
+    k3.metric(f"Total capacity / {_period_label_kpi}", f"{_total_cap:,} min",
+        help=f"{_actual} reps × {_daily} min/day × {_work_days} days × {_plan_pp_kpi} month(s)")
     if _total_cap > 0:
-        _util = round(_exec_total / _total_cap * 100)
+        _util = round(_time_total_kpi / _total_cap * 100)
         k4.metric("Utilisation", f"{_util}%")
     else:
         k4.metric("Utilisation", "—")
