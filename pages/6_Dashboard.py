@@ -471,15 +471,19 @@ if not map_df.empty:
 
         # ── Colour legend ─────────────────────────────────────────────────────
         if colour_by == "Rep route" and all_reps:
-            leg_cols = st.columns(min(len(all_reps), 6))
-            for i, rep in enumerate(all_reps[:6]):
-                hx  = REP_COLORS[int(rep) % len(REP_COLORS)]
-                cnt = len(map_df[map_df["rep_id"]==rep]) if not map_df.empty else 0
-                _rl = _dash_zone_rule.get(int(rep), "")
-                _rl_tag = f" ({_rl})" if _rl and _rl != "Mixed" else ""
-                leg_cols[i].markdown(
-                    f'<span class="legend-chip" style="background:{hx}">Rep {int(rep)}{_rl_tag} · {cnt} stores</span>',
-                    unsafe_allow_html=True)
+            # Show all reps in rows of 5 (like Routes page)
+            n_per_row = 5
+            for row_start in range(0, len(all_reps), n_per_row):
+                row_reps = all_reps[row_start:row_start + n_per_row]
+                leg_cols = st.columns(len(row_reps))
+                for i, rep in enumerate(row_reps):
+                    hx  = REP_COLORS[int(rep) % len(REP_COLORS)]
+                    cnt = len(map_df[map_df["rep_id"]==rep]) if not map_df.empty else 0
+                    _rl = _dash_zone_rule.get(int(rep), "")
+                    _rl_tag = f" ({_rl})" if _rl and _rl != "Mixed" else ""
+                    leg_cols[i].markdown(
+                        f'<span class="legend-chip" style="background:{hx}">Rep {int(rep)}{_rl_tag} · {cnt} stores</span>',
+                        unsafe_allow_html=True)
         elif colour_by == "Size tier":
             lc = st.columns(3)
             for i,(tier,col) in enumerate([("Large","#2E7D32"),("Medium","#1565C0"),("Small","#F57F17")]):
@@ -583,39 +587,62 @@ if tbl_month_label != "Full plan" and tbl_month_label in PLAN_KEY_MAP:
     rename_map[f"{PLAN_KEY_MAP[tbl_month_label]}_dates"] = f"{tbl_month_label} Dates"
 
 if not route_df.empty:
-    # ── Daily budget metrics when specific date selected ──────────────────────
-    if tbl_date != "All dates" and "visit_duration_min" in route_df.columns:
-        exec_t = int(route_df["visit_duration_min"].fillna(0).sum())
+    def _calc_day_metrics(day_stores):
+        """Calculate exec, travel, break, total for a list of stores on one day."""
+        exec_t = int(day_stores["visit_duration_min"].fillna(0).sum()) \
+                 if "visit_duration_min" in day_stores.columns else 0
         travel_t = 0
-        day_ord  = route_df.sort_values("day_visit_order").to_dict("records") \
-                   if "day_visit_order" in route_df.columns else []
-        if len(day_ord) > 1:
-            for i in range(1, len(day_ord)):
-                s_a, s_b = day_ord[i-1], day_ord[i]
-                try:
-
-
-
-                    la1 = float(s_a.get("lat",0) or 0)
-                    ln1 = float(s_a.get("lng",0) or 0)
-                    la2 = float(s_b.get("lat",0) or 0)
-                    ln2 = float(s_b.get("lng",0) or 0)
-                    if la1 and la2:
-                        p = math.pi/180
-                        a = (math.sin((la2-la1)*p/2)**2 +
-                             math.cos(la1*p)*math.cos(la2*p)*math.sin((ln2-ln1)*p/2)**2)
-                        travel_t += (2*6371*math.asin(math.sqrt(a))/30)*60
-                except: pass
+        if "day_visit_order" in day_stores.columns:
+            day_ord = day_stores.sort_values("day_visit_order").to_dict("records")
+        else:
+            day_ord = day_stores.to_dict("records")
+        for i in range(1, len(day_ord)):
+            s_a, s_b = day_ord[i-1], day_ord[i]
+            try:
+                la1 = float(s_a.get("lat",0) or 0); ln1 = float(s_a.get("lng",0) or 0)
+                la2 = float(s_b.get("lat",0) or 0); ln2 = float(s_b.get("lng",0) or 0)
+                if la1 and la2:
+                    p = math.pi/180
+                    a = (math.sin((la2-la1)*p/2)**2 +
+                         math.cos(la1*p)*math.cos(la2*p)*math.sin((ln2-ln1)*p/2)**2)
+                    travel_t += (2*6371*math.asin(math.sqrt(a))/30)*60
+            except: pass
         travel_t = round(travel_t)
         break_t  = 30
         total_t  = exec_t + travel_t + break_t
-        flag     = " " if total_t <= 550 else (" " if total_t <= 600 else " ")
+        return exec_t, travel_t, break_t, total_t, len(day_stores)
+
+    # ── Daily budget metrics when specific date selected ──────────────────────
+    if tbl_date != "All dates" and "visit_duration_min" in route_df.columns:
+        exec_t, travel_t, break_t, total_t, n_st = _calc_day_metrics(route_df)
+        flag = "🟢" if total_t <= 550 else ("🟡" if total_t <= 600 else "🔴")
         m1,m2,m3,m4,m5 = st.columns(5)
-        m1.metric("Stores", len(route_df))
+        m1.metric("Stores", n_st)
         m2.metric("Execution", f"{exec_t} min")
         m3.metric("Travel", f"{travel_t} min")
         m4.metric("Break", f"{break_t} min")
         m5.metric(f"{flag} Total / cap", f"{total_t} / 550 min")
+    # ── Per-weekday breakdown when rep selected (no specific date) ────────────
+    elif tbl_rep != "All reps" and "assigned_day" in route_df.columns:
+        st.markdown("**Daily breakdown by weekday:**")
+        _days = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+        _day_data = []
+        for d in _days:
+            _day_df = route_df[route_df["assigned_day"] == d]
+            if len(_day_df) == 0:
+                continue
+            exec_t, travel_t, break_t, total_t, n_st = _calc_day_metrics(_day_df)
+            flag = "🟢" if total_t <= 550 else ("🟡" if total_t <= 600 else "🔴")
+            _day_data.append({
+                "Day":        d,
+                "Stores":     n_st,
+                "Execution":  f"{exec_t} min",
+                "Travel":     f"{travel_t} min",
+                "Break":      f"{break_t} min",
+                "Total":      f"{flag} {total_t} / 550 min",
+            })
+        if _day_data:
+            st.dataframe(pd.DataFrame(_day_data), use_container_width=True, hide_index=True)
 
     df_show = route_df[[c for c in show_cols if c in route_df.columns]].rename(columns=rename_map)
     st.dataframe(df_show, use_container_width=True, height=420,
