@@ -317,25 +317,6 @@ col_pv.markdown(f"""
     <div class="kpi-label">Planned Visits / Month</div>
 </div>""", unsafe_allow_html=True)
 
-st.markdown("")
-
-# ── SIZE DISTRIBUTION ─────────────────────────────────────────────────────────
-if "size_tier" in stores_df.columns:
-    fc = st.columns(3)
-    tier_colors = {"Large":"#2E7D32","Medium":"#1565C0","Small":"#F57F17"}
-    for i, tier in enumerate(["Large","Medium","Small"]):
-        cnt = len(stores_df[stores_df["size_tier"]==tier])
-        vpm = stores_df[stores_df["size_tier"]==tier]["visits_per_month"].sum() \
-              if "visits_per_month" in stores_df.columns else 0
-        col = tier_colors[tier]
-        fc[i].markdown(f"""
-        <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-top:4px solid {col};
-        border-radius:8px;padding:1rem;text-align:center;margin-bottom:1rem">
-            <div style="font-size:1.6rem;font-weight:800;color:#1A2B4A">{cnt:,}</div>
-            <div style="font-size:0.78rem;color:#6B7280;font-weight:600;text-transform:uppercase">{tier}</div>
-            <div style="font-size:0.75rem;color:#9E9E9E;margin-top:2px">{vpm:.0f} visits/mo</div>
-        </div>""", unsafe_allow_html=True)
-
 st.markdown("---")
 
 # ── REP PLANNING (mirrors Results page) ──────────────────────────────────────
