@@ -329,14 +329,14 @@ all_reps = sorted([r for r in stores_df["rep_id"].dropna().unique() if int(r) > 
 _dash_rep_rec   = snap.get("rep_recommendation") or \
                   st.session_state.get("run_results", {}).get("rep_recommendation", {})
 
-if _dash_rep_rec and all_reps:
+if all_reps:
     st.html('<div class="section-title">Rep planning</div>')
-    _daily      = _dash_rep_rec.get("daily_minutes", 480)
-    _work_days  = _dash_rep_rec.get("working_days", 22)
-    _break_m    = _dash_rep_rec.get("break_minutes", 30)
-    _n_ded      = _dash_rep_rec.get("dedicated_reps", 0)
-    _n_mix      = _dash_rep_rec.get("mixed_reps", 0)
-    _actual     = _dash_rep_rec.get("actual_routed_reps") or len(all_reps)
+    _daily      = (_dash_rep_rec or {}).get("daily_minutes", 480)
+    _work_days  = (_dash_rep_rec or {}).get("working_days", 22)
+    _break_m    = (_dash_rep_rec or {}).get("break_minutes", 30)
+    _n_ded      = (_dash_rep_rec or {}).get("dedicated_reps", 0)
+    _n_mix      = (_dash_rep_rec or {}).get("mixed_reps", 0)
+    _actual     = (_dash_rep_rec or {}).get("actual_routed_reps") or len(all_reps)
 
     _total_cap  = _actual * _daily * _work_days
 
@@ -509,17 +509,18 @@ if not map_df.empty:
 st.markdown("---")
 
 # ── REP WORKLOAD TABLE (mirrors Results page) ────────────────────────────────
-if all_reps and "plan_visits" in stores_df.columns and _dash_rep_rec:
+if all_reps and "plan_visits" in stores_df.columns:
     st.html('<div class="section-title">Rep workload breakdown</div>')
 
     _plan_pp   = len(PLAN_KEYS) if PLAN_KEYS else 1
-    _daily_w   = _dash_rep_rec.get("daily_minutes", 480)
-    _break_w   = _dash_rep_rec.get("break_minutes", 30)
-    _wdays_w   = _dash_rep_rec.get("working_days", 22)
-    _n_sf_w    = _dash_rep_rec.get("sf_rules_applied", 0)
+    # Use rep_recommendation values if available, else sensible defaults
+    _daily_w   = (_dash_rep_rec or {}).get("daily_minutes", 480)
+    _break_w   = (_dash_rep_rec or {}).get("break_minutes", 30)
+    _wdays_w   = (_dash_rep_rec or {}).get("working_days", 22)
+    _n_sf_w    = (_dash_rep_rec or {}).get("sf_rules_applied", 0)
 
     # Sales force structure summary (if rules applied)
-    _zc_w = _dash_rep_rec.get("zone_centres", [])
+    _zc_w = (_dash_rep_rec or {}).get("zone_centres", [])
     if _n_sf_w > 0:
         _ded_zones_w = [z for z in _zc_w if z.get("dedicated")]
         _mix_zones_w = [z for z in _zc_w if not z.get("dedicated")]
