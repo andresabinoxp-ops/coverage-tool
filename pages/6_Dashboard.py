@@ -508,6 +508,115 @@ if not map_df.empty:
 
 st.markdown("---")
 
+# ── REP WORKLOAD TABLE (mirrors Results page) ────────────────────────────────
+if all_reps and "plan_visits" in stores_df.columns and _dash_rep_rec:
+    st.html('<div class="section-title">Rep workload breakdown</div>')
+
+    _plan_pp   = len(PLAN_KEYS) if PLAN_KEYS else 1
+    _daily_w   = _dash_rep_rec.get("daily_minutes", 480)
+    _break_w   = _dash_rep_rec.get("break_minutes", 30)
+    _wdays_w   = _dash_rep_rec.get("working_days", 22)
+    _n_sf_w    = _dash_rep_rec.get("sf_rules_applied", 0)
+
+    # Sales force structure summary (if rules applied)
+    _zc_w = _dash_rep_rec.get("zone_centres", [])
+    if _n_sf_w > 0:
+        _ded_zones_w = [z for z in _zc_w if z.get("dedicated")]
+        _mix_zones_w = [z for z in _zc_w if not z.get("dedicated")]
+        st.info(
+            f"  **{_n_sf_w} rule(s)** applied · "
+            f"**{len(_ded_zones_w)} dedicated** rep(s) · "
+            f"**{len(_mix_zones_w)} mixed** rep(s)"
+        )
+        for _dz in _ded_zones_w:
+            _util_col = "#2E7D32" if _dz.get("utilisation_pct", 0) <= 100 else "#B71C1C"
+            st.markdown(
+                f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #0D47A1;'
+                f'border-radius:6px;padding:0.5rem 0.8rem;margin:0.3rem 0;font-size:0.85rem">'
+                f'Rep {_dz.get("zone","?")} — <strong>{_dz.get("rule_name","")}</strong> · '
+                f'{_dz.get("store_count",0)} stores · '
+                f'{_dz.get("time_needed_min",0):,} min · '
+                f'<span style="color:{_util_col};font-weight:700">'
+                f'{_dz.get("utilisation_pct",0)}% utilisation</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+    # Build workload rows
+    _routed_w = stores_df[stores_df["plan_visits"].fillna(0) > 0].copy()
+    _rep_rows = {}
+    for _, r in _routed_w.iterrows():
+        rid = int(r.get("rep_id", 0) or 0)
+        if not rid: continue
+        if rid not in _rep_rows:
+            _rule_lbl = _dash_zone_rule.get(rid, "Mixed")
+            _rep_rows[rid] = {
+                "Rep": rid,
+                "Assignment": _rule_lbl,
+                "Stores": 0, "Current": 0, "Gap (new)": 0,
+                "Execution (min)": 0,
+            }
+        _rep_rows[rid]["Stores"] += 1
+        _rep_rows[rid]["Execution (min)"] += int(
+            float(r.get("plan_visits", 0) or 0) * float(r.get("visit_duration_min", 25) or 25)
+        )
+        if r.get("covered") == True or r.get("coverage_status") == "covered":
+            _rep_rows[rid]["Current"] += 1
+        else:
+            _rep_rows[rid]["Gap (new)"] += 1
+
+    if _rep_rows:
+        import pandas as _pd_w
+        _rdf = _pd_w.DataFrame(list(_rep_rows.values())).sort_values("Rep")
+
+        _zc_map = {int(z.get("zone", 0)): z.get("time_needed_min", 0) for z in _zc_w}
+        _cap_per_period = _daily_w * _wdays_w * max(_plan_pp, 1)
+        _brk_per_period = _break_w * _wdays_w * max(_plan_pp, 1)
+        _cap_col_w = f"Capacity {_plan_pp}mo (min)"
+
+        def _exec_w(rid):  return _rep_rows.get(int(rid), {}).get("Execution (min)", 0)
+        def _travel_w(rid):
+            et = _zc_map.get(int(rid), 0) * _plan_pp
+            return max(0, int(et) - _exec_w(rid))
+        def _total_w(rid): return _exec_w(rid) + _travel_w(rid) + _brk_per_period
+
+        _rdf["Execution (min)"]    = _rdf["Rep"].apply(_exec_w).astype(int)
+        _rdf["Travel (min)"]       = _rdf["Rep"].apply(_travel_w).astype(int)
+        _rdf["Break (min)"]        = _brk_per_period
+        _rdf["Total needed (min)"] = _rdf["Rep"].apply(_total_w).astype(int)
+        _rdf[_cap_col_w]           = _cap_per_period
+        _rdf["Utilisation %"]      = (_rdf["Total needed (min)"] / max(_cap_per_period, 1) * 100).round(0).astype(int)
+
+        _col_order_w = ["Rep","Assignment","Stores","Current","Gap (new)",
+                        "Execution (min)","Travel (min)","Break (min)",
+                        "Total needed (min)", _cap_col_w, "Utilisation %"]
+        if _n_sf_w == 0:
+            _col_order_w = [c for c in _col_order_w if c != "Assignment"]
+
+        _total_row = {
+            "Rep": "TOTAL", "Assignment": "",
+            "Stores": int(_rdf["Stores"].sum()),
+            "Current": int(_rdf["Current"].sum()),
+            "Gap (new)": int(_rdf["Gap (new)"].sum()),
+            "Execution (min)": int(_rdf["Execution (min)"].sum()),
+            "Travel (min)": int(_rdf["Travel (min)"].sum()),
+            "Break (min)": int(_rdf["Break (min)"].sum()),
+            "Total needed (min)": int(_rdf["Total needed (min)"].sum()),
+            _cap_col_w: int(_rdf[_cap_col_w].sum()),
+            "Utilisation %": round(_rdf["Total needed (min)"].sum() /
+                                   max(_rdf[_cap_col_w].sum(), 1) * 100),
+        }
+        _rdf_display = _pd_w.concat(
+            [_rdf[_col_order_w], _pd_w.DataFrame([_total_row])[_col_order_w]],
+            ignore_index=True
+        )
+        st.dataframe(_rdf_display, use_container_width=True, hide_index=True,
+            column_config={
+                "Utilisation %": st.column_config.ProgressColumn(
+                    "Utilisation %", min_value=0, max_value=100, format="%d%%"),
+            })
+    st.markdown("---")
+
 # ── DOWNLOAD REP ROUTE FILES (mirrors Routes page) ────────────────────────────
 if all_reps and "plan_visits" in stores_df.columns:
     st.html('<div class="section-title">Download rep route files</div>')
