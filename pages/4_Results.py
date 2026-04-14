@@ -176,9 +176,11 @@ if rep_rec:
     top_time_placeholder.metric("Exec + Travel / month",
         f"{exec_travel_total:,.0f} min",
         help=f"Execution + inter-store travel across all {correct_reps} rep(s). Excludes break.")
-    m3.metric("Capacity / rep / month",
-        f"{monthly_eff_cap:,} min",
-        help=f"({daily_mins} - {break_mins} break) × {work_days} days = {monthly_eff_cap:,} min exec+travel budget")
+    _total_capacity = correct_reps * monthly_cap_full
+    m3.metric("Total capacity / month",
+        f"{_total_capacity:,} min",
+        help=f"{correct_reps} reps × {daily_mins} min/day × {work_days} days = {_total_capacity:,} min total. "
+             f"Per-rep effective (excl. break): {monthly_eff_cap:,} min")
     if cur_reps > 0:
         shortfall = correct_reps - cur_reps
         m4.metric("vs Current headcount",
