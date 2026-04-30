@@ -1203,30 +1203,39 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             else:
                 _debug_no_match += 1
 
-        # Debug summary for this rule
-        _cond_summary = " | ".join(
-            f"{prepared_conditions[i]['field']}:{prepared_conditions[i]['vals']}={_debug_by_cond[i]}"
-            for i in range(len(prepared_conditions))
-        )
-        _debug_msg = (
-            f"Rule '{rule_name}': checked {_debug_checked} stores, "
-            f"matched {len(matched)} | geo-skipped {_debug_geo_skip} | "
-            f"size-skipped {_debug_size_skip} | no-match {_debug_no_match} | "
-            f"per-condition: {_cond_summary}"
-        )
-        warnings.append(_debug_msg)
-
+        # Clean status summary for this rule
         if not matched:
-            warnings.append(f"Rule '{rule_name}' matched 0 stores — skipped, rep(s) freed to mixed pool.")
+            warnings.append(f"'{rule_name}' — no matching stores found. Rule skipped.")
             continue
+        warnings.append(f"'{rule_name}' — {len(matched)} stores matched.")
 
         # Mark as matched
         for s in matched:
             matched_ids.add(id(s))
 
-        # Dedicated reps: use exactly the user's configured count.
-        # No utilisation enforcement — just optimize for geographic day-grouping.
-        actual_reps = n_reps
+        # Determine rep count:
+        # - dedicated_reps = 0 → Auto: calculate from workload (min 1)
+        # - dedicated_reps > 0 → Fixed: validate (override if too many for store count)
+        matched_workload = sum(
+            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+            for s in matched
+        )
+        needed_reps = max(1, math.ceil(matched_workload / eff_cap)) if eff_cap > 0 else 1
+
+        if n_reps == 0:
+            # Auto mode — system recommends
+            actual_reps = needed_reps
+            warnings.append(f"  Auto → {actual_reps} rep(s) for {len(matched)} stores ({matched_workload:,} min workload).")
+        elif n_reps > needed_reps:
+            # Fixed but too many — override down
+            actual_reps = needed_reps
+            warnings.append(
+                f"  Adjusted from {n_reps} to {actual_reps} rep(s) — "
+                f"{len(matched)} stores only need {needed_reps} rep(s)."
+            )
+        else:
+            # Fixed and valid
+            actual_reps = n_reps
 
         # Assign rep_ids using k-means if multiple reps, else single assignment
         matched_geo = [s for s in matched if s.get("lat") and s.get("lng")]
@@ -4097,21 +4106,6 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         if _sf_rules:
             status.info(f"Stage 6/{total_steps} — Applying {len(_sf_rules)} sales force rules...")
-            # Debug: show what columns are available on portfolio stores
-            _portfolio_in_priority = [s for s in priority if s.get("source") == "portfolio"]
-            if _portfolio_in_priority:
-                _sample_keys = sorted(_portfolio_in_priority[0].keys())
-                status.info(f"  Portfolio store columns: {', '.join(_sample_keys[:20])}")
-            else:
-                status.warning("  No portfolio stores found in priority set!")
-            # Debug: show what rules we're applying
-            for _ri, _r in enumerate(_sf_rules):
-                status.info(
-                    f"  Rule {_ri+1}: '{_r.get('rule_name','')}' — "
-                    f"match column='{_r.get('match_column','')}' "
-                    f"contains '{_r.get('match_value','')}' — "
-                    f"geography: {_r.get('geography',['All'])}"
-                )
             _dedicated_stores, _mixed_pool, _dedicated_zones, _next_rep_id, _sf_warnings = \
                 apply_sf_rules(
                     priority, _sf_rules,
@@ -4121,12 +4115,12 @@ if st.button("  Run Coverage Agent", type="primary"):
                     avg_speed_kmh=avg_speed,
                 )
             for _w in _sf_warnings:
-                status.warning(f"  {_w}")
+                status.info(f"  {_w}")
             if _dedicated_stores:
                 status.info(
-                    f"Stage 6/{total_steps} — Dedicated: {len(_dedicated_stores):,} stores → "
-                    f"{_next_rep_id - 1} dedicated rep(s) | "
-                    f"Mixed pool: {len(_mixed_pool):,} stores remaining"
+                    f"Stage 6/{total_steps} — {len(_dedicated_stores):,} stores assigned to "
+                    f"{_next_rep_id - 1} dedicated rep(s). "
+                    f"{len(_mixed_pool):,} stores in mixed pool."
                 )
 
         _n_dedicated_reps = _next_rep_id - 1
