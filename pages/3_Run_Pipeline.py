@@ -1489,15 +1489,12 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
                 _merged_zones.add(zid)
                 continue
 
-            # Find nearest neighbour that can absorb WITHOUT going over 110%
+            # Find nearest neighbour to absorb this zone
             recv_lat, recv_lng = zinfo["centroid"]
             best_target = None
             best_dist = float("inf")
             for t_zid, t_info in zone_util_mc.items():
                 if t_zid == zid or t_zid in _merged_zones:
-                    continue
-                # Check target won't exceed 110% after absorbing this zone
-                if t_info["time"] + zinfo["time"] > monthly_cap * 1.10:
                     continue
                 t_lat, t_lng = t_info["centroid"]
                 d = haversine_m(recv_lat, recv_lng, t_lat, t_lng)
