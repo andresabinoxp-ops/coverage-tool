@@ -1471,6 +1471,51 @@ def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
         if moved_this_pass == 0:
             break
 
+    # ── Phase C: Merge zones still below min_util_pct after rebalancing ──
+    # If a zone is still below threshold (e.g., 18% with 4 stores),
+    # merge ALL its stores into the nearest neighbour. Remove the zone.
+    # This reduces rep count but ensures no rep stays severely underloaded.
+    _merge_thresh = monthly_cap * min_util_pct / 100
+    _merged_zones = set()
+    for _mc_pass in range(len(zone_centres)):
+        _found_merge = False
+        zone_util_mc = _refresh_util()
+        for zid, zinfo in sorted(zone_util_mc.items(), key=lambda x: x[1]["time"]):
+            if zid in _merged_zones:
+                continue
+            if zinfo["time"] >= _merge_thresh:
+                continue
+            if not zinfo["stores"]:
+                _merged_zones.add(zid)
+                continue
+
+            # Find nearest neighbour to absorb this zone
+            recv_lat, recv_lng = zinfo["centroid"]
+            best_target = None
+            best_dist = float("inf")
+            for t_zid, t_info in zone_util_mc.items():
+                if t_zid == zid or t_zid in _merged_zones:
+                    continue
+                t_lat, t_lng = t_info["centroid"]
+                d = haversine_m(recv_lat, recv_lng, t_lat, t_lng)
+                if d < best_dist:
+                    best_dist = d
+                    best_target = t_zid
+
+            if best_target is not None:
+                # Move ALL stores from underloaded zone to target
+                for s in zinfo["stores"]:
+                    s["rep_id"] = best_target
+                _merged_zones.add(zid)
+                total_moved += len(zinfo["stores"])
+                _found_merge = True
+                break  # restart scan after merge
+        if not _found_merge:
+            break
+
+    # Remove merged zones from zone_centres
+    zone_centres[:] = [zc for zc in zone_centres if zc["zone"] not in _merged_zones]
+
     # Update zone_centres with final values
     for zc in zone_centres:
         zid = zc["zone"]
