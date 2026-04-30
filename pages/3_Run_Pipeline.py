@@ -1285,6 +1285,126 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
     return dedicated_all, mixed_pool, dedicated_zones, next_rep_id, warnings
 
 
+def balanced_zone_assignment(stores, n_zones, daily_minutes=480, break_minutes=30,
+                             working_days=22):
+    """
+    Assign stores to zones with balanced workload AND geographic contiguity.
+    Replaces k-means + rebalancing which produced uneven zones (12% to 245%).
+
+    Algorithm:
+      1. Use k-means to get initial seed centroids (geographic spread)
+      2. Sort stores heaviest-first (by monthly workload)
+      3. Assign each store to the zone that has:
+         a) Most remaining capacity (prevents overloading)
+         b) Nearest centroid (maintains geographic contiguity)
+         Combined score balances both factors.
+      4. Result: every zone gets approximately equal workload.
+
+    Returns list of zone dicts (same format as before).
+    """
+    if not stores or n_zones <= 0:
+        return []
+
+    geo_stores = [s for s in stores if s.get("lat") and s.get("lng")]
+    if not geo_stores:
+        return []
+    if len(geo_stores) <= n_zones:
+        # Fewer stores than zones — one store per zone
+        for i, s in enumerate(geo_stores):
+            s["rep_id"] = i + 1
+        n_zones = len(geo_stores)
+    else:
+        eff_cap = (daily_minutes - break_minutes) * working_days
+        target_per_zone = sum(
+            s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+            for s in geo_stores
+        ) / max(n_zones, 1)
+
+        # Step 1: Get seed centroids from k-means (just for geographic spread)
+        pts = [(s["lat"], s["lng"]) for s in geo_stores]
+        seed_labels = kmeans_simple(pts, n_zones, iterations=10)
+        centroids = []
+        for j in range(n_zones):
+            cluster = [pts[i] for i in range(len(pts)) if seed_labels[i] == j]
+            if cluster:
+                centroids.append((
+                    sum(p[0] for p in cluster) / len(cluster),
+                    sum(p[1] for p in cluster) / len(cluster),
+                ))
+            else:
+                centroids.append(pts[j % len(pts)])
+
+        # Step 2: Sort stores heaviest-first
+        geo_stores_sorted = sorted(
+            geo_stores,
+            key=lambda s: s.get("visits_per_month", 1) * s.get("visit_duration_min", 25),
+            reverse=True
+        )
+
+        # Step 3: Greedy balanced assignment
+        zone_workload = [0.0] * n_zones
+        zone_stores_list = [[] for _ in range(n_zones)]
+
+        # Normalize distances for scoring
+        all_lats = [s["lat"] for s in geo_stores]
+        all_lngs = [s["lng"] for s in geo_stores]
+        max_dist = haversine_m(min(all_lats), min(all_lngs), max(all_lats), max(all_lngs)) or 1.0
+
+        for s in geo_stores_sorted:
+            s_time = s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+            s_lat, s_lng = s["lat"], s["lng"]
+
+            best_zone = 0
+            best_score = float("inf")
+
+            for j in range(n_zones):
+                # Distance factor (0 to 1): closer is better
+                dist = haversine_m(s_lat, s_lng, centroids[j][0], centroids[j][1])
+                dist_score = dist / max_dist
+
+                # Workload factor (0 to 1+): lower utilization is better
+                util_score = zone_workload[j] / max(target_per_zone, 1)
+
+                # Combined: weight geography 40%, workload 60%
+                score = dist_score * 0.4 + util_score * 0.6
+
+                if score < best_score:
+                    best_score = score
+                    best_zone = j
+
+            s["rep_id"] = best_zone + 1
+            zone_workload[best_zone] += s_time
+            zone_stores_list[best_zone].append(s)
+
+            # Update centroid incrementally
+            zs = zone_stores_list[best_zone]
+            centroids[best_zone] = (
+                sum(st["lat"] for st in zs) / len(zs),
+                sum(st["lng"] for st in zs) / len(zs),
+            )
+
+    # Build zone_centres output (same format as before)
+    eff_cap = (daily_minutes - break_minutes) * working_days
+    zone_centres = []
+    for j in range(n_zones):
+        zs = [s for s in geo_stores if s.get("rep_id") == j + 1]
+        if not zs:
+            continue
+        z_time = sum(s.get("visits_per_month", 1) * s.get("visit_duration_min", 25) for s in zs)
+        zone_centres.append({
+            "zone":             j + 1,
+            "centre_lat":       round(sum(s["lat"] for s in zs) / len(zs), 4),
+            "centre_lng":       round(sum(s["lng"] for s in zs) / len(zs), 4),
+            "store_count":      len(zs),
+            "visits_per_month": sum(s.get("visits_per_month", 1) for s in zs),
+            "time_needed_min":  round(z_time),
+            "capacity_min":     eff_cap,
+            "utilisation_pct":  round(z_time / eff_cap * 100) if eff_cap > 0 else 0,
+        })
+
+    return zone_centres
+
+
 def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
                           working_days=22, avg_speed_kmh=30, min_util_pct=65,
                           max_passes=5, break_minutes=30):
