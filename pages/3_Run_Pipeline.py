@@ -1405,6 +1405,200 @@ def balanced_zone_assignment(stores, n_zones, daily_minutes=480, break_minutes=3
     return zone_centres
 
 
+def skip_outlier_stores(all_stores, zone_centres, max_skip_pct=5):
+    """
+    Remove isolated low-value stores from route plan.
+    A store is an outlier if it's far from its rep centroid AND low-scoring.
+
+    Rule: distance > 2× avg inter-store distance AND score < median → skip.
+    Cap: max max_skip_pct% of total routed stores.
+    Skipped stores get rep_id=0 (show in "Not in route" filter).
+    Returns number of stores skipped.
+    """
+    routed = [s for s in all_stores
+              if s.get("rep_id", 0) > 0
+              and s.get("size_tier") in ("Large", "Medium", "Small")
+              and s.get("lat") and s.get("lng")]
+    if len(routed) < 20:
+        return 0
+
+    # Calculate median score
+    scores = sorted(s.get("score", 0) for s in routed)
+    median_score = scores[len(scores) // 2]
+
+    # Build centroid per rep
+    rep_centroids = {}
+    for zc in zone_centres:
+        zid = zc.get("zone")
+        if zid:
+            rep_centroids[zid] = (zc.get("centre_lat", 0), zc.get("centre_lng", 0))
+
+    # Calculate average inter-store distance per rep
+    rep_avg_dist = {}
+    for zid, (c_lat, c_lng) in rep_centroids.items():
+        rep_stores = [s for s in routed if s.get("rep_id") == zid]
+        if rep_stores:
+            total_dist = sum(haversine_m(s["lat"], s["lng"], c_lat, c_lng) for s in rep_stores)
+            rep_avg_dist[zid] = total_dist / len(rep_stores)
+        else:
+            rep_avg_dist[zid] = 0
+
+    # Find outlier candidates
+    max_skip = max(1, int(len(routed) * max_skip_pct / 100))
+    candidates = []
+    for s in routed:
+        rid = s.get("rep_id", 0)
+        if rid not in rep_centroids or s.get("_rule_name"):
+            continue  # don't skip dedicated rep stores
+        c_lat, c_lng = rep_centroids[rid]
+        dist = haversine_m(s["lat"], s["lng"], c_lat, c_lng)
+        avg_d = rep_avg_dist.get(rid, 1)
+        if dist > avg_d * 2 and s.get("score", 0) < median_score:
+            candidates.append((s, dist))
+
+    # Sort by distance (furthest first) and skip up to cap
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    skipped = 0
+    for s, dist in candidates[:max_skip]:
+        s["rep_id"] = 0
+        s["_skipped_outlier"] = True
+        skipped += 1
+
+    return skipped
+
+
+def merge_underfilled_reps(all_stores, zone_centres, daily_minutes=480,
+                           break_minutes=30, min_active_days=3):
+    """
+    After daily routes are built, merge reps that can't fill the work week.
+
+    Rule: if a rep has stores on fewer than min_active_days weekdays,
+    move ALL its stores to the nearest rep that has daily capacity.
+    The receiving rep must not exceed 550 min on any day after absorbing.
+
+    This is a POST-ROUTING cleanup — runs after build_daily_routes.
+    Returns (reps_merged, stores_moved).
+    """
+    WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    MAX_DAY = 550
+
+    routed = [s for s in all_stores
+              if s.get("rep_id", 0) > 0
+              and s.get("size_tier") in ("Large", "Medium", "Small")]
+    if not routed:
+        return 0, 0
+
+    rep_ids = sorted(set(s.get("rep_id", 0) for s in routed if s.get("rep_id", 0) > 0))
+    if len(rep_ids) <= 1:
+        return 0, 0
+
+    # Build per-rep daily summary
+    def _rep_daily(rid):
+        """Returns {day: [stores], ...} for a rep."""
+        daily = {d: [] for d in WEEKDAYS}
+        for s in all_stores:
+            if s.get("rep_id") == rid and s.get("assigned_day") in daily:
+                daily[s["assigned_day"]].append(s)
+        return daily
+
+    def _day_exec(stores):
+        return sum(s.get("visit_duration_min", 25) for s in stores)
+
+    reps_merged = 0
+    stores_moved = 0
+
+    # Find reps that can't fill the week — iterate until stable
+    for _pass in range(len(rep_ids)):
+        merged_this_pass = False
+        rep_ids_current = sorted(set(
+            s.get("rep_id", 0) for s in all_stores
+            if s.get("rep_id", 0) > 0
+            and s.get("size_tier") in ("Large", "Medium", "Small")
+            and s.get("assigned_day")
+        ))
+
+        for rid in rep_ids_current:
+            # Skip dedicated reps
+            if any(s.get("_rule_name") for s in all_stores if s.get("rep_id") == rid):
+                continue
+
+            daily = _rep_daily(rid)
+            active_days = sum(1 for d in WEEKDAYS if daily[d])
+
+            if active_days >= min_active_days:
+                continue  # this rep is fine
+
+            # This rep can't fill the week — find nearest rep to absorb
+            my_stores = [s for s in all_stores if s.get("rep_id") == rid
+                         and s.get("lat") and s.get("lng")]
+            if not my_stores:
+                continue
+
+            my_lat = sum(s["lat"] for s in my_stores) / len(my_stores)
+            my_lng = sum(s["lng"] for s in my_stores) / len(my_stores)
+
+            # Find nearest other rep
+            best_target = None
+            best_dist = float("inf")
+            for t_rid in rep_ids_current:
+                if t_rid == rid:
+                    continue
+                t_stores = [s for s in all_stores if s.get("rep_id") == t_rid
+                            and s.get("lat") and s.get("lng")]
+                if not t_stores:
+                    continue
+                t_lat = sum(s["lat"] for s in t_stores) / len(t_stores)
+                t_lng = sum(s["lng"] for s in t_stores) / len(t_stores)
+                d = haversine_m(my_lat, my_lng, t_lat, t_lng)
+                if d < best_dist:
+                    best_dist = d
+                    best_target = t_rid
+
+            if best_target is None:
+                continue
+
+            # Check: would any day of the target exceed MAX_DAY after absorbing?
+            target_daily = _rep_daily(best_target)
+            can_absorb = True
+            for s in my_stores:
+                day = s.get("assigned_day", "Monday")
+                new_exec = _day_exec(target_daily.get(day, [])) + s.get("visit_duration_min", 25)
+                if new_exec > MAX_DAY:
+                    can_absorb = False
+                    break
+
+            if not can_absorb:
+                # Try redistributing across target's lightest days
+                can_absorb = True
+                for s in my_stores:
+                    lightest = min(WEEKDAYS, key=lambda d: _day_exec(target_daily.get(d, [])))
+                    new_exec = _day_exec(target_daily.get(lightest, [])) + s.get("visit_duration_min", 25)
+                    if new_exec > MAX_DAY:
+                        can_absorb = False
+                        break
+                    s["assigned_day"] = lightest
+                    target_daily[lightest].append(s)
+
+            if can_absorb:
+                # Merge: move all stores to target rep
+                for s in my_stores:
+                    s["rep_id"] = best_target
+                stores_moved += len(my_stores)
+                reps_merged += 1
+                merged_this_pass = True
+                break  # restart scan
+
+        if not merged_this_pass:
+            break
+
+    # Update zone_centres: remove merged zones
+    remaining_rids = set(s.get("rep_id", 0) for s in all_stores
+                         if s.get("rep_id", 0) > 0 and s.get("plan_visits", 0) >= 0)
+    zone_centres[:] = [zc for zc in zone_centres if zc.get("zone") in remaining_rids]
+
+    return reps_merged, stores_moved
+
+
 def rebalance_zones_65pct(all_stores, zone_centres, daily_minutes=480,
                           working_days=22, avg_speed_kmh=30, min_util_pct=65,
                           max_passes=5, break_minutes=30):
@@ -4571,6 +4765,11 @@ if st.button("  Run Coverage Agent", type="primary"):
                         rep_recommendation["mixed_reps"] = rep_recommendation.get("mixed_reps", 0) + _n_splits
                         rep_recommendation["recommended_reps"] = rep_recommendation.get("recommended_reps", 0) + _n_splits
 
+        # ── Skip outlier stores (isolated + low-value) BEFORE daily routing ──
+        _n_outliers = skip_outlier_stores(all_stores, zone_centres, max_skip_pct=5)
+        if _n_outliers > 0:
+            status.info(f"Stage 6 — Skipped {_n_outliers} isolated low-value store(s) from route plan.")
+
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
         # In fixed mode, if all_rep_ids is fewer than configured, log a warning
@@ -4686,6 +4885,21 @@ if st.button("  Run Coverage Agent", type="primary"):
                         if wk_idx < len(day_dates):
                             real_dates.append(day_dates[wk_idx].strftime("%d %b"))
                 s[f"{mk}_dates"] = real_dates
+
+        # ── Merge underfilled reps (can't fill the work week) ─────────
+        _reps_merged, _stores_moved = merge_underfilled_reps(
+            all_stores, zone_centres,
+            daily_minutes=daily_minutes,
+            break_minutes=break_minutes,
+            min_active_days=3,
+        )
+        if _reps_merged > 0:
+            status.info(
+                f"Stage 6b — Merged {_reps_merged} underfilled rep(s) "
+                f"({_stores_moved} stores redistributed to nearby reps)."
+            )
+            if rep_recommendation:
+                rep_recommendation["zone_centres"] = zone_centres
 
         # Clear stores not in route
         for s in all_stores:
