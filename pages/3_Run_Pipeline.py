@@ -1448,12 +1448,17 @@ def skip_outlier_stores(all_stores, zone_centres, max_skip_pct=5):
     candidates = []
     for s in routed:
         rid = s.get("rep_id", 0)
-        if rid not in rep_centroids or s.get("_rule_name"):
-            continue  # don't skip dedicated rep stores
+        if rid not in rep_centroids:
+            continue
+        # NEVER skip: dedicated rep stores, covered/portfolio stores, Large stores
+        if s.get("_rule_name") or s.get("covered") or s.get("source") == "portfolio":
+            continue
+        if s.get("size_tier") == "Large":
+            continue
         c_lat, c_lng = rep_centroids[rid]
         dist = haversine_m(s["lat"], s["lng"], c_lat, c_lng)
         avg_d = rep_avg_dist.get(rid, 1)
-        if dist > avg_d * 2 and s.get("score", 0) < median_score:
+        if dist > avg_d * 2.5 and s.get("score", 0) < median_score:
             candidates.append((s, dist))
 
     # Sort by distance (furthest first) and skip up to cap
@@ -1537,9 +1542,10 @@ def merge_underfilled_reps(all_stores, zone_centres, daily_minutes=480,
             my_lat = sum(s["lat"] for s in my_stores) / len(my_stores)
             my_lng = sum(s["lng"] for s in my_stores) / len(my_stores)
 
-            # Find nearest other rep
+            # Find nearest other rep (max 30km — don't merge across cities)
             best_target = None
             best_dist = float("inf")
+            MAX_MERGE_DIST = 30000  # 30km
             for t_rid in rep_ids_current:
                 if t_rid == rid:
                     continue
@@ -1550,7 +1556,7 @@ def merge_underfilled_reps(all_stores, zone_centres, daily_minutes=480,
                 t_lat = sum(s["lat"] for s in t_stores) / len(t_stores)
                 t_lng = sum(s["lng"] for s in t_stores) / len(t_stores)
                 d = haversine_m(my_lat, my_lng, t_lat, t_lng)
-                if d < best_dist:
+                if d < best_dist and d < MAX_MERGE_DIST:
                     best_dist = d
                     best_target = t_rid
 
