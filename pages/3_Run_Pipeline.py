@@ -2806,6 +2806,13 @@ else:
                         f"  {fmt_time(_rem).replace('~','')} remaining"
                     )
                     _scrape_bar.progress(_pct)
+                    # Checkpoint every 20 tiles — crash recovery
+                    if _done_tiles % 20 == 0:
+                        st.session_state["_scrape_checkpoint"] = {
+                            "universe": list(_osm_shops),
+                            "step": f"scrape_tile_{_done_tiles}",
+                            "saved_at": time.strftime("%d %b %Y %H:%M"),
+                        }
 
             _scrape_status.info(
                 f"Step B: {len(_osm_shops):,} stores from Google Places "
