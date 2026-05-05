@@ -2772,6 +2772,13 @@ else:
                                 continue
                             _seen_ids.add(_pid)
                             _loc    = _place.get("geometry",{}).get("location",{})
+                            # Filter by configured bounding box — drop stores outside country
+                            _slat = _loc.get("lat", 0)
+                            _slng = _loc.get("lng", 0)
+                            if _slat and _slng:
+                                if (_slat < cfg["lat_min"] or _slat > cfg["lat_max"] or
+                                    _slng < cfg["lng_min"] or _slng > cfg["lng_max"]):
+                                    continue
                             _vic    = _place.get("vicinity","")
                             _vparts = [_p.strip() for _p in _vic.split(",") if _p.strip()]
                             _scity  = _vparts[-1] if len(_vparts)>=2 else cfg.get("city","")
@@ -3629,6 +3636,13 @@ if st.button("  Run Coverage Agent", type="primary"):
                             if place.get("business_status") == "CLOSED_PERMANENTLY": continue
                             seen_ids.add(pid)
                             loc     = place.get("geometry",{}).get("location",{})
+                            # Filter by bounding box — drop stores outside configured area
+                            _plat = loc.get("lat", 0)
+                            _plng = loc.get("lng", 0)
+                            if _plat and _plng:
+                                if (_plat < cfg["lat_min"] or _plat > cfg["lat_max"] or
+                                    _plng < cfg["lng_min"] or _plng > cfg["lng_max"]):
+                                    continue
                             vicinity = place.get("vicinity","")
                             vparts  = [p.strip() for p in vicinity.split(",") if p.strip()]
                             if len(vparts) >= 2:
