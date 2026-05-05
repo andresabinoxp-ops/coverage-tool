@@ -3594,11 +3594,44 @@ if st.button("  Run Coverage Agent", type="primary"):
             _bbox_lat_max = cfg["lat_max"]
             _bbox_lng_min = cfg["lng_min"]
             _bbox_lng_max = cfg["lng_max"]
+
+            # Tighter filter: only keep stores within 50km of any configured city/region
+            # This handles irregular country shapes (e.g., Kish Island in Oman's bbox)
+            _city_centroids = []
+            for _ce in (st.session_state.get("city_entries") or []):
+                _cb = _ce.get("bbox")
+                if _cb:
+                    _city_centroids.append(((_cb[0]+_cb[1])/2, (_cb[2]+_cb[3])/2))
+            for _re in (st.session_state.get("region_entries") or []):
+                _rb = _re.get("bbox")
+                if _rb:
+                    _city_centroids.append(((_rb[0]+_rb[1])/2, (_rb[2]+_rb[3])/2))
+            # Fallback: if no cities/regions, use bbox center
+            if not _city_centroids:
+                _city_centroids.append(((_bbox_lat_min+_bbox_lat_max)/2, (_bbox_lng_min+_bbox_lng_max)/2))
+
+            _MAX_DIST_FROM_CITY = 50000  # 50km max from any configured city/region
+
             _before_filter = len(universe)
-            universe = [s for s in universe
-                        if not s.get("lat") or not s.get("lng")  # keep stores without coords
-                        or (_bbox_lat_min <= float(s["lat"]) <= _bbox_lat_max
-                            and _bbox_lng_min <= float(s["lng"]) <= _bbox_lng_max)]
+            def _in_coverage_area(s):
+                lat = s.get("lat")
+                lng = s.get("lng")
+                if not lat or not lng:
+                    return True  # keep stores without coords
+                try:
+                    lat, lng = float(lat), float(lng)
+                except (ValueError, TypeError):
+                    return True
+                # Quick bbox check first
+                if lat < _bbox_lat_min or lat > _bbox_lat_max or lng < _bbox_lng_min or lng > _bbox_lng_max:
+                    return False
+                # Then proximity check to configured cities
+                for c_lat, c_lng in _city_centroids:
+                    if haversine_m(lat, lng, c_lat, c_lng) <= _MAX_DIST_FROM_CITY:
+                        return True
+                return False
+
+            universe = [s for s in universe if _in_coverage_area(s)]
             _filtered_out = _before_filter - len(universe)
 
             # Also update portfolio store ratings/coords from cache if enriched in Step 2
