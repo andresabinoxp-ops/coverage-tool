@@ -3595,41 +3595,51 @@ if st.button("  Run Coverage Agent", type="primary"):
             _bbox_lng_min = cfg["lng_min"]
             _bbox_lng_max = cfg["lng_max"]
 
-            # Tighter filter: only keep stores within 50km of any configured city/region
+            # Tighter filter: only keep stores within configured city/region bounding boxes
             # This handles irregular country shapes (e.g., Kish Island in Oman's bbox)
-            _city_centroids = []
+            _area_bboxes = []
             for _ce in (st.session_state.get("city_entries") or []):
                 _cb = _ce.get("bbox")
                 if _cb:
-                    _city_centroids.append(((_cb[0]+_cb[1])/2, (_cb[2]+_cb[3])/2))
+                    _area_bboxes.append(_cb)
             for _re in (st.session_state.get("region_entries") or []):
                 _rb = _re.get("bbox")
                 if _rb:
-                    _city_centroids.append(((_rb[0]+_rb[1])/2, (_rb[2]+_rb[3])/2))
-            # Fallback: if no cities/regions, use bbox center
-            if not _city_centroids:
-                _city_centroids.append(((_bbox_lat_min+_bbox_lat_max)/2, (_bbox_lng_min+_bbox_lng_max)/2))
-
-            _MAX_DIST_FROM_CITY = 50000  # 50km max from any configured city/region
+                    _area_bboxes.append(_rb)
 
             _before_filter = len(universe)
-            def _in_coverage_area(s):
-                lat = s.get("lat")
-                lng = s.get("lng")
-                if not lat or not lng:
-                    return True  # keep stores without coords
-                try:
-                    lat, lng = float(lat), float(lng)
-                except (ValueError, TypeError):
-                    return True
-                # Quick bbox check first
-                if lat < _bbox_lat_min or lat > _bbox_lat_max or lng < _bbox_lng_min or lng > _bbox_lng_max:
-                    return False
-                # Then proximity check to configured cities
-                for c_lat, c_lng in _city_centroids:
-                    if haversine_m(lat, lng, c_lat, c_lng) <= _MAX_DIST_FROM_CITY:
+            if _area_bboxes:
+                # Use individual city/region bboxes (precise)
+                def _in_coverage_area(s):
+                    lat = s.get("lat")
+                    lng = s.get("lng")
+                    if not lat or not lng:
                         return True
-                return False
+                    try:
+                        lat, lng = float(lat), float(lng)
+                    except (ValueError, TypeError):
+                        return True
+                    # Store must fall within at least one configured city/region bbox
+                    # with a 15km buffer (to catch stores on edges)
+                    _buf = 0.14  # ~15km buffer in degrees
+                    for _ab in _area_bboxes:
+                        if (_ab[0] - _buf <= lat <= _ab[1] + _buf and
+                            _ab[2] - _buf <= lng <= _ab[3] + _buf):
+                            return True
+                    return False
+            else:
+                # Fallback: only country bbox (no cities/regions configured)
+                def _in_coverage_area(s):
+                    lat = s.get("lat")
+                    lng = s.get("lng")
+                    if not lat or not lng:
+                        return True
+                    try:
+                        lat, lng = float(lat), float(lng)
+                    except (ValueError, TypeError):
+                        return True
+                    return (_bbox_lat_min <= lat <= _bbox_lat_max and
+                            _bbox_lng_min <= lng <= _bbox_lng_max)
 
             universe = [s for s in universe if _in_coverage_area(s)]
             _filtered_out = _before_filter - len(universe)
