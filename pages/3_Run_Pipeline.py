@@ -3588,6 +3588,19 @@ if st.button("  Run Coverage Agent", type="primary"):
             # Cache contains portfolio + gap stores combined (built in Step 2)
             # Split back: gap stores go to universe, portfolio stores already in portfolio var
             universe = [s for s in _cache_all if s.get("source") != "portfolio"]
+
+            # Filter out stores outside the configured bounding box (different country)
+            _bbox_lat_min = cfg["lat_min"]
+            _bbox_lat_max = cfg["lat_max"]
+            _bbox_lng_min = cfg["lng_min"]
+            _bbox_lng_max = cfg["lng_max"]
+            _before_filter = len(universe)
+            universe = [s for s in universe
+                        if not s.get("lat") or not s.get("lng")  # keep stores without coords
+                        or (_bbox_lat_min <= float(s["lat"]) <= _bbox_lat_max
+                            and _bbox_lng_min <= float(s["lng"]) <= _bbox_lng_max)]
+            _filtered_out = _before_filter - len(universe)
+
             # Also update portfolio store ratings/coords from cache if enriched in Step 2
             _cache_port = {s.get("store_id","") or s.get("store_name",""): s
                            for s in _cache_all if s.get("source") == "portfolio"}
@@ -3604,10 +3617,11 @@ if st.button("  Run Coverage Agent", type="primary"):
                             p[_f] = _cp[_f]
             _n_port_cache = len(_cache_port)
             _n_gap_cache  = len(universe)
+            _filter_msg = f" · {_filtered_out} outside-border stores removed" if _filtered_out > 0 else ""
             status.info(
                 f"Stage 2/{total_steps} — Cache loaded: "
                 f"{_n_port_cache} portfolio + {_n_gap_cache} gap stores "
-                f"(scraped {_run_cache.get('scraped_at','')}) — skipping API scrape."
+                f"(scraped {_run_cache.get('scraped_at','')}){_filter_msg} — skipping API scrape."
             )
             bar.progress(45)
         else:
