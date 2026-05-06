@@ -5322,6 +5322,21 @@ if st.button("  Run Coverage Agent", type="primary"):
                 )*100))
             status.info(f"Stage {poi_stage}/{total_steps} — POI enrichment complete. Scores updated.")
 
+            # ── Re-run tier consistency after POI re-scoring ──────────────
+            # POI re-scoring changes scores AFTER tiers were assigned in Stage 5.
+            # This causes stores with the same final score to have different tiers.
+            # Fix: re-assign tiers based on the FINAL scores.
+            _cat_pct_final = build_category_percentiles(all_stores)
+            for s in all_stores:
+                if s.get("_tier_reason") == "sales_percentile":
+                    continue  # portfolio with sales — keep sales-based tier
+                tier, visits, duration = assign_size_tier(s, _cat_pct_final, visit_benchmarks, size_percentiles)
+                s["size_tier"]          = tier
+                s["visits_per_month"]   = visits
+                s["visit_duration_min"] = duration
+                s["calls_per_month"]    = visits
+                s["visit_frequency"]    = tier
+
         # Package results
         gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)
         covered_n   = sum(1 for s in all_stores if s.get("covered"))
