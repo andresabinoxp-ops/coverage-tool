@@ -747,7 +747,17 @@ with tab_playbook:
         admin_defaults.update({"large_visits":4,"large_duration":50,"medium_visits":3,"medium_duration":35,"small_visits":2,"small_duration":20})
 
     visit_benchmarks = {}
-    _cats_for_bench = final_categories if 'final_categories' in dir() and final_categories else []
+    _scrape_cats = final_categories if 'final_categories' in dir() and final_categories else []
+
+    # Detect portfolio categories (from uploaded CSV)
+    _portfolio_cats = []
+    _pf_for_bench = st.session_state.get("portfolio_df")
+    if _pf_for_bench is not None and "category" in _pf_for_bench.columns:
+        _pf_raw_cats = _pf_for_bench["category"].dropna().astype(str).str.strip().str.lower().unique().tolist()
+        _pf_raw_cats = [c for c in _pf_raw_cats if c and c not in _scrape_cats]
+        _portfolio_cats = sorted(set(_pf_raw_cats))
+
+    _cats_for_bench = _scrape_cats + _portfolio_cats
     if _cats_for_bench:
         hc0,hc1,hc2,hc3,hc4,hc5,hc6 = st.columns([2,1,1,1,1,1,1])
         hc0.markdown("**Sub-channel**")
@@ -759,9 +769,15 @@ with tab_playbook:
         hc6.markdown("**Small min**")
         st.caption("Decimals for less-than-monthly: 0.5 = every 2 months · 0.33 = quarterly")
 
+        if _portfolio_cats:
+            st.caption(f"Showing {len(_scrape_cats)} scraping categories + {len(_portfolio_cats)} portfolio categories")
+
         _all_min_freq = []
         for cat in _cats_for_bench:
+            _is_portfolio_cat = cat in _portfolio_cats
             cat_label = cat.replace("_"," ").title()
+            if _is_portfolio_cat:
+                cat_label += " (portfolio)"
             c0,c1,c2,c3,c4,c5,c6 = st.columns([2,1,1,1,1,1,1])
             with c0:
                 st.markdown(f"<div style='padding-top:8px;font-weight:600'>{cat_label}</div>", unsafe_allow_html=True)
