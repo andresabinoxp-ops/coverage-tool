@@ -3359,6 +3359,9 @@ if st.button("  Run Coverage Agent", type="primary"):
         pf        = st.session_state.get("portfolio_df")
         portfolio = pf.to_dict("records") if pf is not None else []
         for s in portfolio:
+            # Normalize category to lowercase (prevents "KEY ACCOUNTS" vs "Key Accounts" mismatch)
+            if s.get("category"):
+                s["category"] = str(s["category"]).strip().lower()
             # Preserve original lat/lng from CSV before update overwrites them
             _orig_lat = s.get("lat")
             _orig_lng = s.get("lng")
