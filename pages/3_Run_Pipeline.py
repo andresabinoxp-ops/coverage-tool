@@ -4403,11 +4403,13 @@ if st.button("  Run Coverage Agent", type="primary"):
             s["visit_frequency"]  = s.get("size_tier", "Small")
 
         # ── Consistency fix: same score + same category = same tier ───────
-        # Scans for stores with identical (category, score) but different tiers
-        # and forces them all to the majority tier for that group.
+        # Only for SCORE-based tiers (scraped stores). Portfolio stores with
+        # sales data are correctly tiered by sales — don't override them.
         from collections import Counter as _TierCounter
         _score_groups = {}
         for s in all_stores:
+            if s.get("_tier_reason") == "sales_percentile":
+                continue  # portfolio tiers set by sales — never override
             _key = (s.get("category",""), round(float(s.get("score",0) or 0)))
             if _key not in _score_groups:
                 _score_groups[_key] = []
