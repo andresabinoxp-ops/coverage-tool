@@ -4326,37 +4326,6 @@ if st.button("  Run Coverage Agent", type="primary"):
             else:
                 return float(bench.get("small_visits", 1)), int(bench.get("small_duration", 15))
 
-        # Tier 1: Named accounts OR stores matching SF rules → force Large
-        # Build a set of rule match keywords for store_name matching
-        # so scraped Lulu stores (no account field) also get forced Large
-        _sf_rules_for_tier = cfg.get("sf_rules", []) or st.session_state.get("sf_rules", [])
-        _rule_name_keywords = set()
-        for _r in _sf_rules_for_tier:
-            if _r.get("match_column") in ("store_name", "account"):
-                for kw in str(_r.get("match_value", "")).split(","):
-                    kw = kw.strip().lower()
-                    if kw:
-                        _rule_name_keywords.add(kw)
-
-        _n_account_large = 0
-        for s in all_stores:
-            # Check 1: Has named account column
-            acct = str(s.get("account", "") or "").strip().lower()
-            _is_named = acct and acct not in _GENERIC_ACCOUNTS
-
-            # Check 2: Store name matches a SF rule keyword (catches scraped chain stores)
-            if not _is_named and _rule_name_keywords:
-                sname = str(s.get("store_name", "") or "").strip().lower()
-                _is_named = any(kw in sname for kw in _rule_name_keywords)
-
-            if _is_named:
-                s["size_tier"] = "Large"
-                s["_tier_reason"] = "named_account"
-                visits, duration = _get_visit_params("Large", s.get("category", ""))
-                s["visits_per_month"]   = visits
-                s["visit_duration_min"] = duration
-                _n_account_large += 1
-
         def _safe_sales(v):
             """Safely convert annual_sales_usd to float, handling commas, text, None."""
             if v is None:
@@ -4371,10 +4340,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             except (ValueError, TypeError):
                 return 0.0
 
-        # Tier 2: Portfolio stores with sales data (no named account) → split by sales percentile
+        # Tier 1: Portfolio stores with sales data → split by sales percentile (20/40/40)
         _portfolio_with_sales = [s for s in all_stores
                                  if s.get("source") == "portfolio"
-                                 and s.get("_tier_reason") != "named_account"
                                  and _safe_sales(s.get("annual_sales_usd", 0)) > 0]
 
         if _portfolio_with_sales:
@@ -4416,9 +4384,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["visits_per_month"]   = visits
                 s["visit_duration_min"] = duration
 
-        # Tier 3: Everything else (scraped stores, portfolio without sales) → score percentile
+        # Tier 2: Everything else (scraped stores, portfolio without sales) → score percentile (20/40/40)
         _remaining = [s for s in all_stores
-                      if s.get("_tier_reason") not in ("named_account", "sales_percentile")]
+                      if s.get("_tier_reason") != "sales_percentile"]
         for s in _remaining:
             tier, visits, duration = assign_size_tier(s, cat_percentiles, visit_benchmarks, size_percentiles)
             s["size_tier"]          = tier
@@ -4435,8 +4403,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         _n_score_tier = len(_remaining)
         status.info(
             f"Stage 5/{total_steps} — Tier assignment: "
-            f"{_n_account_large} named accounts → Large, "
-            f"{_n_sales_tier} portfolio stores by sales, "
+            f"{_n_sales_tier} portfolio stores by sales percentile, "
             f"{_n_score_tier} stores by score percentile"
         )
         bar.progress(72)
