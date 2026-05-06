@@ -4399,12 +4399,43 @@ if st.button("  Run Coverage Agent", type="primary"):
             s["calls_per_month"]  = s.get("visits_per_month", 1)
             s["visit_frequency"]  = s.get("size_tier", "Small")
 
+        # ── Consistency fix: same score + same category = same tier ───────
+        # Scans for stores with identical (category, score) but different tiers
+        # and forces them all to the majority tier for that group.
+        from collections import Counter as _TierCounter
+        _score_groups = {}
+        for s in all_stores:
+            _key = (s.get("category",""), round(float(s.get("score",0) or 0)))
+            if _key not in _score_groups:
+                _score_groups[_key] = []
+            _score_groups[_key].append(s)
+
+        _tier_fixes = 0
+        for _key, _group in _score_groups.items():
+            if len(_group) < 2:
+                continue
+            _tiers = [s.get("size_tier","") for s in _group]
+            if len(set(_tiers)) <= 1:
+                continue  # all same tier — consistent
+            # Force to majority tier
+            _majority = _TierCounter(_tiers).most_common(1)[0][0]
+            for s in _group:
+                if s.get("size_tier") != _majority:
+                    s["size_tier"] = _majority
+                    visits, duration = _get_visit_params(_majority, s.get("category",""))
+                    s["visits_per_month"]   = visits
+                    s["visit_duration_min"] = duration
+                    s["calls_per_month"]    = visits
+                    s["visit_frequency"]    = _majority
+                    _tier_fixes += 1
+
         _n_sales_tier = len(_portfolio_with_sales)
         _n_score_tier = len(_remaining)
+        _fix_msg = f" · {_tier_fixes} consistency fixes" if _tier_fixes else ""
         status.info(
             f"Stage 5/{total_steps} — Tier assignment: "
             f"{_n_sales_tier} portfolio stores by sales percentile, "
-            f"{_n_score_tier} stores by score percentile"
+            f"{_n_score_tier} stores by score percentile{_fix_msg}"
         )
         bar.progress(72)
 
