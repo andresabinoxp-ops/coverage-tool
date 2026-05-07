@@ -5016,24 +5016,23 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             _overflow = []  # stores removed from overloaded days
 
-            # Pass 1: For each overloaded day, remove lowest-scoring stores
+            # Pass 1: For each overloaded day, remove lowest-scoring stores (keep important ones)
             for _day_name in WEEKDAYS_ENF:
                 _day_stores = _days[_day_name]
                 _dt = _day_time(_day_stores)
                 if _dt <= MAX_DAY_THRESHOLD:
                     continue
 
-                # Sort by score ascending — remove lowest first
+                # Sort by score ascending — remove lowest first, keep highest
                 _day_stores_sorted = sorted(_day_stores, key=lambda s: s.get("score", 0))
                 while _day_time(_days[_day_name]) > MAX_DAY_THRESHOLD and _day_stores_sorted:
                     _removed = _day_stores_sorted.pop(0)
                     _days[_day_name] = [s for s in _days[_day_name] if s is not _removed]
                     _overflow.append(_removed)
 
-            # Pass 2: Try to place overflow stores on lighter days of SAME rep
+            # Pass 2: Place overflow on SAME rep's other days — most important stores first
+            _overflow.sort(key=lambda s: s.get("score", 0), reverse=True)  # highest score gets first pick
             for _s in list(_overflow):
-                _placed = False
-                # Sort days by load ascending — lightest first
                 _sorted_days = sorted(WEEKDAYS_ENF, key=lambda d: _day_time(_days[d]))
                 for _target_day in _sorted_days:
                     if _day_time(_days[_target_day]) + _s.get("visit_duration_min", 25) <= MAX_DAY_ENF:
@@ -5041,11 +5040,53 @@ if st.button("  Run Coverage Agent", type="primary"):
                         _days[_target_day].append(_s)
                         _overflow.remove(_s)
                         _enf_moved += 1
-                        _placed = True
                         break
-                # If couldn't place → will be dropped below
 
-            # Pass 3: Remaining overflow → "Not in route"
+            # Pass 3: Try NEARBY reps — most important stores first
+            # Don't just drop — find the nearest rep that has a day with capacity
+            for _s in list(_overflow):
+                if not _s.get("lat") or not _s.get("lng"):
+                    continue
+                _s_lat, _s_lng = float(_s["lat"]), float(_s["lng"])
+                _best_target_rep = None
+                _best_target_day = None
+                _best_dist = float("inf")
+
+                for _other_rid in _enf_rep_ids:
+                    if _other_rid == _enf_rid:
+                        continue
+                    # Get other rep's stores to find centroid
+                    _other_stores = [x for x in all_stores
+                                     if x.get("rep_id") == _other_rid
+                                     and x.get("lat") and x.get("lng")]
+                    if not _other_stores:
+                        continue
+                    _o_lat = sum(float(x["lat"]) for x in _other_stores) / len(_other_stores)
+                    _o_lng = sum(float(x["lng"]) for x in _other_stores) / len(_other_stores)
+                    _dist = haversine_m(_s_lat, _s_lng, _o_lat, _o_lng)
+
+                    if _dist >= _best_dist:
+                        continue
+
+                    # Check if any day of this rep has capacity
+                    for _d in WEEKDAYS_ENF:
+                        _d_stores = [x for x in all_stores
+                                     if x.get("rep_id") == _other_rid
+                                     and x.get("assigned_day") == _d]
+                        _d_time = _day_time(_d_stores)
+                        if _d_time + _s.get("visit_duration_min", 25) <= MAX_DAY_ENF:
+                            _best_dist = _dist
+                            _best_target_rep = _other_rid
+                            _best_target_day = _d
+                            break  # found a day — check next rep for closer one
+
+                if _best_target_rep is not None:
+                    _s["rep_id"] = _best_target_rep
+                    _s["assigned_day"] = _best_target_day
+                    _overflow.remove(_s)
+                    _enf_moved += 1
+
+            # Pass 4: Truly unplaceable stores → "Not in route"
             for _s in _overflow:
                 _s["rep_id"] = 0
                 _s["assigned_day"] = ""
