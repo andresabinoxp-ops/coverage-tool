@@ -4609,29 +4609,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                         "rule_type":        "",
                     })
                 actual_reps += len(_unique_ml)
-
-                # Rebalance mixed zones — ensure no mixed rep < 65% utilisation
-                min_util_pct = 65
-                _mixed_zones_rec = [z for z in zone_centres if not z.get("dedicated")]
-                if len(_mixed_zones_rec) > 1:
-                    status.info(f"Stage 6/{total_steps} — Rebalancing {len(_mixed_zones_rec)} mixed zones to ≥{min_util_pct}%...")
-                    _n_moved_rec = rebalance_zones_65pct(
-                        all_stores, _mixed_zones_rec,
-                        daily_minutes=daily_minutes,
-                        working_days=working_days,
-                        avg_speed_kmh=avg_speed,
-                        min_util_pct=min_util_pct,
-                        max_passes=5,
-                        break_minutes=break_minutes,
-                    )
-                    if _n_moved_rec > 0:
-                        status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved_rec} stores.")
-                    for _mz in _mixed_zones_rec:
-                        for _zi, _zc in enumerate(zone_centres):
-                            if _zc["zone"] == _mz["zone"]:
-                                zone_centres[_zi] = _mz
-                                break
-                    actual_reps = len(zone_centres)
+                min_util_pct = 65  # for rep_recommendation dict
 
             rep_recommendation = {
                 "mode":                "recommended",
@@ -4745,34 +4723,10 @@ if st.button("  Run Coverage Agent", type="primary"):
                         "rule_type":            "",
                     })
 
-                # Rebalance: ensure no MIXED rep is below 65% utilisation.
-                # Never moves stores across rule boundaries (dedicated reps untouched).
-                min_util_pct   = 65
-                _mixed_zones_only = [z for z in zone_centres if not z.get("dedicated")]
-                status.info(f"Stage 6/{total_steps} — Rebalancing {len(_mixed_zones_only)} mixed zones to ≥{min_util_pct}% utilisation...")
-                _n_moved = rebalance_zones_65pct(
-                    all_stores, _mixed_zones_only,
-                    daily_minutes=daily_minutes,
-                    working_days=working_days,
-                    avg_speed_kmh=avg_speed,
-                    min_util_pct=min_util_pct,
-                    max_passes=5,
-                    break_minutes=break_minutes,
-                )
-                if _n_moved > 0:
-                    status.info(f"Stage 6/{total_steps} — Rebalanced: moved {_n_moved} stores to raise under-utilised zones.")
-
-                # Update mixed zones back into zone_centres after rebalancing
-                for _mz in _mixed_zones_only:
-                    for _zi, _zc in enumerate(zone_centres):
-                        if _zc["zone"] == _mz["zone"]:
-                            zone_centres[_zi] = _mz
-                            break
-
-                min_util_mins  = (daily_minutes - break_minutes) * working_days * min_util_pct / 100
-                under_util     = [z for z in zone_centres if z.get("time_needed_min",0) < min_util_mins
-                                  and not z.get("dedicated")]
-                kept_zones_f   = zone_centres  # keep ALL zones in fixed mode
+                # Daily enforcement handles capacity — no monthly rebalancing needed
+                min_util_pct   = 65  # for rep_recommendation dict
+                kept_zones_f   = zone_centres
+                under_util     = []
 
                 # Dedicated reps: no utilisation enforcement.
                 # Just flag for informational purposes (no warnings).
@@ -4831,31 +4785,8 @@ if st.button("  Run Coverage Agent", type="primary"):
         city_lat    = (cfg["lat_min"] + cfg["lat_max"]) / 2
         city_lng    = (cfg["lng_min"] + cfg["lng_max"]) / 2
 
-        # ── Split overloaded reps whose daily schedule exceeds capacity ─
-        # Only mixed reps are split; dedicated reps are left as-is.
-        if zone_centres:
-            _n_splits = split_overloaded_reps_daily(
-                all_stores, zone_centres,
-                daily_minutes=daily_minutes,
-                break_minutes=break_minutes,
-                max_splits=10,
-            )
-            if _n_splits > 0:
-                status.info(
-                    f"Stage 6 — Split {_n_splits} overloaded rep(s) whose daily schedule "
-                    f"would exceed {daily_minutes-break_minutes} min capacity."
-                )
-                # Update rep_recommendation counts
-                if rep_recommendation:
-                    rep_recommendation["zone_centres"] = zone_centres
-                    if rep_recommendation.get("mode") == "recommended":
-                        rep_recommendation["mixed_reps"] = rep_recommendation.get("mixed_reps", 0) + _n_splits
-                        rep_recommendation["recommended_reps"] = rep_recommendation.get("recommended_reps", 0) + _n_splits
-
-        # ── Skip outlier stores (isolated + low-value) BEFORE daily routing ──
-        _n_outliers = skip_outlier_stores(all_stores, zone_centres, max_skip_pct=5)
-        if _n_outliers > 0:
-            status.info(f"Stage 6 — Skipped {_n_outliers} isolated low-value store(s) from route plan.")
+        # Daily enforcement (after build_daily_routes) handles all capacity issues.
+        # No pre-routing split/skip/merge needed.
 
         all_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
 
@@ -4973,22 +4904,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                             real_dates.append(day_dates[wk_idx].strftime("%d %b"))
                 s[f"{mk}_dates"] = real_dates
 
-        # ── Merge underfilled reps (can't fill the work week) ─────────
-        _reps_merged, _stores_moved = merge_underfilled_reps(
-            all_stores, zone_centres,
-            daily_minutes=daily_minutes,
-            break_minutes=break_minutes,
-            min_active_days=3,
-        )
-        if _reps_merged > 0:
-            status.info(
-                f"Stage 6b — Merged {_reps_merged} underfilled rep(s) "
-                f"({_stores_moved} stores redistributed to nearby reps)."
-            )
-            if rep_recommendation:
-                rep_recommendation["zone_centres"] = zone_centres
-
-        # ── APPROACH 3: Daily capacity enforcement ───────────────────────
+        # ── Daily capacity enforcement ────────────────────────────────────
         # After all routes are built, enforce daily limits:
         # For each rep, for each day: if day exceeds MAX_DAY × 1.10,
         # remove lowest-scoring stores and try to fit them on a lighter
