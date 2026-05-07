@@ -4928,7 +4928,28 @@ if st.button("  Run Coverage Agent", type="primary"):
             _days = {d: [s for s in _rep_stores if s.get("assigned_day") == d] for d in WEEKDAYS_ENF}
 
             def _day_time(stores):
-                return sum(s.get("visit_duration_min", 25) for s in stores)
+                """Total day time = visit durations + estimated inter-store travel + break."""
+                exec_t = sum(s.get("visit_duration_min", 25) for s in stores)
+                # Estimate travel from store coordinates (nearest-neighbor order)
+                travel_t = 0.0
+                geo = [s for s in stores if s.get("lat") and s.get("lng")]
+                if len(geo) > 1:
+                    # Sort by visit order if available, else use as-is
+                    ordered = sorted(geo, key=lambda s: s.get("day_visit_order", 0))
+                    for _i in range(1, len(ordered)):
+                        try:
+                            _la1 = float(ordered[_i-1]["lat"])
+                            _ln1 = float(ordered[_i-1]["lng"])
+                            _la2 = float(ordered[_i]["lat"])
+                            _ln2 = float(ordered[_i]["lng"])
+                            _p = math.pi / 180
+                            _a = (math.sin((_la2-_la1)*_p/2)**2 +
+                                  math.cos(_la1*_p)*math.cos(_la2*_p)*
+                                  math.sin((_ln2-_ln1)*_p/2)**2)
+                            travel_t += (2*6371*math.asin(math.sqrt(max(0,_a)))/30)*60
+                        except (ValueError, TypeError):
+                            pass
+                return exec_t + round(travel_t) + 30  # +30 min break
 
             _overflow = []  # stores removed from overloaded days
 
@@ -5024,9 +5045,85 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         if _enf_moved > 0 or _enf_dropped > 0:
             status.info(
-                f"Stage 6b — Daily enforcement: {_enf_moved} stores moved between days, "
-                f"{_enf_dropped} low-value stores dropped (visible in 'Not in route')."
+                f"Stage 6b — Daily enforcement: {_enf_moved} stores moved, "
+                f"{_enf_dropped} dropped."
             )
+
+        # ── Absorb tiny reps (< 15 stores) into nearest rep with capacity ─
+        MIN_STORES_PER_REP = 15
+        _absorb_count = 0
+        _enf_rep_ids_2 = sorted(set(s.get("rep_id",0) for s in all_stores
+                                     if s.get("rep_id",0) > 0 and s.get("assigned_day")))
+
+        for _pass_abs in range(len(_enf_rep_ids_2)):
+            _absorbed_this_pass = False
+            _enf_rep_ids_2 = sorted(set(s.get("rep_id",0) for s in all_stores
+                                         if s.get("rep_id",0) > 0 and s.get("assigned_day")))
+            for _tiny_rid in _enf_rep_ids_2:
+                # Skip dedicated reps
+                if any(s.get("_rule_name") for s in all_stores if s.get("rep_id") == _tiny_rid):
+                    continue
+                _tiny_stores = [s for s in all_stores
+                                if s.get("rep_id") == _tiny_rid
+                                and s.get("assigned_day") in WEEKDAYS_ENF]
+                if len(_tiny_stores) >= MIN_STORES_PER_REP:
+                    continue
+                if not _tiny_stores:
+                    continue
+
+                # Find nearest rep to absorb into
+                _t_geo = [s for s in _tiny_stores if s.get("lat") and s.get("lng")]
+                if not _t_geo:
+                    continue
+                _t_lat = sum(float(s["lat"]) for s in _t_geo) / len(_t_geo)
+                _t_lng = sum(float(s["lng"]) for s in _t_geo) / len(_t_geo)
+
+                _best_target = None
+                _best_dist = float("inf")
+                for _cand_rid in _enf_rep_ids_2:
+                    if _cand_rid == _tiny_rid:
+                        continue
+                    _c_stores = [s for s in all_stores
+                                 if s.get("rep_id") == _cand_rid
+                                 and s.get("lat") and s.get("lng")]
+                    if not _c_stores:
+                        continue
+                    _c_lat = sum(float(s["lat"]) for s in _c_stores) / len(_c_stores)
+                    _c_lng = sum(float(s["lng"]) for s in _c_stores) / len(_c_stores)
+                    _d = haversine_m(_t_lat, _t_lng, _c_lat, _c_lng)
+                    if _d < _best_dist and _d < 30000:  # max 30km
+                        _best_dist = _d
+                        _best_target = _cand_rid
+
+                if _best_target is None:
+                    continue
+
+                # Move each store to target rep's lightest day (with capacity)
+                _target_days = {d: [s for s in all_stores
+                                    if s.get("rep_id") == _best_target
+                                    and s.get("assigned_day") == d]
+                                for d in WEEKDAYS_ENF}
+                _all_placed = True
+                for _s in _tiny_stores:
+                    _lightest = min(WEEKDAYS_ENF, key=lambda d: _day_time(_target_days.get(d, [])))
+                    if _day_time(_target_days.get(_lightest, [])) + _s.get("visit_duration_min", 25) + 30 <= MAX_DAY_ENF:
+                        _s["rep_id"] = _best_target
+                        _s["assigned_day"] = _lightest
+                        _target_days[_lightest].append(_s)
+                    else:
+                        _all_placed = False
+
+                if _all_placed:
+                    _absorb_count += 1
+                    status.info(f"  Rep {_tiny_rid} ({len(_tiny_stores)} stores) absorbed into Rep {_best_target}")
+                    _absorbed_this_pass = True
+                    break  # restart scan
+
+            if not _absorbed_this_pass:
+                break
+
+        if _absorb_count > 0:
+            status.info(f"Stage 6b — Absorbed {_absorb_count} tiny rep(s) into nearby reps.")
 
         # Clear stores not in route
         for s in all_stores:
