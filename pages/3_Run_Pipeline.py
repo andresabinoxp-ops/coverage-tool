@@ -4988,6 +4988,89 @@ if st.button("  Run Coverage Agent", type="primary"):
             if rep_recommendation:
                 rep_recommendation["zone_centres"] = zone_centres
 
+        # ── APPROACH 3: Daily capacity enforcement ───────────────────────
+        # After all routes are built, enforce daily limits:
+        # For each rep, for each day: if day exceeds MAX_DAY × 1.10,
+        # remove lowest-scoring stores and try to fit them on a lighter
+        # day of the SAME rep. If no day has room → "Not in route".
+        WEEKDAYS_ENF = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+        MAX_DAY_ENF  = 550
+        MAX_DAY_THRESHOLD = MAX_DAY_ENF * 1.10  # 605 min — hard ceiling
+
+        _enf_moved = 0
+        _enf_dropped = 0
+        _enf_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
+
+        for _enf_rid in _enf_rep_ids:
+            _rep_stores = [s for s in all_stores
+                           if s.get("rep_id") == _enf_rid
+                           and s.get("assigned_day") in WEEKDAYS_ENF]
+            if not _rep_stores:
+                continue
+
+            # Build per-day view
+            _days = {d: [s for s in _rep_stores if s.get("assigned_day") == d] for d in WEEKDAYS_ENF}
+
+            def _day_time(stores):
+                return sum(s.get("visit_duration_min", 25) for s in stores)
+
+            _overflow = []  # stores removed from overloaded days
+
+            # Pass 1: For each overloaded day, remove lowest-scoring stores
+            for _day_name in WEEKDAYS_ENF:
+                _day_stores = _days[_day_name]
+                _dt = _day_time(_day_stores)
+                if _dt <= MAX_DAY_THRESHOLD:
+                    continue
+
+                # Sort by score ascending — remove lowest first
+                _day_stores_sorted = sorted(_day_stores, key=lambda s: s.get("score", 0))
+                while _day_time(_days[_day_name]) > MAX_DAY_THRESHOLD and _day_stores_sorted:
+                    _removed = _day_stores_sorted.pop(0)
+                    _days[_day_name] = [s for s in _days[_day_name] if s is not _removed]
+                    _overflow.append(_removed)
+
+            # Pass 2: Try to place overflow stores on lighter days of SAME rep
+            for _s in list(_overflow):
+                _placed = False
+                # Sort days by load ascending — lightest first
+                _sorted_days = sorted(WEEKDAYS_ENF, key=lambda d: _day_time(_days[d]))
+                for _target_day in _sorted_days:
+                    if _day_time(_days[_target_day]) + _s.get("visit_duration_min", 25) <= MAX_DAY_ENF:
+                        _s["assigned_day"] = _target_day
+                        _days[_target_day].append(_s)
+                        _overflow.remove(_s)
+                        _enf_moved += 1
+                        _placed = True
+                        break
+                # If couldn't place → will be dropped below
+
+            # Pass 3: Remaining overflow → "Not in route"
+            for _s in _overflow:
+                _s["rep_id"] = 0
+                _s["assigned_day"] = ""
+                _s["day_visit_order"] = 0
+                _s["_dropped_daily_cap"] = True
+                _enf_dropped += 1
+
+            # Log per-rep summary
+            _day_summary = " · ".join(
+                f"{d[:3]}:{_day_time(_days[d])}min/{len(_days[d])}st"
+                for d in WEEKDAYS_ENF if _days[d]
+            )
+            if _overflow or _enf_moved > 0:
+                status.info(
+                    f"  Rep {_enf_rid}: {_day_summary}"
+                    + (f" | moved {_enf_moved} stores between days" if _enf_moved else "")
+                    + (f" | dropped {len(_overflow)} stores" if _overflow else "")
+                )
+
+        if _enf_moved > 0 or _enf_dropped > 0:
+            status.info(
+                f"Stage 6b — Daily enforcement: {_enf_moved} stores moved between days, "
+                f"{_enf_dropped} low-value stores dropped (visible in 'Not in route')."
+            )
+
         # Clear stores not in route
         for s in all_stores:
             if not s.get("assigned_day") or s.get("size_tier") not in ("Large","Medium","Small"):
