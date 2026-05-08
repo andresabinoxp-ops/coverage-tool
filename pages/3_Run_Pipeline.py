@@ -1477,6 +1477,7 @@ def skip_outlier_stores(all_stores, zone_centres, max_skip_pct=5):
     for s, dist in candidates[:max_skip]:
         s["rep_id"] = 0
         s["_skipped_outlier"] = True
+        s["exclusion_reason"] = "Isolated outlier — far from rep cluster and below median score"
         skipped += 1
 
     return skipped
@@ -4360,18 +4361,29 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             if excluded_ids:
                 n_excl = len(excluded_ids)
-                all_stores = [s for s in all_stores if id(s) not in excluded_ids]
-                status.info(f"Low-value exclusion: {n_excl} stores removed "
-                            f"(areas with < {_lv_rule.get('min_stores',3)} stores "
-                            f"AND avg score < {_lv_rule.get('max_score',30)}).")
+                _lv_min   = _lv_rule.get("min_stores", 3)
+                _lv_score = _lv_rule.get("max_score", 30)
+                _lv_reason = (f"Low-value area — sparse cluster "
+                              f"(<{_lv_min} stores, avg score <{_lv_score})")
+                for s in all_stores:
+                    if id(s) in excluded_ids:
+                        s["_excluded_low_value_area"] = True
+                        s["rep_id"] = 0
+                        s["plan_visits"] = 0
+                        s["exclusion_reason"] = _lv_reason
+                status.info(f"Low-value exclusion: {n_excl} stores marked uncovered "
+                            f"(kept in dataset for the Uncovered outlets report) — "
+                            f"areas with < {_lv_min} stores AND avg score < {_lv_score}.")
         else:
             # No clusters defined — assign all to cluster 0
             for s in all_stores:
                 s["cluster_id"]   = 0
                 s["cluster_name"] = "All"
 
-        # Update gap_stores after filtering
-        gap_stores = [s for s in all_stores if s.get("coverage_status") == "gap"]
+        # Update gap_stores after filtering — skip stores excluded from routing
+        gap_stores = [s for s in all_stores
+                      if s.get("coverage_status") == "gap"
+                      and not s.get("_excluded_low_value_area")]
 
         # Stage 5: Size tier + visit frequency assignment
         status.info(f"Stage 5/{total_steps} — Assigning store size tiers and visit frequencies...")
@@ -4568,6 +4580,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     if s.get("score", 0) <= _p30_score:
                         s["_garbage_removed"] = True
                         s["rep_id"] = 0
+                        s["exclusion_reason"] = "Isolated remote city — store score in bottom 30%"
                         _garbage_removed += 1
 
             if _garbage_removed > 0:
@@ -4588,7 +4601,8 @@ if st.button("  Run Coverage Agent", type="primary"):
         # Normalise each group separately then COMBINE for routing
         priority_all = [s for s in all_stores
                         if s.get("size_tier") in ("Large","Medium","Small")
-                        and s.get("lat") and s.get("lng")]
+                        and s.get("lat") and s.get("lng")
+                        and not s.get("_excluded_low_value_area")]
 
         # Separate by source
         group_cc  = [s for s in priority_all if s.get("source") == "portfolio"]
@@ -5640,6 +5654,21 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["visit_duration_min"] = duration
                 s["calls_per_month"]    = visits
                 s["visit_frequency"]    = tier
+
+        # Set a generic exclusion reason for any unrouted store that wasn't
+        # already flagged by an explicit exclusion path. This guarantees every
+        # uncovered outlet shows a reason in the rep route downloads.
+        for _s in all_stores:
+            if _s.get("exclusion_reason"):
+                continue
+            if _s.get("rep_id", 0) == 0 and _s.get("plan_visits", 0) == 0:
+                if _s.get("source") == "portfolio":
+                    _s["exclusion_reason"] = "Portfolio store — not assigned to a scraped route"
+                else:
+                    _s["exclusion_reason"] = (
+                        "Not selected for routing — below priority cut "
+                        "or no rep capacity available"
+                    )
 
         # Package results
         gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)

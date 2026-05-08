@@ -393,6 +393,7 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None, skip_date_filter
             "annual_visits":      s.get("annual_visits",0),
             "visit_duration_min": s.get("visit_duration_min",0),
             "coverage_status":    s.get("coverage_status",""),
+            "exclusion_reason":   s.get("exclusion_reason",""),
             "rating":             s.get("rating",0),
             "review_count":       s.get("review_count",0),
             "phone":              s.get("phone",""),
@@ -411,13 +412,62 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None, skip_date_filter
     return pd.DataFrame(rows)
 
 if all_reps:
+    # ── Coverage summary: 100% of scraped outlets, what's covered, what's not ──
+    _total      = len(all_stores)
+    _covered    = sum(1 for s in all_stores
+                      if s.get("rep_id", 0) and s.get("plan_visits", 0) > 0)
+    _uncovered  = _total - _covered
+    _cov_pct    = (_covered / _total * 100) if _total else 0
+    _m1, _m2, _m3 = st.columns(3)
+    _m1.metric("Outlets scraped (100%)", f"{_total:,}")
+    _m2.metric("Covered by reps",        f"{_covered:,}", f"{_cov_pct:.1f}%")
+    _m3.metric("Uncovered outlets",      f"{_uncovered:,}",
+               f"{(100-_cov_pct):.1f}%", delta_color="inverse")
+    if _uncovered > 0:
+        st.caption("Uncovered outlets are listed with their reason in the "
+                   "**Uncovered outlets** download below and in each rep file "
+                   "(`exclusion_reason` column).")
+
+    # Build uncovered outlets DataFrame for download
+    _uncovered_stores = [s for s in all_stores
+                         if not (s.get("rep_id", 0) and s.get("plan_visits", 0) > 0)]
+    _unc_rows = []
+    for s in _uncovered_stores:
+        _unc_rows.append({
+            "store_name":       s.get("store_name", ""),
+            "category":         s.get("category", ""),
+            "size_tier":        s.get("size_tier", ""),
+            "score":            s.get("score", 0),
+            "coverage_status":  s.get("coverage_status", ""),
+            "source":           s.get("source", ""),
+            "exclusion_reason": s.get("exclusion_reason",
+                                      "Not selected for routing"),
+            "city":             s.get("city", ""),
+            "address":          s.get("address", ""),
+            "lat":              s.get("lat", ""),
+            "lng":              s.get("lng", ""),
+            "rating":           s.get("rating", 0),
+            "review_count":     s.get("review_count", 0),
+            "phone":            s.get("phone", ""),
+        })
+    _uncovered_df = pd.DataFrame(_unc_rows)
+
     all_df = build_rep_df(all_stores)
     if not all_df.empty:
-        _dl1, _dl2 = st.columns(2)
+        _dl1, _dl2, _dl3 = st.columns(3)
         with _dl1:
             st.download_button("  Download all reps — full month CSV",
                 all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
         with _dl2:
+            if not _uncovered_df.empty:
+                st.download_button(
+                    f"  Download uncovered outlets ({len(_uncovered_df):,}) CSV",
+                    _uncovered_df.to_csv(index=False),
+                    f"uncovered_outlets_{mkt_safe}.csv",
+                    "text/csv", key="dl_uncovered",
+                    help="All scraped outlets that are NOT covered by a rep route, "
+                         "with the reason they were excluded.")
+        with _dl3:
             # Full snapshot JSON — stores + rep_recommendation for Dashboard upload
             import json as _json_snap
             _rec_snap = st.session_state.get("run_results", {}).get("rep_recommendation", {})
@@ -525,7 +575,7 @@ if not display_df.empty:
         )
     base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
                  "size_tier","score","visits_per_month","annual_visits","visit_duration_min",
-                 "coverage_status","rating","review_count","phone","opening_hours",
+                 "coverage_status","exclusion_reason","rating","review_count","phone","opening_hours",
                  "address","city","lat","lng"]
     # Add month columns if viewing a specific month
     if tbl_month_key:
@@ -545,6 +595,7 @@ if not display_df.empty:
         "store_name":"Store","category":"Sub-channel","size_tier":"Size",
         "score":"Score","visits_per_month":"Visits/Mo","annual_visits":"Annual Visits",
         "visit_duration_min":"Duration (min)","coverage_status":"Status",
+        "exclusion_reason":"Exclusion Reason",
         "rating":"Rating","review_count":"Reviews","phone":"Phone",
         "opening_hours":"Opening Hours","address":"Address","city":"City",
         "lat":"Latitude","lng":"Longitude",
