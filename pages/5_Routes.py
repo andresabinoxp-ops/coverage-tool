@@ -518,6 +518,11 @@ if not display_df.empty and tbl_day not in ("Full month", "All dates", "All week
     display_df = display_df.sort_values("day_visit_order").reset_index(drop=True)
 
 if not display_df.empty:
+    # Replace rep_id with rep label (Rep N + rule name)
+    if "rep_id" in display_df.columns:
+        display_df["rep_id"] = display_df["rep_id"].apply(
+            lambda r: _rep_label(int(r)) if r and str(r).strip() not in ("","0","nan") else r
+        )
     base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
                  "size_tier","score","visits_per_month","annual_visits","visit_duration_min",
                  "coverage_status","rating","review_count","phone","opening_hours",
