@@ -4991,7 +4991,12 @@ if st.button("  Run Coverage Agent", type="primary"):
 
             # Pass 3: Try NEARBY reps — most important stores first
             # Don't just drop — find the nearest rep that has a day with capacity
+            # BUT: dedicated rule stores stay in their rep — never move to other reps
             for _s in list(_overflow):
+                # Dedicated rule stores: keep in overflow → they stay unplaced within their rep
+                # rather than moving to a mixed rep
+                if _s.get("_rule_name"):
+                    continue
                 if not _s.get("lat") or not _s.get("lng"):
                     continue
                 _s_lat, _s_lng = float(_s["lat"]), float(_s["lng"])
@@ -5040,6 +5045,17 @@ if st.button("  Run Coverage Agent", type="primary"):
                     _enf_moved += 1
 
             # Pass 4: Truly unplaceable stores → "Not in route"
+            # Dedicated rule stores: put back on lightest day (accept overload)
+            for _s in list(_overflow):
+                if _s.get("_rule_name"):
+                    # Keep in dedicated rep — put on lightest day even if over capacity
+                    _lightest = min(WEEKDAYS_ENF, key=lambda d: _day_time(_days[d]))
+                    _s["assigned_day"] = _lightest
+                    _days[_lightest].append(_s)
+                    _overflow.remove(_s)
+                    _enf_moved += 1
+                    continue
+            # Remaining non-rule stores → drop
             for _s in _overflow:
                 _s["rep_id"] = 0
                 _s["assigned_day"] = ""
