@@ -2054,24 +2054,70 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
             s["day_visit_order"] = i + 1
         return rep_stores
 
-    # ── Step 1: Geographic clustering ────────────────────────────────────────
-    # k = enough days so each has ~8 stores; capped at 5
+    # ── Step 1: Group by city first, then assign cities to days ────────────
+    # Never mix stores from different cities on the same day.
+    # Group stores by city (30km proximity = same city cluster)
+    _city_clusters = []  # list of lists of stores
+    _store_assigned = [False] * n
+    CITY_DIST_KM = 30
+
+    for _i in range(n):
+        if _store_assigned[_i]:
+            continue
+        _cluster = [_i]
+        _store_assigned[_i] = True
+        _changed = True
+        while _changed:
+            _changed = False
+            for _j in range(n):
+                if _store_assigned[_j]:
+                    continue
+                for _ci in _cluster:
+                    _d = haversine_m(
+                        float(geo_stores[_j]["lat"]), float(geo_stores[_j]["lng"]),
+                        float(geo_stores[_ci]["lat"]), float(geo_stores[_ci]["lng"])
+                    ) / 1000
+                    if _d <= CITY_DIST_KM:
+                        _cluster.append(_j)
+                        _store_assigned[_j] = True
+                        _changed = True
+                        break
+        _city_clusters.append([geo_stores[idx] for idx in _cluster])
+
+    # Sort city clusters by size (largest first) — big cities get their own day
+    _city_clusters.sort(key=lambda c: len(c), reverse=True)
+
+    # Assign city clusters to weekdays (Mon-Fri)
+    # Large clusters may span multiple days; small clusters share a day
     k = max(1, min(5, math.ceil(n / MIN_OUTLETS)))
+    active_days = WEEKDAYS[:k]
+    day_groups = {d: [] for d in WEEKDAYS}
+    _day_loads = {d: 0 for d in WEEKDAYS}  # track execution time per day
 
-    if n <= k:
-        # Fewer stores than days — one store per day, nearest-neighbour order
-        ordered_all = nn_sequence(geo_stores)
-        labels      = list(range(n))
-    else:
-        pts    = [(s["lat"], s["lng"]) for s in geo_stores]
-        labels = kmeans_simple(pts, k)
-
-    # Build initial day groups (only use first k weekdays)
-    active_days  = WEEKDAYS[:k]
-    day_groups   = {d: [] for d in WEEKDAYS}
-    for s, lbl in zip(geo_stores, labels):
-        day = active_days[int(lbl) % k]
-        day_groups[day].append(s)
+    for _cluster in _city_clusters:
+        _cluster_exec = sum(s.get("visit_duration_min", 25) for s in _cluster)
+        # If cluster is too big for one day, split across multiple days
+        if _cluster_exec > MAX_DAY - BREAK - 60:  # leave room for travel + break
+            # Split cluster into day-sized chunks using k-means
+            _n_days = max(1, min(len(active_days), math.ceil(_cluster_exec / (MAX_DAY - BREAK - 60))))
+            if len(_cluster) > _n_days:
+                _c_pts = [(s["lat"], s["lng"]) for s in _cluster]
+                _c_labels = kmeans_simple(_c_pts, _n_days)
+                for _sub in range(_n_days):
+                    _sub_stores = [_cluster[i] for i in range(len(_cluster)) if _c_labels[i] == _sub]
+                    # Find lightest day
+                    _lightest = min(active_days, key=lambda d: _day_loads[d])
+                    day_groups[_lightest].extend(_sub_stores)
+                    _day_loads[_lightest] += sum(s.get("visit_duration_min", 25) for s in _sub_stores)
+            else:
+                _lightest = min(active_days, key=lambda d: _day_loads[d])
+                day_groups[_lightest].extend(_cluster)
+                _day_loads[_lightest] += _cluster_exec
+        else:
+            # Whole cluster fits on one day — assign to lightest day
+            _lightest = min(active_days, key=lambda d: _day_loads[d])
+            day_groups[_lightest].extend(_cluster)
+            _day_loads[_lightest] += _cluster_exec
 
     # ── Step 2: Nearest-neighbour sequence within each day ───────────────────
     for day in active_days:
@@ -4472,6 +4518,60 @@ if st.button("  Run Coverage Agent", type="primary"):
             f"{_n_score_tier} stores by score percentile{_fix_msg}"
         )
         bar.progress(72)
+
+        # ── Remove isolated garbage stores before routing ─────────────────
+        # Cities with ≤3 stores AND >300km from nearest city cluster
+        # AND store score in bottom 30% → remove from routing (Not in route)
+        _geo_all = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("score")]
+        if _geo_all:
+            # Calculate 30th percentile score threshold
+            _all_scores = sorted(s.get("score", 0) for s in _geo_all)
+            _p30_score = _all_scores[int(len(_all_scores) * 0.30)] if _all_scores else 0
+
+            # Group stores by city
+            _city_groups = {}
+            for s in _geo_all:
+                _c = str(s.get("city", "") or "").strip()
+                if not _c: _c = "_unknown"
+                if _c not in _city_groups:
+                    _city_groups[_c] = []
+                _city_groups[_c].append(s)
+
+            # Find city centroids for distance calculation
+            _city_centroids = {}
+            for _c, _stores in _city_groups.items():
+                _city_centroids[_c] = (
+                    sum(float(s["lat"]) for s in _stores) / len(_stores),
+                    sum(float(s["lng"]) for s in _stores) / len(_stores),
+                    len(_stores),
+                )
+
+            # For each small city (≤3 stores), check distance to nearest bigger city (>10 stores)
+            _big_cities = {c: v for c, v in _city_centroids.items() if v[2] > 10}
+            _garbage_removed = 0
+            for _c, _stores in _city_groups.items():
+                if len(_stores) > 3:
+                    continue  # not isolated
+                _c_lat, _c_lng, _c_n = _city_centroids[_c]
+                # Find nearest big city
+                _min_dist = float("inf")
+                for _bc, (_bc_lat, _bc_lng, _bc_n) in _big_cities.items():
+                    _d = haversine_m(_c_lat, _c_lng, _bc_lat, _bc_lng) / 1000
+                    if _d < _min_dist:
+                        _min_dist = _d
+                if _min_dist <= 300:
+                    continue  # close enough to a big city — keep
+                # Remote city — remove only bottom 30% score stores
+                for s in _stores:
+                    if s.get("source") == "portfolio":
+                        continue  # never remove portfolio stores
+                    if s.get("score", 0) <= _p30_score:
+                        s["_garbage_removed"] = True
+                        s["rep_id"] = 0
+                        _garbage_removed += 1
+
+            if _garbage_removed > 0:
+                status.info(f"Stage 5b — Removed {_garbage_removed} isolated low-value stores from routing.")
 
         # Stage 6: Routes + Time-Based Rep Planning
         rep_recommendation = None
