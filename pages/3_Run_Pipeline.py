@@ -1230,52 +1230,18 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             matched_ids.add(id(s))
 
         # Determine rep count:
-        # - dedicated_reps = 0 → Auto: max(workload_reps, city_cluster_count)
+        # - dedicated_reps = 0 → Auto: calculate from workload (min 1)
         # - dedicated_reps > 0 → Fixed: validate (override if too many for store count)
         matched_workload = sum(
             s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
             for s in matched
         )
-        workload_reps = max(1, math.ceil(matched_workload / eff_cap)) if eff_cap > 0 else 1
-
-        # Count geographic city clusters (30km threshold)
-        matched_geo = [s for s in matched if s.get("lat") and s.get("lng")]
-        _cluster_count = 1
-        if len(matched_geo) > 1:
-            _assigned_cluster = [False] * len(matched_geo)
-            _cluster_count = 0
-            for _ci in range(len(matched_geo)):
-                if _assigned_cluster[_ci]:
-                    continue
-                _cluster_count += 1
-                _assigned_cluster[_ci] = True
-                _expanded = True
-                while _expanded:
-                    _expanded = False
-                    for _cj in range(len(matched_geo)):
-                        if _assigned_cluster[_cj]:
-                            continue
-                        for _ck in range(len(matched_geo)):
-                            if not _assigned_cluster[_ck]:
-                                continue
-                            _dist = haversine_m(
-                                float(matched_geo[_cj]["lat"]), float(matched_geo[_cj]["lng"]),
-                                float(matched_geo[_ck]["lat"]), float(matched_geo[_ck]["lng"])
-                            ) / 1000
-                            if _dist <= 30:
-                                _assigned_cluster[_cj] = True
-                                _expanded = True
-                                break
-
-        needed_reps = max(workload_reps, _cluster_count)
+        needed_reps = max(1, math.ceil(matched_workload / eff_cap)) if eff_cap > 0 else 1
 
         if n_reps == 0:
             # Auto mode — system recommends
             actual_reps = needed_reps
-            warnings.append(
-                f"  Auto → {actual_reps} rep(s) for {len(matched)} stores "
-                f"({matched_workload:,} min workload, {_cluster_count} city clusters)."
-            )
+            warnings.append(f"  Auto → {actual_reps} rep(s) for {len(matched)} stores ({matched_workload:,} min workload).")
         elif n_reps > needed_reps:
             # Fixed but too many — override down
             actual_reps = needed_reps
