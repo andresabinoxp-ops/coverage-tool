@@ -4924,8 +4924,8 @@ if st.button("  Run Coverage Agent", type="primary"):
         WEEKDAYS_ENF = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
         # Max VISIT time per day (excluding travel + break)
         # Daily capacity 550 min - 30 break - ~25% travel overhead = ~390 min visits
-        MAX_DAY_ENF  = daily_minutes - break_minutes  # e.g., 450 min
-        MAX_DAY_THRESHOLD = MAX_DAY_ENF  # visit time only — travel handled separately
+        MAX_DAY_ENF  = 550  # full day capacity (exec + travel + break)
+        MAX_DAY_THRESHOLD = MAX_DAY_ENF  # enforcement triggers above this
 
         _enf_moved = 0
         _enf_dropped = 0
@@ -4942,8 +4942,26 @@ if st.button("  Run Coverage Agent", type="primary"):
             _days = {d: [s for s in _rep_stores if s.get("assigned_day") == d] for d in WEEKDAYS_ENF}
 
             def _day_time(stores):
-                """Day visit time only — used for enforcement threshold."""
-                return sum(s.get("visit_duration_min", 25) for s in stores)
+                """Day time = visit duration + capped travel estimate + break."""
+                exec_t = sum(s.get("visit_duration_min", 25) for s in stores)
+                # Travel estimate from coordinates, capped at 130 min (max 25% of day)
+                travel_t = 0.0
+                geo = [s for s in stores if s.get("lat") and s.get("lng")]
+                if len(geo) > 1:
+                    ordered = sorted(geo, key=lambda s: s.get("day_visit_order", 0))
+                    for _i in range(1, len(ordered)):
+                        try:
+                            _la1 = float(ordered[_i-1]["lat"]); _ln1 = float(ordered[_i-1]["lng"])
+                            _la2 = float(ordered[_i]["lat"]); _ln2 = float(ordered[_i]["lng"])
+                            _p = math.pi / 180
+                            _a = (math.sin((_la2-_la1)*_p/2)**2 +
+                                  math.cos(_la1*_p)*math.cos(_la2*_p)*
+                                  math.sin((_ln2-_ln1)*_p/2)**2)
+                            travel_t += (2*6371*math.asin(math.sqrt(max(0,_a)))/30)*60
+                        except (ValueError, TypeError):
+                            pass
+                travel_t = min(round(travel_t), 130)  # cap at 130 min
+                return exec_t + travel_t + 30  # +30 break
 
             _overflow = []  # stores removed from overloaded days
 
