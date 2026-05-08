@@ -1242,15 +1242,9 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             # Auto mode — system recommends
             actual_reps = needed_reps
             warnings.append(f"  Auto → {actual_reps} rep(s) for {len(matched)} stores ({matched_workload:,} min workload).")
-        elif n_reps > needed_reps:
-            # Fixed but too many — override down
-            actual_reps = needed_reps
-            warnings.append(
-                f"  Adjusted from {n_reps} to {actual_reps} rep(s) — "
-                f"{len(matched)} stores only need {needed_reps} rep(s)."
-            )
         else:
-            # Fixed and valid
+            # Fixed — respect user's choice (they know geographic needs)
+            actual_reps = n_reps
             actual_reps = n_reps
 
         # Assign rep_ids using k-means if multiple reps, else single assignment
