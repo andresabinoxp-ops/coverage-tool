@@ -3610,9 +3610,17 @@ if st.button("  Run Coverage Agent", type="primary"):
                 if _rb:
                     _area_bboxes.append(_rb)
 
+            # Known foreign cities that commonly appear in Gulf region bbox overlaps
+            _FOREIGN_LOCATIONS = {
+                "dubai", "abu dhabi", "al ain", "sharjah", "ajman", "ras al khaimah",
+                "fujairah", "umm al quwain",  # UAE
+                "bandar abbas", "kish", "qeshm", "minab", "hormozgan",  # Iran
+                "riyadh", "jeddah", "mecca", "medina", "dammam",  # Saudi
+                "sana'a", "aden", "taiz",  # Yemen
+            }
+
             _before_filter = len(universe)
             if _area_bboxes:
-                # Use individual city/region bboxes (precise)
                 def _in_coverage_area(s):
                     lat = s.get("lat")
                     lng = s.get("lng")
@@ -3622,9 +3630,14 @@ if st.button("  Run Coverage Agent", type="primary"):
                         lat, lng = float(lat), float(lng)
                     except (ValueError, TypeError):
                         return True
-                    # Store must fall within at least one configured city/region bbox
-                    # with a 15km buffer (to catch stores on edges)
-                    _buf = 0.14  # ~15km buffer in degrees
+                    # Check 1: Foreign city name filter
+                    _s_city = str(s.get("city", "") or "").strip().lower()
+                    _s_addr = str(s.get("address", "") or "").strip().lower()
+                    for _fc in _FOREIGN_LOCATIONS:
+                        if _fc in _s_city or _fc in _s_addr:
+                            return False
+                    # Check 2: Must fall within a configured region bbox (tight, 5km buffer)
+                    _buf = 0.045  # ~5km buffer
                     for _ab in _area_bboxes:
                         if (_ab[0] - _buf <= lat <= _ab[1] + _buf and
                             _ab[2] - _buf <= lng <= _ab[3] + _buf):
