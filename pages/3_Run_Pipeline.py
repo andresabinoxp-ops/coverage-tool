@@ -4942,9 +4942,8 @@ if st.button("  Run Coverage Agent", type="primary"):
             _days = {d: [s for s in _rep_stores if s.get("assigned_day") == d] for d in WEEKDAYS_ENF}
 
             def _day_time(stores):
-                """Day time = visit duration + capped travel estimate + break."""
+                """Day time = visit duration + real travel + break."""
                 exec_t = sum(s.get("visit_duration_min", 25) for s in stores)
-                # Travel estimate from coordinates, capped at 130 min (max 25% of day)
                 travel_t = 0.0
                 geo = [s for s in stores if s.get("lat") and s.get("lng")]
                 if len(geo) > 1:
@@ -4960,8 +4959,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                             travel_t += (2*6371*math.asin(math.sqrt(max(0,_a)))/30)*60
                         except (ValueError, TypeError):
                             pass
-                travel_t = min(round(travel_t), 130)  # cap at 130 min
-                return exec_t + travel_t + 30  # +30 break
+                return exec_t + round(travel_t) + 30
 
             _overflow = []  # stores removed from overloaded days
 
