@@ -14,6 +14,25 @@ def _hav_min(lat1, lng1, lat2, lng2, speed_kmh=30):
     dist_km = 2 * R * math.asin(math.sqrt(a)) / 1000
     return (dist_km / speed_kmh) * 60
 
+def _not_covered_reason(s):
+    """Why this store is NOT in the recommended route. Empty string if it is."""
+    if s.get("plan_visits", 0) > 0:
+        return ""
+    if s.get("coverage_status") == "no_coords":
+        return "Address could not be geocoded"
+    if s.get("_dropped_daily_cap"):
+        return "Too far / low score — dropped to fit rep's daily capacity"
+    if s.get("_skipped_outlier"):
+        return "Too far — geographic outlier from rep's route cluster"
+    if s.get("size_tier") not in ("Large", "Medium", "Small"):
+        return "Too small — below size threshold for routing"
+    score = s.get("score") or 0
+    if score < 40:
+        return f"Score too low ({int(score)}) to recommend coverage"
+    if not s.get("rep_id"):
+        return "Too far — no rep has capacity in this area"
+    return "Not selected for recommended route"
+
 st.set_page_config(page_title="Routes - Coverage Tool", page_icon=" ", layout="wide")
 
 st.markdown("""
@@ -393,6 +412,7 @@ def build_rep_df(stores, rep_id=None, day=None, month_key=None, skip_date_filter
             "annual_visits":      s.get("annual_visits",0),
             "visit_duration_min": s.get("visit_duration_min",0),
             "coverage_status":    s.get("coverage_status",""),
+            "not_covered_reason": _not_covered_reason(s),
             "rating":             s.get("rating",0),
             "review_count":       s.get("review_count",0),
             "phone":              s.get("phone",""),
@@ -416,7 +436,8 @@ if all_reps:
         _dl1, _dl2 = st.columns(2)
         with _dl1:
             st.download_button("  Download all reps — full month CSV",
-                all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
+                all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all",
+                help="Includes every store. The not_covered_reason column explains why a store is not in the recommended route (too far, too small, low score, etc.) — decide case-by-case if you want to cover it anyway.")
         with _dl2:
             # Full snapshot JSON — stores + rep_recommendation for Dashboard upload
             import json as _json_snap
@@ -525,7 +546,7 @@ if not display_df.empty:
         )
     base_cols = ["rep_id","assigned_day","day_visit_order","store_name","category",
                  "size_tier","score","visits_per_month","annual_visits","visit_duration_min",
-                 "coverage_status","rating","review_count","phone","opening_hours",
+                 "coverage_status","not_covered_reason","rating","review_count","phone","opening_hours",
                  "address","city","lat","lng"]
     # Add month columns if viewing a specific month
     if tbl_month_key:
@@ -545,6 +566,7 @@ if not display_df.empty:
         "store_name":"Store","category":"Sub-channel","size_tier":"Size",
         "score":"Score","visits_per_month":"Visits/Mo","annual_visits":"Annual Visits",
         "visit_duration_min":"Duration (min)","coverage_status":"Status",
+        "not_covered_reason":"Recommendation",
         "rating":"Rating","review_count":"Reviews","phone":"Phone",
         "opening_hours":"Opening Hours","address":"Address","city":"City",
         "lat":"Latitude","lng":"Longitude",

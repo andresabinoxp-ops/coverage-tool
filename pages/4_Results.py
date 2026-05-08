@@ -3,6 +3,25 @@ import pandas as pd
 import json
 import datetime
 
+def _not_covered_reason(s):
+    """Why this store is NOT in the recommended route. Empty string if it is."""
+    if s.get("plan_visits", 0) > 0:
+        return ""
+    if s.get("coverage_status") == "no_coords":
+        return "Address could not be geocoded"
+    if s.get("_dropped_daily_cap"):
+        return "Too far / low score — dropped to fit rep's daily capacity"
+    if s.get("_skipped_outlier"):
+        return "Too far — geographic outlier from rep's route cluster"
+    if s.get("size_tier") not in ("Large", "Medium", "Small"):
+        return "Too small — below size threshold for routing"
+    score = s.get("score") or 0
+    if score < 40:
+        return f"Score too low ({int(score)}) to recommend coverage"
+    if not s.get("rep_id"):
+        return "Too far — no rep has capacity in this area"
+    return "Not selected for recommended route"
+
 st.set_page_config(page_title="Results - Coverage Tool", page_icon=" ", layout="wide")
 
 st.markdown("""
@@ -370,15 +389,17 @@ st.caption("Uncovered stores ranked by score — these are candidate new distrib
 high_gaps = [s for s in gap_stores if s.get("score", 0) >= 40]
 if high_gaps:
     gdf   = pd.DataFrame(high_gaps[:50])
+    gdf["not_covered_reason"] = [_not_covered_reason(s) for s in high_gaps[:50]]
     # Show price_level and poi_count alongside rating/reviews — key scoring signals
     gcols = [c for c in ["store_name","category","score","size_tier",
                           "rating","review_count","price_level","poi_count",
-                          "visits_per_month","address","city"] if c in gdf.columns]
+                          "visits_per_month","not_covered_reason","address","city"] if c in gdf.columns]
     gdf   = gdf[gcols].sort_values("score", ascending=False).reset_index(drop=True)
     rename = {
         "store_name":"Store","category":"Sub-channel","score":"Score","size_tier":"Size",
         "rating":"Rating","review_count":"Reviews","price_level":"Price Level",
         "poi_count":"Nearby POI","visits_per_month":"Visits/Mo",
+        "not_covered_reason":"Recommendation",
         "address":"Address","city":"City"
     }
     gdf   = gdf.rename(columns={c:rename.get(c,c) for c in gdf.columns})
@@ -426,6 +447,7 @@ with col1:
             _date_visit_cols += [f"{mk}_dates", f"{mk}_visits"]
         priority = ["store_id","store_name","address","city","district","region",
                     "lat","lng","category","source","covered","coverage_status",
+                    "not_covered_reason",
                     "rating","review_count","price_level","poi_count",
                     "score","size_tier","visits_per_month","visit_duration_min",
                     "annual_sales_usd","lines_per_store","cluster_id","cluster_name",
@@ -441,10 +463,12 @@ with col1:
                   and c not in _always_keep]
     _explicit_drop = list(_always_exclude) + [c for c in _drop_cols if c in pd.DataFrame(all_stores).columns]
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _explicit_drop if c in pd.DataFrame(all_stores).columns], errors="ignore")
+    _clean_df["not_covered_reason"] = [_not_covered_reason(s) for s in all_stores]
     _clean_df = _reorder_cols(_clean_df)
     st.download_button("  Full scored universe CSV",
         _clean_df.reset_index(drop=True).to_csv(index=False),
-        f"scored_universe_{mkt_safe}.csv", "text/csv")
+        f"scored_universe_{mkt_safe}.csv", "text/csv",
+        help="Includes every store. The not_covered_reason column explains why a store is not in the recommended route (too far, too small, low score, etc.) — decide case-by-case if you want to cover it anyway.")
 with col2:
     _gap_df = pd.DataFrame(gap_stores).reset_index(drop=True) if gap_stores else pd.DataFrame()
     if not _gap_df.empty and "score" in _gap_df.columns:
@@ -453,9 +477,11 @@ with col2:
 
         _score_thresh = _gap_df["score"].quantile(0.40)  # top 60% = above 40th percentile
         _gap_df["top_gap_opportunity"] = (_gap_df["score"] >= _score_thresh).map({True:"Yes", False:"No"})
+        _gap_df["not_covered_reason"] = [_not_covered_reason(s) for s in gap_stores]
     st.download_button("  Gap report CSV",
         _gap_df.reset_index(drop=True).to_csv(index=False),
-        f"gap_report_{mkt_safe}.csv", "text/csv")
+        f"gap_report_{mkt_safe}.csv", "text/csv",
+        help="Uncovered stores ranked by score. The not_covered_reason column explains why each one is not in the recommended route.")
 with col3:
     features = [
         {"type":"Feature",
