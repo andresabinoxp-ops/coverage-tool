@@ -3644,7 +3644,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                             return True
                     return False
             else:
-                # Fallback: only country bbox (no cities/regions configured)
+                # Fallback: country bbox + foreign city filter
                 def _in_coverage_area(s):
                     lat = s.get("lat")
                     lng = s.get("lng")
@@ -3654,6 +3654,12 @@ if st.button("  Run Coverage Agent", type="primary"):
                         lat, lng = float(lat), float(lng)
                     except (ValueError, TypeError):
                         return True
+                    # Foreign city name filter
+                    _s_city = str(s.get("city", "") or "").strip().lower()
+                    _s_addr = str(s.get("address", "") or "").strip().lower()
+                    for _fc in _FOREIGN_LOCATIONS:
+                        if _fc in _s_city or _fc in _s_addr:
+                            return False
                     return (_bbox_lat_min <= lat <= _bbox_lat_max and
                             _bbox_lng_min <= lng <= _bbox_lng_max)
 
