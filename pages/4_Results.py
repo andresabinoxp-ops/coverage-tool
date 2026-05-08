@@ -276,7 +276,8 @@ if rep_rec:
         if s.get("plan_visits", 0) == 0: continue
         if rid not in rep_rows:
             _rule_label = s.get("_rule_name") or _zone_rule_map.get(rid, "Mixed")
-            rep_rows[rid] = {"Rep": rid, "Assignment": _rule_label,
+            _rep_display = f"Rep {rid} ({_rule_label})" if _rule_label and _rule_label != "Mixed" else f"Rep {rid}"
+            rep_rows[rid] = {"Rep": _rep_display, "Assignment": _rule_label,
                              "Stores": 0, "Current": 0,
                              "Gap (new)": 0, "Execution (min)": 0}
         rep_rows[rid]["Stores"]          += 1
@@ -289,7 +290,9 @@ if rep_rec:
 
 
 
-        rdf = pd.DataFrame(list(rep_rows.values())).sort_values("Rep")
+        rdf = pd.DataFrame(list(rep_rows.values()))
+        rdf["_sort"] = rdf["Rep"].str.extract(r'(\d+)').astype(float)
+        rdf = rdf.sort_values("_sort").drop(columns=["_sort"])
 
         zc_map = {int(z.get("zone",0)): z.get("time_needed_min", 0)
                   for z in rep_rec.get("zone_centres", [])}
