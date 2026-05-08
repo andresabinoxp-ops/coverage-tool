@@ -459,20 +459,37 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
     Calculate total time needed per month for a rep covering a set of stores.
     Returns total_minutes_per_month.
     Time = sum(visit_duration × visits_per_month) + sum(travel_time × visits_per_month)
-    Stores are visited in score order (highest first = most efficient routing proxy).
+    Stores ordered by nearest-neighbor geography for realistic travel estimate.
     """
     if not stores_in_route:
         return 0.0
 
-    # Sort by score descending for visit order
-    ordered = sorted(stores_in_route, key=lambda x: x.get("score",0), reverse=True)
+    # Sort by nearest-neighbor from centroid (geographic, not score)
+    geo = [s for s in stores_in_route if s.get("lat") and s.get("lng")]
+    no_geo = [s for s in stores_in_route if not (s.get("lat") and s.get("lng"))]
+
+    if geo:
+        c_lat = sum(float(s["lat"]) for s in geo) / len(geo)
+        c_lng = sum(float(s["lng"]) for s in geo) / len(geo)
+        ordered = []
+        remaining = list(geo)
+        cur_lat, cur_lng = c_lat, c_lng
+        while remaining:
+            nearest = min(remaining, key=lambda s: haversine_m(
+                cur_lat, cur_lng, float(s["lat"]), float(s["lng"])))
+            ordered.append(nearest)
+            cur_lat, cur_lng = float(nearest["lat"]), float(nearest["lng"])
+            remaining.remove(nearest)
+        ordered.extend(no_geo)
+    else:
+        ordered = list(stores_in_route)
 
     visit_time = sum(
         s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
         for s in ordered
     )
 
-    # Travel time — cumulative between consecutive stores each visit
+    # Travel time — nearest-neighbor order
     travel_time = 0.0
     for i in range(1, len(ordered)):
         s_prev = ordered[i-1]
@@ -483,7 +500,6 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
                 s_curr["lat"], s_curr["lng"],
                 avg_speed_kmh
             )
-            # multiply by average visits (use min of the two stores' visits)
             avg_visits = (s_prev.get("visits_per_month",1) + s_curr.get("visits_per_month",1)) / 2
             travel_time += t * avg_visits
 
