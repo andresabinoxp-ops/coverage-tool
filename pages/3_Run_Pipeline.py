@@ -1268,7 +1268,10 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             rz = [s for s in matched if s.get("rep_id") == rid and s.get("lat") and s.get("lng")]
             if not rz:
                 continue
-            rz_time = calculate_rep_time_budget(rz, avg_speed_kmh=30)  # includes travel
+            rz_time = sum(
+                s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
+                for s in rz
+            )
             dedicated_zones.append({
                 "zone":             rid,
                 "centre_lat":       round(sum(s["lat"] for s in rz) / len(rz), 4),
