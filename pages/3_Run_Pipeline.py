@@ -1267,6 +1267,66 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
                                 _expanded = True
                                 break
 
+        # Merge nearby clusters (within 60km) to avoid too many underutilized reps
+        # e.g., Sohar + Barka + Rustaq (close) = 1 group instead of 3
+        if len(matched_geo) > 1 and _cluster_count > 1:
+            # Build cluster centroids
+            _store_cluster_id = [0] * len(matched_geo)
+            _cid = 0
+            _c_assigned = [False] * len(matched_geo)
+            for _ci in range(len(matched_geo)):
+                if _c_assigned[_ci]:
+                    continue
+                for _cj in range(len(matched_geo)):
+                    if _c_assigned[_cj]:
+                        continue
+                    # Check if _cj is in same cluster as _ci (within 30km chain)
+                    if _ci == _cj:
+                        _store_cluster_id[_cj] = _cid
+                        _c_assigned[_cj] = True
+                        continue
+                    _d = haversine_m(
+                        float(matched_geo[_ci]["lat"]), float(matched_geo[_ci]["lng"]),
+                        float(matched_geo[_cj]["lat"]), float(matched_geo[_cj]["lng"])
+                    ) / 1000
+                    if _d <= 30:
+                        _store_cluster_id[_cj] = _cid
+                        _c_assigned[_cj] = True
+                if not _c_assigned[_ci]:
+                    _store_cluster_id[_ci] = _cid
+                    _c_assigned[_ci] = True
+                _cid += 1
+
+            # Calculate cluster centroids
+            _centroids = {}
+            for _i, _s in enumerate(matched_geo):
+                _sid = _store_cluster_id[_i]
+                if _sid not in _centroids:
+                    _centroids[_sid] = {"lats": [], "lngs": []}
+                _centroids[_sid]["lats"].append(float(_s["lat"]))
+                _centroids[_sid]["lngs"].append(float(_s["lng"]))
+            for _sid in _centroids:
+                _centroids[_sid] = (
+                    sum(_centroids[_sid]["lats"]) / len(_centroids[_sid]["lats"]),
+                    sum(_centroids[_sid]["lngs"]) / len(_centroids[_sid]["lngs"]),
+                )
+
+            # Merge clusters within 60km of each other
+            _c_ids = list(_centroids.keys())
+            _merged = {c: c for c in _c_ids}  # maps to self initially
+            for _i, _ca in enumerate(_c_ids):
+                for _cb in _c_ids[_i+1:]:
+                    if _merged[_ca] != _ca or _merged[_cb] != _cb:
+                        continue  # already merged
+                    _d = haversine_m(
+                        _centroids[_ca][0], _centroids[_ca][1],
+                        _centroids[_cb][0], _centroids[_cb][1]
+                    ) / 1000
+                    if _d <= 60:
+                        _merged[_cb] = _merged[_ca]
+
+            _cluster_count = len(set(_merged.values()))
+
         needed_reps = max(workload_reps, _cluster_count)
 
         if n_reps == 0:
