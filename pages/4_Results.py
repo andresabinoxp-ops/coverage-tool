@@ -301,9 +301,15 @@ if rep_rec:
         brk_per_period = break_mins * work_days * max(_plan_pp, 1)   # 660 × plan_period
         cap_col = f"Capacity {_plan_pp}mo (min)"
 
-        def _exec(rid):  return rep_rows.get(int(rid), rep_rows.get(rid, {})).get("Execution (min)", 0)
+        import re as _re_res
+        def _rid_num(r):
+            """Extract numeric rep_id from 'Rep 3 (Lulu)' or plain '3'."""
+            _m = _re_res.search(r'\d+', str(r))
+            return int(_m.group()) if _m else 0
+
+        def _exec(rid):  return rep_rows.get(_rid_num(rid), rep_rows.get(rid, {})).get("Execution (min)", 0)
         def _travel(rid):
-            et = zc_map.get(int(rid), 0) * _plan_pp
+            et = zc_map.get(_rid_num(rid), 0) * _plan_pp
             return max(0, int(et) - _exec(rid))
         def _total(rid): return _exec(rid) + _travel(rid) + brk_per_period
 
