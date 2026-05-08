@@ -5002,6 +5002,12 @@ if st.button("  Run Coverage Agent", type="primary"):
                 for _other_rid in _enf_rep_ids:
                     if _other_rid == _enf_rid:
                         continue
+                    # NEVER move non-rule stores into dedicated reps
+                    _other_is_dedicated = any(
+                        x.get("_rule_name") for x in all_stores if x.get("rep_id") == _other_rid
+                    )
+                    if _other_is_dedicated:
+                        continue
                     # Get other rep's stores to find centroid
                     _other_stores = [x for x in all_stores
                                      if x.get("rep_id") == _other_rid
@@ -5092,6 +5098,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                 _best_dist = float("inf")
                 for _cand_rid in _enf_rep_ids_2:
                     if _cand_rid == _tiny_rid:
+                        continue
+                    # Never absorb into dedicated reps
+                    if any(x.get("_rule_name") for x in all_stores if x.get("rep_id") == _cand_rid):
                         continue
                     _c_stores = [s for s in all_stores
                                  if s.get("rep_id") == _cand_rid
