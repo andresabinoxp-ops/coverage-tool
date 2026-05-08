@@ -5138,7 +5138,7 @@ if st.button("  Run Coverage Agent", type="primary"):
             for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
                 try:
                     _cal = get_month_weekdays(int(yr), int(mo))
-                except (ValueError, TypeError):
+                except Exception:
                     continue
                 _day_dates = _cal.get(_new_day, [])
                 if _vpm >= 4:
