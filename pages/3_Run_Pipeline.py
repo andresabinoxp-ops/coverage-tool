@@ -5144,6 +5144,32 @@ if st.button("  Run Coverage Agent", type="primary"):
         if _absorb_count > 0:
             status.info(f"Stage 6b — Absorbed {_absorb_count} tiny rep(s) into nearby reps.")
 
+        # ── Regenerate calendar dates after enforcement moves ─────────
+        # Enforcement may have changed assigned_day — dates must match.
+        for s in all_stores:
+            if not s.get("assigned_day") or s.get("assigned_day") == "":
+                continue
+            _new_day = s["assigned_day"]
+            _vpm = s.get("visits_per_month", 1)
+            for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
+                _cal = get_month_weekdays(yr, mo)
+                _day_dates = _cal.get(_new_day, [])
+                if _vpm >= 4:
+                    _weeks = [0, 1, 2, 3]
+                elif _vpm >= 2:
+                    _weeks = [0, 2]
+                elif _vpm >= 1:
+                    _weeks = [1]
+                else:
+                    _weeks = [1] if s.get("day_visit_order", 1) % 2 == 0 else []
+                _real = []
+                for _wi in _weeks:
+                    if _wi < len(_day_dates):
+                        _real.append(_day_dates[_wi].strftime("%d %b"))
+                s[f"{mk}_dates"] = _real
+                s[f"{mk}_visits"] = len(_real)
+            s["plan_visits"] = sum(s.get(f"{mk}_visits", 0) for mk in plan_month_keys)
+
         # Clear stores not in route
         for s in all_stores:
             if not s.get("assigned_day") or s.get("size_tier") not in ("Large","Medium","Small"):
