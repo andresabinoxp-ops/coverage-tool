@@ -4914,30 +4914,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                         s["plan_visits"] += 1
                         visit_count      += 1
 
-        # Convert abstract week labels → real calendar dates using get_month_weekdays
-        # e.g. "Week 1 - Monday" → "07 Apr" for April 2026
-        _month_calendars = {}
-        for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
-            _month_calendars[mk] = get_month_weekdays(yr, mo)
-
-        WEEK_NUM_MAP = {"Week 1": 0, "Week 2": 1, "Week 3": 2, "Week 4": 3, "Week 5": 4}
-
-        for s in all_stores:
-            for mk in plan_month_keys:
-                raw_weeks = s.get(f"{mk}_weeks", [])
-                real_dates = []
-                cal = _month_calendars.get(mk, {})
-                for wk_label in raw_weeks:
-                    # wk_label format: "Week 1 - Monday"
-                    parts = wk_label.split(" - ")
-                    if len(parts) == 2:
-                        wk_part  = parts[0].strip()   # "Week 1"
-                        day_part = parts[1].strip()    # "Monday"
-                        wk_idx   = WEEK_NUM_MAP.get(wk_part, 0)
-                        day_dates = cal.get(day_part, [])
-                        if wk_idx < len(day_dates):
-                            real_dates.append(day_dates[wk_idx].strftime("%d %b"))
-                s[f"{mk}_dates"] = real_dates
+        # Date conversion moved to AFTER enforcement (enforcement changes assigned_day)
 
         # ── Daily capacity enforcement ────────────────────────────────────
         # After all routes are built, enforce daily limits:
@@ -5142,47 +5119,38 @@ if st.button("  Run Coverage Agent", type="primary"):
         if _absorb_count > 0:
             status.info(f"Stage 6b — Absorbed {_absorb_count} tiny rep(s) into nearby reps.")
 
-        # ── Regenerate calendar dates after enforcement moves ─────────
-        # Enforcement may have changed assigned_day — dates must match.
-        _regen_count = 0
-        _regen_err = 0
+        # ── Convert assigned_day → real calendar dates ─────────────────
+        # This runs AFTER enforcement so dates match the FINAL assigned_day.
+        # Uses assigned_day directly (not mk_weeks which has old day names).
+        _month_calendars = {}
+        for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
+            try:
+                _month_calendars[mk] = get_month_weekdays(int(yr), int(mo))
+            except Exception:
+                pass
+
         for s in all_stores:
-            if not s.get("assigned_day") or s.get("assigned_day") == "":
+            _day = s.get("assigned_day", "")
+            if not _day or _day not in WEEKDAYS_ENF:
                 continue
             if s.get("rep_id", 0) == 0:
                 continue
-            _new_day = s["assigned_day"]
             _vpm = s.get("visits_per_month", 1)
-            _regen_ok = False
-            for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
-                try:
-                    _yr_int = int(yr) if yr else 2026
-                    _mo_int = int(mo) if mo else 5
-                    _cal = get_month_weekdays(_yr_int, _mo_int)
-                    _day_dates = _cal.get(_new_day, [])
-                    if _vpm >= 4:
-                        _weeks = [0, 1, 2, 3]
-                    elif _vpm >= 2:
-                        _weeks = [0, 2]
-                    elif _vpm >= 1:
-                        _weeks = [1]
-                    else:
-                        _weeks = [1] if s.get("day_visit_order", 1) % 2 == 0 else []
-                    _real = []
-                    for _wi in _weeks:
-                        if _wi < len(_day_dates):
-                            _real.append(_day_dates[_wi].strftime("%d %b"))
-                    s[f"{mk}_dates"] = _real
-                    s[f"{mk}_visits"] = len(_real)
-                    _regen_ok = True
-                except Exception as _e:
-                    _regen_err += 1
-            if _regen_ok:
-                s["plan_visits"] = sum(s.get(f"{mk}_visits", 0) for mk in plan_month_keys)
-                _regen_count += 1
-
-        if _regen_count > 0 or _regen_err > 0:
-            status.info(f"Stage 6b — Dates regenerated for {_regen_count} stores ({_regen_err} errors).")
+            if _vpm >= 4:
+                _week_indices = [0, 1, 2, 3]
+            elif _vpm >= 2:
+                _week_indices = [0, 2]
+            elif _vpm >= 1:
+                _week_indices = [1]
+            else:
+                _week_indices = [1] if s.get("day_visit_order", 1) % 2 == 0 else []
+            for mk in plan_month_keys:
+                _cal = _month_calendars.get(mk, {})
+                _day_dates = _cal.get(_day, [])
+                _real = [_day_dates[wi].strftime("%d %b") for wi in _week_indices if wi < len(_day_dates)]
+                s[f"{mk}_dates"] = _real
+                s[f"{mk}_visits"] = len(_real)
+            s["plan_visits"] = sum(s.get(f"{mk}_visits", 0) for mk in plan_month_keys)
 
         # Clear stores not in route
         for s in all_stores:
