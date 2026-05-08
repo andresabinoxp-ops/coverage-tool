@@ -507,72 +507,54 @@ def calculate_rep_time_budget(stores_in_route, avg_speed_kmh=30):
 
 def recommended_reps_time_based(priority_stores, daily_minutes=480, working_days=22, avg_speed_kmh=30, break_minutes=30):
     """
-    Calculate recommended rep count using geographic city clusters.
-    Ensures stores in different cities get different reps.
+    Calculate recommended rep count including geographic travel time estimate.
+    Uses visits_per_month (pre-route) — reliable estimate before daily budget cuts.
     Returns (recommended_reps, total_minutes_needed_per_month, minutes_per_rep_per_month).
     """
     if not priority_stores:
         return 1, 0.0, 0.0
 
+    # Effective capacity = daily minutes minus break, times working days
     monthly_capacity = (daily_minutes - break_minutes) * working_days
 
-    # Step 1: Cluster stores geographically (30km = same city)
+
+
+    n_stores = len(priority_stores)
+
+    # Total monthly visit time across all priority stores
+    total_visit_time = sum(
+        s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
+        for s in priority_stores
+    )
+
+    # Travel time estimate based on geographic spread
+    # Per-territory estimate: once clustered, each rep covers area/reps
+    # We iterate to convergence: start with 1 rep, estimate travel, get reps, repeat
     geo = [s for s in priority_stores if s.get("lat") and s.get("lng")]
-    no_geo = [s for s in priority_stores if not (s.get("lat") and s.get("lng"))]
+    if len(geo) > 1:
+        lat_span = max(s["lat"] for s in geo) - min(s["lat"] for s in geo)
+        lng_span = max(s["lng"] for s in geo) - min(s["lng"] for s in geo)
+        mid_lat  = sum(s["lat"] for s in geo) / len(geo)
+        total_area_km2 = max(lat_span * 111 * lng_span * 111 * math.cos(math.radians(mid_lat)), 1)
+        total_monthly_visits = sum(s.get("visits_per_month", 1) for s in priority_stores)
 
-    CLUSTER_DIST_KM = 30
-    clusters = []  # list of lists of stores
+        # Iterative: estimate reps → use reps to recalculate per-territory travel
+        est_reps = max(1, math.ceil(total_visit_time / monthly_capacity))
+        for _ in range(3):  # 3 iterations converges quickly
+            territory_area  = total_area_km2 / est_reps
+            stores_per_rep  = max(n_stores / est_reps, 1)
+            avg_dist_km     = math.sqrt(territory_area / stores_per_rep) * 0.7
+            avg_travel_min  = (avg_dist_km / max(avg_speed_kmh, 1)) * 60
+            total_travel    = avg_travel_min * total_monthly_visits
+            total_minutes   = total_visit_time + total_travel
+            est_reps        = max(1, math.ceil(total_minutes / monthly_capacity))
+    else:
+        total_travel  = total_visit_time * 0.2
+        total_minutes = total_visit_time + total_travel
+        est_reps      = max(1, math.ceil(total_minutes / monthly_capacity))
 
-    if geo:
-        assigned = [False] * len(geo)
-        for i in range(len(geo)):
-            if assigned[i]:
-                continue
-            # Start new cluster with store i
-            cluster = [geo[i]]
-            assigned[i] = True
-            # Expand: any unassigned store within 30km of any cluster member
-            changed = True
-            while changed:
-                changed = False
-                for j in range(len(geo)):
-                    if assigned[j]:
-                        continue
-                    for cs in cluster:
-                        dist_km = haversine_m(
-                            float(cs["lat"]), float(cs["lng"]),
-                            float(geo[j]["lat"]), float(geo[j]["lng"])
-                        ) / 1000
-                        if dist_km <= CLUSTER_DIST_KM:
-                            cluster.append(geo[j])
-                            assigned[j] = True
-                            changed = True
-                            break
-            clusters.append(cluster)
-    # Add no-geo stores to the largest cluster
-    if no_geo:
-        if clusters:
-            clusters[0].extend(no_geo)
-        else:
-            clusters.append(no_geo)
-
-    # Step 2: Calculate reps per cluster
-    total_reps = 0
-    total_minutes = 0.0
-
-    for cluster_stores in clusters:
-        cluster_visit = sum(
-            s.get("visit_duration_min", 25) * s.get("visits_per_month", 1)
-            for s in cluster_stores
-        )
-        # Intra-city travel = 25% of visit time (stores are close within a city)
-        cluster_travel = cluster_visit * 0.25
-        cluster_total = cluster_visit + cluster_travel
-        cluster_reps = max(1, math.ceil(cluster_total / monthly_capacity))
-        total_reps += cluster_reps
-        total_minutes += cluster_total
-
-    return total_reps, round(total_minutes), round(monthly_capacity)
+    # Return exec+travel as total_minutes_needed (not exec only)
+    return est_reps, round(total_minutes), round(monthly_capacity)
 
 def assign_size_tier(store, category_percentiles, visit_benchmarks, size_percentiles):
     """
