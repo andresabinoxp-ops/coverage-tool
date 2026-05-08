@@ -4929,8 +4929,10 @@ if st.button("  Run Coverage Agent", type="primary"):
         # remove lowest-scoring stores and try to fit them on a lighter
         # day of the SAME rep. If no day has room → "Not in route".
         WEEKDAYS_ENF = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
-        MAX_DAY_ENF  = 550
-        MAX_DAY_THRESHOLD = MAX_DAY_ENF * 1.10  # 605 min — hard ceiling
+        # Max VISIT time per day (excluding travel + break)
+        # Daily capacity 550 min - 30 break - ~25% travel overhead = ~390 min visits
+        MAX_DAY_ENF  = daily_minutes - break_minutes  # e.g., 450 min
+        MAX_DAY_THRESHOLD = MAX_DAY_ENF  # visit time only — travel handled separately
 
         _enf_moved = 0
         _enf_dropped = 0
@@ -4947,28 +4949,8 @@ if st.button("  Run Coverage Agent", type="primary"):
             _days = {d: [s for s in _rep_stores if s.get("assigned_day") == d] for d in WEEKDAYS_ENF}
 
             def _day_time(stores):
-                """Total day time = visit durations + estimated inter-store travel + break."""
-                exec_t = sum(s.get("visit_duration_min", 25) for s in stores)
-                # Estimate travel from store coordinates (nearest-neighbor order)
-                travel_t = 0.0
-                geo = [s for s in stores if s.get("lat") and s.get("lng")]
-                if len(geo) > 1:
-                    # Sort by visit order if available, else use as-is
-                    ordered = sorted(geo, key=lambda s: s.get("day_visit_order", 0))
-                    for _i in range(1, len(ordered)):
-                        try:
-                            _la1 = float(ordered[_i-1]["lat"])
-                            _ln1 = float(ordered[_i-1]["lng"])
-                            _la2 = float(ordered[_i]["lat"])
-                            _ln2 = float(ordered[_i]["lng"])
-                            _p = math.pi / 180
-                            _a = (math.sin((_la2-_la1)*_p/2)**2 +
-                                  math.cos(_la1*_p)*math.cos(_la2*_p)*
-                                  math.sin((_ln2-_ln1)*_p/2)**2)
-                            travel_t += (2*6371*math.asin(math.sqrt(max(0,_a)))/30)*60
-                        except (ValueError, TypeError):
-                            pass
-                return exec_t + round(travel_t) + 30  # +30 min break
+                """Day visit time only — used for enforcement threshold."""
+                return sum(s.get("visit_duration_min", 25) for s in stores)
 
             _overflow = []  # stores removed from overloaded days
 
@@ -5149,10 +5131,15 @@ if st.button("  Run Coverage Agent", type="primary"):
         for s in all_stores:
             if not s.get("assigned_day") or s.get("assigned_day") == "":
                 continue
+            if s.get("rep_id", 0) == 0:
+                continue  # dropped stores — skip date regeneration
             _new_day = s["assigned_day"]
             _vpm = s.get("visits_per_month", 1)
             for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
-                _cal = get_month_weekdays(yr, mo)
+                try:
+                    _cal = get_month_weekdays(int(yr), int(mo))
+                except (ValueError, TypeError):
+                    continue
                 _day_dates = _cal.get(_new_day, [])
                 if _vpm >= 4:
                     _weeks = [0, 1, 2, 3]
