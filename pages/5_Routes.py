@@ -468,7 +468,7 @@ st.caption("Select a rep and day to see the exact stores and visit order for tha
 
 col_r, col_m, col_d, col_f = st.columns(4)
 with col_r:
-    tbl_rep = st.selectbox("Rep", ["All reps"] + [f"Rep {r}" for r in all_reps], key="tbl_rep")
+    tbl_rep = st.selectbox("Rep", ["All reps"] + [_rep_label(r) for r in all_reps], key="tbl_rep")
 with col_m:
     tbl_month = st.selectbox("Month", ["Full plan"] + PLAN_MONTHS, key="tbl_month")
 with col_d:
