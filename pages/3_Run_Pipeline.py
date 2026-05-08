@@ -5144,34 +5144,45 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # ── Regenerate calendar dates after enforcement moves ─────────
         # Enforcement may have changed assigned_day — dates must match.
+        _regen_count = 0
+        _regen_err = 0
         for s in all_stores:
             if not s.get("assigned_day") or s.get("assigned_day") == "":
                 continue
             if s.get("rep_id", 0) == 0:
-                continue  # dropped stores — skip date regeneration
+                continue
             _new_day = s["assigned_day"]
             _vpm = s.get("visits_per_month", 1)
+            _regen_ok = False
             for mk, (yr, mo) in zip(plan_month_keys, plan_months_ym):
                 try:
-                    _cal = get_month_weekdays(int(yr), int(mo))
-                except Exception:
-                    continue
-                _day_dates = _cal.get(_new_day, [])
-                if _vpm >= 4:
-                    _weeks = [0, 1, 2, 3]
-                elif _vpm >= 2:
-                    _weeks = [0, 2]
-                elif _vpm >= 1:
-                    _weeks = [1]
-                else:
-                    _weeks = [1] if s.get("day_visit_order", 1) % 2 == 0 else []
-                _real = []
-                for _wi in _weeks:
-                    if _wi < len(_day_dates):
-                        _real.append(_day_dates[_wi].strftime("%d %b"))
-                s[f"{mk}_dates"] = _real
-                s[f"{mk}_visits"] = len(_real)
-            s["plan_visits"] = sum(s.get(f"{mk}_visits", 0) for mk in plan_month_keys)
+                    _yr_int = int(yr) if yr else 2026
+                    _mo_int = int(mo) if mo else 5
+                    _cal = get_month_weekdays(_yr_int, _mo_int)
+                    _day_dates = _cal.get(_new_day, [])
+                    if _vpm >= 4:
+                        _weeks = [0, 1, 2, 3]
+                    elif _vpm >= 2:
+                        _weeks = [0, 2]
+                    elif _vpm >= 1:
+                        _weeks = [1]
+                    else:
+                        _weeks = [1] if s.get("day_visit_order", 1) % 2 == 0 else []
+                    _real = []
+                    for _wi in _weeks:
+                        if _wi < len(_day_dates):
+                            _real.append(_day_dates[_wi].strftime("%d %b"))
+                    s[f"{mk}_dates"] = _real
+                    s[f"{mk}_visits"] = len(_real)
+                    _regen_ok = True
+                except Exception as _e:
+                    _regen_err += 1
+            if _regen_ok:
+                s["plan_visits"] = sum(s.get(f"{mk}_visits", 0) for mk in plan_month_keys)
+                _regen_count += 1
+
+        if _regen_count > 0 or _regen_err > 0:
+            status.info(f"Stage 6b — Dates regenerated for {_regen_count} stores ({_regen_err} errors).")
 
         # Clear stores not in route
         for s in all_stores:
