@@ -4325,11 +4325,14 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         bar.progress(65)
 
-        # ── Cluster assignment + filtering ───────────────────────────────────
-        # Assign cluster_id to every store by nearest centroid (geocoord-based)
+        # ── Cluster assignment ───────────────────────────────────────────────
+        # Assign cluster_id to every store by nearest centroid (geocoord-based).
+        # NOTE: pre-routing "low-value area" exclusion has been removed — it used
+        # global geography (not rep centroids) and dropped legitimate stores like
+        # Lulu Salalah. All filtering now happens post-routing, per rep, per day,
+        # with a hard cap of 2 removals/day (see Daily capacity enforcement below).
         _country_clusters = st.session_state.get("country_clusters", [])
         _selected_cids    = cfg.get("selected_cluster_ids", [])
-        _lv_rule          = st.session_state.get("admin_low_value", {"min_stores":3,"max_score":30})
 
         if _country_clusters:
             all_stores = assign_cluster_to_stores(all_stores, _country_clusters)
@@ -4339,51 +4342,14 @@ if st.button("  Run Coverage Agent", type="primary"):
                 all_stores = [s for s in all_stores if s.get("cluster_id") in _selected_cids]
                 status.info(f"Cluster filter: {len(_selected_cids)} cluster(s) selected — "
                             f"{len(all_stores):,} stores in scope.")
-
-            # Apply low-value area exclusion within each cluster
-            # Group stores by cluster, check rule per cluster
-            from collections import defaultdict as _dd
-            cluster_groups = _dd(list)
-            for s in all_stores:
-                cluster_groups[s.get("cluster_id", 0)].append(s)
-
-            excluded_ids = set()
-            for cid, cstores in cluster_groups.items():
-                if should_exclude_low_value_area(
-                        cstores,
-                        _lv_rule.get("min_stores", 3),
-
-
-
-                        _lv_rule.get("max_score", 30)):
-                    for s in cstores:
-                        excluded_ids.add(id(s))
-
-            if excluded_ids:
-                n_excl = len(excluded_ids)
-                _lv_min   = _lv_rule.get("min_stores", 3)
-                _lv_score = _lv_rule.get("max_score", 30)
-                _lv_reason = (f"Low-value area — sparse cluster "
-                              f"(<{_lv_min} stores, avg score <{_lv_score})")
-                for s in all_stores:
-                    if id(s) in excluded_ids:
-                        s["_excluded_low_value_area"] = True
-                        s["rep_id"] = 0
-                        s["plan_visits"] = 0
-                        s["exclusion_reason"] = _lv_reason
-                status.info(f"Low-value exclusion: {n_excl} stores marked uncovered "
-                            f"(kept in dataset for the Uncovered outlets report) — "
-                            f"areas with < {_lv_min} stores AND avg score < {_lv_score}.")
         else:
             # No clusters defined — assign all to cluster 0
             for s in all_stores:
                 s["cluster_id"]   = 0
                 s["cluster_name"] = "All"
 
-        # Update gap_stores after filtering — skip stores excluded from routing
-        gap_stores = [s for s in all_stores
-                      if s.get("coverage_status") == "gap"
-                      and not s.get("_excluded_low_value_area")]
+        # Update gap_stores after cluster filtering
+        gap_stores = [s for s in all_stores if s.get("coverage_status") == "gap"]
 
         # Stage 5: Size tier + visit frequency assignment
         status.info(f"Stage 5/{total_steps} — Assigning store size tiers and visit frequencies...")
@@ -4531,60 +4497,12 @@ if st.button("  Run Coverage Agent", type="primary"):
         )
         bar.progress(72)
 
-        # ── Remove isolated garbage stores before routing ─────────────────
-        # Cities with ≤3 stores AND >300km from nearest city cluster
-        # AND store score in bottom 30% → remove from routing (Not in route)
-        _geo_all = [s for s in all_stores if s.get("lat") and s.get("lng") and s.get("score")]
-        if _geo_all:
-            # Calculate 30th percentile score threshold
-            _all_scores = sorted(s.get("score", 0) for s in _geo_all)
-            _p30_score = _all_scores[int(len(_all_scores) * 0.30)] if _all_scores else 0
-
-            # Group stores by city
-            _city_groups = {}
-            for s in _geo_all:
-                _c = str(s.get("city", "") or "").strip()
-                if not _c: _c = "_unknown"
-                if _c not in _city_groups:
-                    _city_groups[_c] = []
-                _city_groups[_c].append(s)
-
-            # Find city centroids for distance calculation
-            _city_centroids = {}
-            for _c, _stores in _city_groups.items():
-                _city_centroids[_c] = (
-                    sum(float(s["lat"]) for s in _stores) / len(_stores),
-                    sum(float(s["lng"]) for s in _stores) / len(_stores),
-                    len(_stores),
-                )
-
-            # For each small city (≤3 stores), check distance to nearest bigger city (>10 stores)
-            _big_cities = {c: v for c, v in _city_centroids.items() if v[2] > 10}
-            _garbage_removed = 0
-            for _c, _stores in _city_groups.items():
-                if len(_stores) > 3:
-                    continue  # not isolated
-                _c_lat, _c_lng, _c_n = _city_centroids[_c]
-                # Find nearest big city
-                _min_dist = float("inf")
-                for _bc, (_bc_lat, _bc_lng, _bc_n) in _big_cities.items():
-                    _d = haversine_m(_c_lat, _c_lng, _bc_lat, _bc_lng) / 1000
-                    if _d < _min_dist:
-                        _min_dist = _d
-                if _min_dist <= 300:
-                    continue  # close enough to a big city — keep
-                # Remote city — remove only bottom 30% score stores
-                for s in _stores:
-                    if s.get("source") == "portfolio":
-                        continue  # never remove portfolio stores
-                    if s.get("score", 0) <= _p30_score:
-                        s["_garbage_removed"] = True
-                        s["rep_id"] = 0
-                        s["exclusion_reason"] = "Isolated remote city — store score in bottom 30%"
-                        _garbage_removed += 1
-
-            if _garbage_removed > 0:
-                status.info(f"Stage 5b — Removed {_garbage_removed} isolated low-value stores from routing.")
+        # ── Stage 5b removed ──────────────────────────────────────────────
+        # The previous "garbage stores" filter measured remoteness as distance
+        # to the global biggest city (e.g. Muscat), so a Lulu in Salalah looked
+        # "remote" even though a rep is based there. Removed entirely. Truly
+        # isolated low-value stores are now caught post-routing per rep / per
+        # day with a hard cap (see Daily capacity enforcement).
 
         # Stage 6: Routes + Time-Based Rep Planning
         rep_recommendation = None
@@ -4601,8 +4519,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         # Normalise each group separately then COMBINE for routing
         priority_all = [s for s in all_stores
                         if s.get("size_tier") in ("Large","Medium","Small")
-                        and s.get("lat") and s.get("lng")
-                        and not s.get("_excluded_low_value_area")]
+                        and s.get("lat") and s.get("lng")]
 
         # Separate by source
         group_cc  = [s for s in priority_all if s.get("source") == "portfolio"]
@@ -5024,20 +4941,79 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # Date conversion moved to AFTER enforcement (enforcement changes assigned_day)
 
-        # ── Daily capacity enforcement ────────────────────────────────────
-        # After all routes are built, enforce daily limits:
-        # For each rep, for each day: if day exceeds MAX_DAY × 1.10,
-        # remove lowest-scoring stores and try to fit them on a lighter
-        # day of the SAME rep. If no day has room → "Not in route".
-        WEEKDAYS_ENF = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
-        # Max VISIT time per day (excluding travel + break)
-        # Daily capacity 550 min - 30 break - ~25% travel overhead = ~390 min visits
-        MAX_DAY_ENF  = 550  # full day capacity (exec + travel + break)
-        MAX_DAY_THRESHOLD = MAX_DAY_ENF  # enforcement triggers above this
+        # ── Daily capacity enforcement (rewritten) ────────────────────────
+        # For each rep × each day:
+        #   1. If the day is over capacity, remove AT MOST 2 stores per day.
+        #      Eligible removals are stores that are BOTH far from this rep's
+        #      centroid AND in the bottom 30% of THIS rep's scores. Large /
+        #      portfolio / dedicated-rule / covered stores are never removed.
+        #   2. Re-route removed stores to another day of the SAME rep, but only
+        #      if the day's existing stores are geographically close (no
+        #      Salalah-on-a-Muscat-day).
+        #   3. Else hand to a NEIGHBOUR rep (centroid within 50 km, same
+        #      geographic proximity check).
+        #   4. Else mark uncovered with a clear reason.
+        # If a rep hits the cap on 2+ days, it is flagged "under-resourced"
+        # — the answer is more reps, not more drops.
+        WEEKDAYS_ENF         = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+        MAX_DAY_ENF          = 550  # full day capacity (exec + travel + break)
+        MAX_DAY_THRESHOLD    = MAX_DAY_ENF
+        MAX_REMOVALS_PER_DAY = 2     # hard ceiling: at most 2 stores removed per rep per day
+        NEIGHBOUR_REP_KM     = 50    # cross-rep transfer distance cap
+        SAME_DAY_KM_MIN      = 25    # always allow same-day re-route if within 25 km
 
         _enf_moved = 0
         _enf_dropped = 0
+        _enf_under_resourced_reps = []
         _enf_rep_ids = sorted(set(s.get("rep_id",0) for s in all_stores if s.get("rep_id",0) > 0))
+
+        def _day_time(stores):
+            """Day time = visit duration + real travel + break."""
+            exec_t = sum(s.get("visit_duration_min", 25) for s in stores)
+            travel_t = 0.0
+            geo = [s for s in stores if s.get("lat") and s.get("lng")]
+            if len(geo) > 1:
+                ordered = sorted(geo, key=lambda s: s.get("day_visit_order", 0))
+                for _i in range(1, len(ordered)):
+                    try:
+                        _la1 = float(ordered[_i-1]["lat"]); _ln1 = float(ordered[_i-1]["lng"])
+                        _la2 = float(ordered[_i]["lat"]); _ln2 = float(ordered[_i]["lng"])
+                        _p = math.pi / 180
+                        _a = (math.sin((_la2-_la1)*_p/2)**2 +
+                              math.cos(_la1*_p)*math.cos(_la2*_p)*
+                              math.sin((_ln2-_ln1)*_p/2)**2)
+                        travel_t += (2*6371*math.asin(math.sqrt(max(0,_a)))/30)*60
+                    except (ValueError, TypeError):
+                        pass
+            return exec_t + round(travel_t) + 30
+
+        def _day_centroid_avg(stores):
+            """Return (lat, lng, avg_dist_to_centroid_m). None lat if empty."""
+            geo = [x for x in stores if x.get("lat") and x.get("lng")]
+            if not geo:
+                return None, None, 0
+            dlat = sum(float(x["lat"]) for x in geo) / len(geo)
+            dlng = sum(float(x["lng"]) for x in geo) / len(geo)
+            if len(geo) == 1:
+                return dlat, dlng, 0
+            dists = [haversine_m(float(x["lat"]), float(x["lng"]), dlat, dlng) for x in geo]
+            return dlat, dlng, sum(dists) / len(dists)
+
+        def _fits_geographically(s, day_stores):
+            """A store is allowed on a day only if it is reasonably close to
+            the day's existing stores — prevents Salalah stores landing on a
+            Muscat day. Empty days are always OK to seed."""
+            if not s.get("lat") or not s.get("lng"):
+                return True
+            dlat, dlng, davg = _day_centroid_avg(day_stores)
+            if dlat is None:
+                return True
+            try:
+                d = haversine_m(float(s["lat"]), float(s["lng"]), dlat, dlng)
+            except (ValueError, TypeError):
+                return True
+            # Allow if within 25 km absolute, OR within 2× the day's internal spread.
+            return d <= max(SAME_DAY_KM_MIN * 1000, 2.0 * davg)
 
         for _enf_rid in _enf_rep_ids:
             _rep_stores = [s for s in all_stores
@@ -5046,63 +5022,100 @@ if st.button("  Run Coverage Agent", type="primary"):
             if not _rep_stores:
                 continue
 
-            # Build per-day view
             _days = {d: [s for s in _rep_stores if s.get("assigned_day") == d] for d in WEEKDAYS_ENF}
 
-            def _day_time(stores):
-                """Day time = visit duration + real travel + break."""
-                exec_t = sum(s.get("visit_duration_min", 25) for s in stores)
-                travel_t = 0.0
-                geo = [s for s in stores if s.get("lat") and s.get("lng")]
-                if len(geo) > 1:
-                    ordered = sorted(geo, key=lambda s: s.get("day_visit_order", 0))
-                    for _i in range(1, len(ordered)):
-                        try:
-                            _la1 = float(ordered[_i-1]["lat"]); _ln1 = float(ordered[_i-1]["lng"])
-                            _la2 = float(ordered[_i]["lat"]); _ln2 = float(ordered[_i]["lng"])
-                            _p = math.pi / 180
-                            _a = (math.sin((_la2-_la1)*_p/2)**2 +
-                                  math.cos(_la1*_p)*math.cos(_la2*_p)*
-                                  math.sin((_ln2-_ln1)*_p/2)**2)
-                            travel_t += (2*6371*math.asin(math.sqrt(max(0,_a)))/30)*60
-                        except (ValueError, TypeError):
-                            pass
-                return exec_t + round(travel_t) + 30
+            # Rep-level reference metrics for "is this store an outlier for this rep?"
+            _rep_geo = [s for s in _rep_stores if s.get("lat") and s.get("lng")]
+            if _rep_geo:
+                _rc_lat = sum(float(s["lat"]) for s in _rep_geo) / len(_rep_geo)
+                _rc_lng = sum(float(s["lng"]) for s in _rep_geo) / len(_rep_geo)
+                _rep_dists_m = [haversine_m(float(s["lat"]), float(s["lng"]), _rc_lat, _rc_lng)
+                                for s in _rep_geo]
+                _rep_avg_dist_m = sum(_rep_dists_m) / len(_rep_dists_m)
+            else:
+                _rc_lat = _rc_lng = 0
+                _rep_avg_dist_m = 0
 
-            _overflow = []  # stores removed from overloaded days
+            _rep_scores = sorted(s.get("score", 0) for s in _rep_stores)
+            _rep_p30 = _rep_scores[int(len(_rep_scores) * 0.30)] if _rep_scores else 0
 
-            # Pass 1: For each overloaded day, remove lowest-scoring stores (keep important ones)
+            def _is_removable(s):
+                """A store can be removed only if it is far from THIS rep's
+                centroid AND in THIS rep's bottom 30% of scores AND not Large /
+                portfolio / dedicated-rule / covered."""
+                if s.get("size_tier") == "Large":
+                    return False
+                if s.get("source") == "portfolio" or s.get("covered"):
+                    return False
+                if s.get("_rule_name"):
+                    return False
+                if not s.get("lat") or not s.get("lng"):
+                    return False
+                try:
+                    d = haversine_m(float(s["lat"]), float(s["lng"]), _rc_lat, _rc_lng)
+                except (ValueError, TypeError):
+                    return False
+                far = (_rep_avg_dist_m > 0 and d > 2.0 * _rep_avg_dist_m)
+                low = (s.get("score", 0) <= _rep_p30)
+                return far and low
+
+            _overflow      = []
+            _rep_moved     = 0
+            _days_at_cap   = 0
+
+            # Pass 1: per-day overflow removal — HARD CAP of 2 per day
             for _day_name in WEEKDAYS_ENF:
-                _day_stores = _days[_day_name]
-                _dt = _day_time(_day_stores)
-                if _dt <= MAX_DAY_THRESHOLD:
+                if _day_time(_days[_day_name]) <= MAX_DAY_THRESHOLD:
                     continue
 
-                # Sort by score ascending — remove lowest first, keep highest
-                _day_stores_sorted = sorted(_day_stores, key=lambda s: s.get("score", 0))
-                while _day_time(_days[_day_name]) > MAX_DAY_THRESHOLD and _day_stores_sorted:
-                    _removed = _day_stores_sorted.pop(0)
-                    _days[_day_name] = [s for s in _days[_day_name] if s is not _removed]
-                    _overflow.append(_removed)
+                # Worst-first candidates: far from rep centroid, low score.
+                def _badness(s):
+                    try:
+                        d = haversine_m(float(s["lat"]), float(s["lng"]), _rc_lat, _rc_lng)
+                    except (ValueError, TypeError):
+                        d = 0
+                    return (d, -s.get("score", 0))
 
-            # Pass 2: Place overflow on SAME rep's other days — most important stores first
-            _overflow.sort(key=lambda s: s.get("score", 0), reverse=True)  # highest score gets first pick
+                candidates = sorted(
+                    [s for s in _days[_day_name] if _is_removable(s)],
+                    key=_badness, reverse=True,
+                )
+
+                removed_here = 0
+                for _cand in candidates:
+                    if removed_here >= MAX_REMOVALS_PER_DAY:
+                        break
+                    if _day_time(_days[_day_name]) <= MAX_DAY_THRESHOLD:
+                        break
+                    _days[_day_name] = [s for s in _days[_day_name] if s is not _cand]
+                    _overflow.append(_cand)
+                    removed_here += 1
+
+                # Day still over after hitting the cap — under-resourced signal
+                if (removed_here >= MAX_REMOVALS_PER_DAY
+                        and _day_time(_days[_day_name]) > MAX_DAY_THRESHOLD):
+                    _days_at_cap += 1
+
+            if _days_at_cap >= 2:
+                _enf_under_resourced_reps.append(_enf_rid)
+
+            # Pass 2: same rep, different day — geographic check required
+            _overflow.sort(key=lambda s: s.get("score", 0), reverse=True)
             for _s in list(_overflow):
                 _sorted_days = sorted(WEEKDAYS_ENF, key=lambda d: _day_time(_days[d]))
                 for _target_day in _sorted_days:
+                    if not _fits_geographically(_s, _days[_target_day]):
+                        continue
                     if _day_time(_days[_target_day]) + _s.get("visit_duration_min", 25) <= MAX_DAY_ENF:
                         _s["assigned_day"] = _target_day
                         _days[_target_day].append(_s)
                         _overflow.remove(_s)
+                        _rep_moved += 1
                         _enf_moved += 1
                         break
 
-            # Pass 3: Try NEARBY reps — most important stores first
-            # Don't just drop — find the nearest rep that has a day with capacity
-            # BUT: dedicated rule stores stay in their rep — never move to other reps
+            # Pass 3: neighbour rep — centroid within 50 km AND geographic fit
             for _s in list(_overflow):
-                # Dedicated rule stores: keep in overflow → they stay unplaced within their rep
-                # rather than moving to a mixed rep
                 if _s.get("_rule_name"):
                     continue
                 if not _s.get("lat") or not _s.get("lng"):
@@ -5115,78 +5128,89 @@ if st.button("  Run Coverage Agent", type="primary"):
                 for _other_rid in _enf_rep_ids:
                     if _other_rid == _enf_rid:
                         continue
-                    # NEVER move non-rule stores into dedicated reps
                     _other_is_dedicated = any(
                         x.get("_rule_name") for x in all_stores if x.get("rep_id") == _other_rid
                     )
                     if _other_is_dedicated:
                         continue
-                    # Get other rep's stores to find centroid
-                    _other_stores = [x for x in all_stores
-                                     if x.get("rep_id") == _other_rid
-                                     and x.get("lat") and x.get("lng")]
-                    if not _other_stores:
+                    _other_stores_all = [x for x in all_stores
+                                         if x.get("rep_id") == _other_rid
+                                         and x.get("lat") and x.get("lng")]
+                    if not _other_stores_all:
                         continue
-                    _o_lat = sum(float(x["lat"]) for x in _other_stores) / len(_other_stores)
-                    _o_lng = sum(float(x["lng"]) for x in _other_stores) / len(_other_stores)
+                    _o_lat = sum(float(x["lat"]) for x in _other_stores_all) / len(_other_stores_all)
+                    _o_lng = sum(float(x["lng"]) for x in _other_stores_all) / len(_other_stores_all)
                     _dist = haversine_m(_s_lat, _s_lng, _o_lat, _o_lng)
-
                     if _dist >= _best_dist:
                         continue
+                    if _dist > NEIGHBOUR_REP_KM * 1000:
+                        continue  # too far — not a real neighbour
 
-                    # Check if any day of this rep has capacity
                     for _d in WEEKDAYS_ENF:
                         _d_stores = [x for x in all_stores
                                      if x.get("rep_id") == _other_rid
                                      and x.get("assigned_day") == _d]
-                        _d_time = _day_time(_d_stores)
-                        if _d_time + _s.get("visit_duration_min", 25) <= MAX_DAY_ENF:
+                        if not _fits_geographically(_s, _d_stores):
+                            continue
+                        if _day_time(_d_stores) + _s.get("visit_duration_min", 25) <= MAX_DAY_ENF:
                             _best_dist = _dist
                             _best_target_rep = _other_rid
                             _best_target_day = _d
-                            break  # found a day — check next rep for closer one
+                            break
 
                 if _best_target_rep is not None:
                     _s["rep_id"] = _best_target_rep
                     _s["assigned_day"] = _best_target_day
                     _overflow.remove(_s)
+                    _rep_moved += 1
                     _enf_moved += 1
 
-            # Pass 4: Truly unplaceable stores → "Not in route"
-            # Dedicated rule stores: put back on lightest day (accept overload)
+            # Pass 4: anything left → uncovered with clear reason
+            #         (dedicated rule stores stay with their rep on lightest day)
             for _s in list(_overflow):
                 if _s.get("_rule_name"):
-                    # Keep in dedicated rep — put on lightest day even if over capacity
                     _lightest = min(WEEKDAYS_ENF, key=lambda d: _day_time(_days[d]))
                     _s["assigned_day"] = _lightest
                     _days[_lightest].append(_s)
                     _overflow.remove(_s)
+                    _rep_moved += 1
                     _enf_moved += 1
                     continue
-            # Remaining non-rule stores → drop
             for _s in _overflow:
-                _s["rep_id"] = 0
-                _s["assigned_day"] = ""
-                _s["day_visit_order"] = 0
+                _s["rep_id"]            = 0
+                _s["assigned_day"]      = ""
+                _s["day_visit_order"]   = 0
                 _s["_dropped_daily_cap"] = True
+                _s["exclusion_reason"]  = (
+                    "Capacity overflow — far from rep centroid and low score; "
+                    "no nearby rep/day with room"
+                )
                 _enf_dropped += 1
 
-            # Log per-rep summary
+            # Per-rep summary
             _day_summary = " · ".join(
                 f"{d[:3]}:{_day_time(_days[d])}min/{len(_days[d])}st"
                 for d in WEEKDAYS_ENF if _days[d]
             )
-            if _overflow or _enf_moved > 0:
+            if _overflow or _rep_moved or _days_at_cap:
                 status.info(
                     f"  Rep {_enf_rid}: {_day_summary}"
-                    + (f" | moved {_enf_moved} stores between days" if _enf_moved else "")
-                    + (f" | dropped {len(_overflow)} stores" if _overflow else "")
+                    + (f" | moved {_rep_moved}" if _rep_moved else "")
+                    + (f" | dropped {len(_overflow)}" if _overflow else "")
+                    + (f" | {_days_at_cap} day(s) hit removal cap" if _days_at_cap else "")
                 )
 
         if _enf_moved > 0 or _enf_dropped > 0:
             status.info(
                 f"Stage 6b — Daily enforcement: {_enf_moved} stores moved, "
-                f"{_enf_dropped} dropped."
+                f"{_enf_dropped} dropped (cap: max {MAX_REMOVALS_PER_DAY} per rep per day)."
+            )
+
+        if _enf_under_resourced_reps:
+            status.warning(
+                f"  Under-resourced reps: {_enf_under_resourced_reps} — hit the per-day "
+                f"removal cap (max {MAX_REMOVALS_PER_DAY}) on 2+ days. Add reps for these "
+                f"territories or reduce visit frequency rather than dropping more stores."
             )
 
         # ── Absorb tiny reps (< 15 stores) into nearest rep with capacity ─
