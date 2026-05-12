@@ -4854,14 +4854,50 @@ if st.button("  Run Coverage Agent", type="primary"):
                 for s, lbl in zip(_mixed_pool, _mixed_labels):
                     s["rep_id"] = int(lbl) + 1 + _n_dedicated_reps
 
-                for zone in range(len(_unique_ml)):
-                    zs = [_mixed_pool[i] for i in range(len(_mixed_pool)) if _mixed_labels[i] == zone]
+                # ── Overload safety: iteratively split any rep zone whose
+                # visit-only load exceeds 110% capacity. Earlier this whole
+                # block had no overload protection — k-means could produce
+                # zones at 200%+. Now: each pass finds the worst overloaded
+                # zone, moves its geographically far half to a NEW rep_id,
+                # repeats until all zones fit (max 30 passes).
+                _MAX_UTIL_REC = eff_cap_rec * 1.10
+                def _zload(stores):
+                    return sum(s.get("visits_per_month",1) * s.get("visit_duration_min",25)
+                               for s in stores)
+                _max_existing_rid = max((s.get("rep_id", 0) for s in _mixed_pool), default=0)
+                _next_split_rid = max(_max_existing_rid, _n_dedicated_reps) + 1
+                for _split_iter in range(30):
+                    _rep_groups = {}
+                    for s in _mixed_pool:
+                        _rep_groups.setdefault(s.get("rep_id"), []).append(s)
+                    _any_split = False
+                    for _rid, _zs in list(_rep_groups.items()):
+                        if _zload(_zs) <= _MAX_UTIL_REC or len(_zs) < 2:
+                            continue
+                        _c_lat = sum(s["lat"] for s in _zs) / len(_zs)
+                        _c_lng = sum(s["lng"] for s in _zs) / len(_zs)
+                        _zs_sorted = sorted(_zs, key=lambda s:
+                            haversine_m(_c_lat, _c_lng, s["lat"], s["lng"]))
+                        _half = max(1, len(_zs_sorted) // 2)
+                        _far_half = _zs_sorted[-_half:]
+                        _new_rid = _next_split_rid
+                        _next_split_rid += 1
+                        for s in _far_half:
+                            s["rep_id"] = _new_rid
+                        _any_split = True
+                    if not _any_split:
+                        break
+
+                # Rebuild zone_centres from FINAL rep_ids (after any splits)
+                _final_rids = sorted(set(s.get("rep_id") for s in _mixed_pool
+                                          if s.get("rep_id")))
+                for _rid in _final_rids:
+                    zs = [s for s in _mixed_pool if s.get("rep_id") == _rid]
                     if not zs:
                         continue
-                    _zid = zone + 1 + _n_dedicated_reps
-                    z_time = sum(s.get("visits_per_month",1) * s.get("visit_duration_min",25) for s in zs)
+                    z_time = _zload(zs)
                     zone_centres.append({
-                        "zone":             _zid,
+                        "zone":             _rid,
                         "centre_lat":       round(sum(s["lat"] for s in zs) / len(zs), 4),
                         "centre_lng":       round(sum(s["lng"] for s in zs) / len(zs), 4),
                         "store_count":      len(zs),
@@ -4873,7 +4909,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                         "rule_name":        "Mixed",
                         "rule_type":        "",
                     })
-                actual_reps += len(_unique_ml)
+                actual_reps += len(_final_rids)
                 min_util_pct = 65  # for rep_recommendation dict
 
             rep_recommendation = {
