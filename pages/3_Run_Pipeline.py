@@ -1057,48 +1057,56 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
             break
 
     # Final safety: any zone still over 110% after the convergence loop gets
-    # force-split into 2 reps (geographic far half → new rep). One last pass.
-    _final_force = []
-    _next_zone_f = max(z["zone"] for z in zone_centres) + 1 if zone_centres else 1
-    for zc in zone_centres:
-        if zc["time_needed_min"] <= MAX_UTIL:
-            _final_force.append(zc); continue
-        zid = zc["zone"]
-        zstores = [s for s in priority_geo if s.get("rep_id") == zid]
-        if len(zstores) < 2:
-            _final_force.append(zc); continue
-        c_lat = sum(s["lat"] for s in zstores) / len(zstores)
-        c_lng = sum(s["lng"] for s in zstores) / len(zstores)
-        zstores_sorted = sorted(zstores, key=lambda s: haversine_m(c_lat, c_lng, s["lat"], s["lng"]))
-        half = max(1, len(zstores_sorted) // 2)
-        far_half = zstores_sorted[-half:]
-        near_half = zstores_sorted[:-half]
-        for s in near_half: s["rep_id"] = zid
-        new_zid = _next_zone_f; _next_zone_f += 1
-        for s in far_half: s["rep_id"] = new_zid
-        for label, stores_ in (("near", near_half), ("far", far_half)):
-            if not stores_: continue
-            sm, sd = calc_zone_monthly_time(stores_, avg_speed_kmh, daily_minutes)
-            se = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in stores_)
-            _final_force.append({
-                "zone":            zid if label == "near" else new_zid,
-                "centre_lat":      round(sum(s["lat"] for s in stores_)/len(stores_), 4),
-                "centre_lng":      round(sum(s["lng"] for s in stores_)/len(stores_), 4),
-                "store_count":     len(stores_),
-                "time_needed_min": sm,
-                "exec_min":        round(se),
-                "capacity_min":    eff_cap,
-                "utilisation_pct": round(sm / eff_cap * 100),
-                "daily_breakdown": sd,
-            })
-    zone_centres = _final_force
+    # force-split into 2 reps (geographic far half → new rep). Iterative —
+    # keep splitting until no zone is over 110%, capped at 20 iterations.
+    for _fs_pass in range(20):
+        _final_force = []
+        _next_zone_f = max(z["zone"] for z in zone_centres) + 1 if zone_centres else 1
+        _any_split = False
+        for zc in zone_centres:
+            if zc["time_needed_min"] <= MAX_UTIL:
+                _final_force.append(zc); continue
+            zid = zc["zone"]
+            zstores = [s for s in priority_geo if s.get("rep_id") == zid]
+            if len(zstores) < 2:
+                _final_force.append(zc); continue
+            c_lat = sum(s["lat"] for s in zstores) / len(zstores)
+            c_lng = sum(s["lng"] for s in zstores) / len(zstores)
+            zstores_sorted = sorted(zstores, key=lambda s: haversine_m(c_lat, c_lng, s["lat"], s["lng"]))
+            half = max(1, len(zstores_sorted) // 2)
+            far_half = zstores_sorted[-half:]
+            near_half = zstores_sorted[:-half]
+            for s in near_half: s["rep_id"] = zid
+            new_zid = _next_zone_f; _next_zone_f += 1
+            for s in far_half: s["rep_id"] = new_zid
+            for label, stores_ in (("near", near_half), ("far", far_half)):
+                if not stores_: continue
+                sm, sd = calc_zone_monthly_time(stores_, avg_speed_kmh, daily_minutes)
+                se = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in stores_)
+                _final_force.append({
+                    "zone":            zid if label == "near" else new_zid,
+                    "centre_lat":      round(sum(s["lat"] for s in stores_)/len(stores_), 4),
+                    "centre_lng":      round(sum(s["lng"] for s in stores_)/len(stores_), 4),
+                    "store_count":     len(stores_),
+                    "time_needed_min": sm,
+                    "exec_min":        round(se),
+                    "capacity_min":    eff_cap,
+                    "utilisation_pct": round(sm / eff_cap * 100),
+                    "daily_breakdown": sd,
+                })
+            _any_split = True
+        zone_centres = _final_force
+        if not _any_split:
+            break
 
     # ── Step 5: Merge underloaded zones ──────────────────────────────────────
-    # After splitting, some zones may be very small. Merge any zone < 40%
+    # After splitting, some zones may be very small. Merge any zone < 25%
     # utilisation into its nearest neighbour, as long as the merged zone
-    # stays under 100% utilisation. Single pass only.
-    MIN_LOAD   = eff_cap * 0.40
-    MAX_MERGED = eff_cap * 1.00
+    # stays under 85% (leaves headroom so merge can't push back over 100%).
+    # Tighter thresholds than before — prevents merge from undoing the
+    # force-splits added above.
+    MIN_LOAD   = eff_cap * 0.25
+    MAX_MERGED = eff_cap * 0.85
 
     zone_centres.sort(key=lambda z: z["time_needed_min"])
     merged_ids = set()
@@ -1142,6 +1150,59 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
         merged_ids.add(zc["zone"])
 
     zone_centres = [z for z in zone_centres if z["zone"] not in merged_ids]
+
+    # ── Step 6: Post-merge safety — any zone over 110% gets force-split again
+    # Recalculate utilisation from actual stores (merge can move stores, so
+    # the cached time_needed_min may be slightly off). Iterative.
+    for _post_pass in range(20):
+        # Recompute utilisation for each zone from actual store assignments
+        for zc in zone_centres:
+            zs = [s for s in priority_geo if s.get("rep_id") == zc["zone"]]
+            if zs:
+                tm, td = calc_zone_monthly_time(zs, avg_speed_kmh, daily_minutes)
+                zc["time_needed_min"] = tm
+                zc["utilisation_pct"] = round(tm / eff_cap * 100)
+                zc["store_count"]     = len(zs)
+                zc["daily_breakdown"] = td
+
+        out = []
+        nz = max((z["zone"] for z in zone_centres), default=0) + 1
+        split_done = False
+        for zc in zone_centres:
+            if zc["time_needed_min"] <= MAX_UTIL:
+                out.append(zc); continue
+            zid = zc["zone"]
+            zstores = [s for s in priority_geo if s.get("rep_id") == zid]
+            if len(zstores) < 2:
+                out.append(zc); continue
+            c_lat = sum(s["lat"] for s in zstores) / len(zstores)
+            c_lng = sum(s["lng"] for s in zstores) / len(zstores)
+            zstores_sorted = sorted(zstores, key=lambda s: haversine_m(c_lat, c_lng, s["lat"], s["lng"]))
+            half = max(1, len(zstores_sorted) // 2)
+            far_half = zstores_sorted[-half:]
+            near_half = zstores_sorted[:-half]
+            for s in near_half: s["rep_id"] = zid
+            new_zid = nz; nz += 1
+            for s in far_half: s["rep_id"] = new_zid
+            for label, stores_ in (("near", near_half), ("far", far_half)):
+                if not stores_: continue
+                sm, sd = calc_zone_monthly_time(stores_, avg_speed_kmh, daily_minutes)
+                se = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in stores_)
+                out.append({
+                    "zone":            zid if label == "near" else new_zid,
+                    "centre_lat":      round(sum(s["lat"] for s in stores_)/len(stores_), 4),
+                    "centre_lng":      round(sum(s["lng"] for s in stores_)/len(stores_), 4),
+                    "store_count":     len(stores_),
+                    "time_needed_min": sm,
+                    "exec_min":        round(se),
+                    "capacity_min":    eff_cap,
+                    "utilisation_pct": round(sm / eff_cap * 100),
+                    "daily_breakdown": sd,
+                })
+            split_done = True
+        zone_centres = out
+        if not split_done:
+            break
 
     actual_reps = len(zone_centres)
     return zone_centres, actual_reps
