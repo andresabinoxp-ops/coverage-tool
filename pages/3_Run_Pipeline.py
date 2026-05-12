@@ -5051,7 +5051,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     "min_utilisation_pct": min_util_pct,
                     "under_utilised_zones": [z["zone"] for z in under_util],
                     "zone_centres":        kept_zones_f,
-                    "stores_rebalanced":   _n_moved,
+                    "stores_rebalanced":   0,  # legacy field — rebalancing is now done per-day in build_daily_routes
                     "sf_rules_applied":    len(_sf_rules),
                     "sf_warnings":         _sf_warnings + _overload_warnings,
                 }
