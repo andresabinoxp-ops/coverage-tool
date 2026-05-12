@@ -149,38 +149,25 @@ if rep_rec:
     monthly_eff_cap  = (daily_mins - break_mins) * work_days  # 450 × 22 = 9,900 min (exec+travel)
     monthly_break    = break_mins * work_days            # 30 × 22  =   660 min
 
-    # total_mins = exec+travel from zone_centres (no break) — this is what drives rep count
-    # rep count = ceil(total_mins / monthly_eff_cap)
+    # exec+travel monthly across all reps — this is what drives capacity
     zone_cs           = rep_rec.get("zone_centres", [])
     exec_travel_total = rep_rec.get("total_minutes_needed", 0) or sum(z.get("time_needed_min",0) for z in zone_cs)
-    n_reps_actual     = max(rec_reps, 1)
-    break_total       = n_reps_actual * monthly_break
-    display_total     = exec_travel_total + break_total  # exec+travel+break
 
-    # Correct rec_reps from numbers (guard against pipeline bugs)
-    import math as _math
-    _ideal_reps = max(1, _math.ceil(exec_travel_total / monthly_eff_cap)) if exec_travel_total > 0 else rec_reps
-    # Use actual_routed_reps if available (includes dedicated + splits), else recommended_reps, else ideal
-    _actual_routed = rep_rec.get("actual_routed_reps", rec_reps)
-    correct_reps = _actual_routed if _actual_routed else _ideal_reps
+    # Use actual_routed_reps when set (truth from store rep_ids after splits/drops).
+    # Fall back to recommended_reps only when the field is missing.
+    correct_reps = rep_rec.get("actual_routed_reps") or rec_reps or 1
 
     m1, m2, m3, m4 = st.columns(4)
-    if mode == "recommended":
-        m1.metric("Recommended reps", correct_reps,
-            help=f"{correct_reps} reps = dedicated + mixed (after capacity splits). "
-                 f"Ideal by pure capacity math: {_ideal_reps}")
-    else:
-        m1.metric("Fixed reps", rec_reps)
+    m1.metric("Recommended reps" if mode == "recommended" else "Reps", correct_reps)
 
+    # Placeholder — overwritten with the real total below once the rep workload
+    # table is computed (exec + travel + break).
     top_time_placeholder = m2.empty()
-    top_time_placeholder.metric("Exec + Travel / month",
-        f"{exec_travel_total:,.0f} min",
-        help=f"Execution + inter-store travel across all {correct_reps} rep(s). Excludes break.")
+    top_time_placeholder.metric("Exec + Travel / month", f"{exec_travel_total:,.0f} min")
+
     _total_capacity = correct_reps * monthly_cap_full
-    m3.metric("Total capacity / month",
-        f"{_total_capacity:,} min",
-        help=f"{correct_reps} reps × {daily_mins} min/day × {work_days} days = {_total_capacity:,} min total. "
-             f"Per-rep effective (excl. break): {monthly_eff_cap:,} min")
+    m3.metric("Total capacity / month", f"{_total_capacity:,} min")
+
     if cur_reps > 0:
         shortfall = correct_reps - cur_reps
         m4.metric("vs Current headcount",
@@ -189,19 +176,11 @@ if rep_rec:
     else:
         m4.metric("Current headcount", "Not provided")
 
-    # Utilisation caption
-    total_capacity = correct_reps * monthly_eff_cap if correct_reps > 0 else monthly_eff_cap
-    if total_capacity > 0 and exec_travel_total > 0:
-        util = round(exec_travel_total / total_capacity * 100)
-        st.caption(
-            f"Utilisation: {util}% · "
-
-
-
-            f"{exec_travel_total:,} min needed ÷ ({correct_reps} reps × {monthly_eff_cap:,} min) · "
-            f"rep count = ceil({exec_travel_total:,} ÷ {monthly_eff_cap:,}) = {correct_reps} · "
-            f"{break_mins} min break/day excluded from capacity calc · {speed} km/h travel speed"
-        )
+    # Utilisation
+    total_capacity_eff = correct_reps * monthly_eff_cap if correct_reps > 0 else monthly_eff_cap
+    if total_capacity_eff > 0 and exec_travel_total > 0:
+        util = round(exec_travel_total / total_capacity_eff * 100)
+        st.caption(f"Utilisation: {util}%")
 
     # Shortfall message
     if cur_reps > 0 and exec_travel_total > 0:
@@ -248,11 +227,12 @@ if rep_rec:
         if _ded_zones:
             for _dz in _ded_zones:
                 _util_color = "#2E7D32" if _dz.get("utilisation_pct", 0) <= 100 else "#B71C1C"
+                _rt = _dz.get("rule_type","")
+                _rt_str = f" ({_rt})" if _rt else ""
                 st.markdown(
                     f'<div style="background:#F8F9FA;border:1px solid #E0E0E0;border-left:4px solid #0D47A1;'
                     f'border-radius:6px;padding:0.5rem 0.8rem;margin:0.3rem 0;font-size:0.85rem">'
-                    f'Rep {_dz.get("zone","?")} — <strong>{_dz.get("rule_name","")}</strong> '
-                    f'({_dz.get("rule_type","")}) · '
+                    f'Rep {_dz.get("zone","?")} — <strong>{_dz.get("rule_name","")}</strong>{_rt_str} · '
                     f'{_dz.get("store_count",0)} stores · '
                     f'{_dz.get("time_needed_min",0):,} min · '
                     f'<span style="color:{_util_color};font-weight:700">'
@@ -322,11 +302,7 @@ if rep_rec:
 
         # Update top metric with actual table total (exec+travel+break)
         real_total = int(rdf["Total needed (min)"].sum())
-        real_et    = int(rdf["Execution (min)"].sum()) + int(rdf["Travel (min)"].sum())
-        real_brk   = int(rdf["Break (min)"].sum())
-        top_time_placeholder.metric("Time needed / month (total)",
-            f"{real_total:,.0f} min",
-            help=f"Execution: {real_et:,} min + Break: {real_brk:,} min = {real_total:,} min total.")
+        top_time_placeholder.metric("Time needed / month", f"{real_total:,.0f} min")
 
         col_order = ["Rep","Assignment","Stores","Current","Gap (new)",
                      "Execution (min)","Travel (min)","Break (min)",
@@ -469,5 +445,4 @@ with col3:
         f"rep_routes_{mkt_safe}.geojson", "application/json")
 
 st.markdown("---")
-st.info("  **To save this run for later** — go to the **Routes** page and click "
-        "**'Download full snapshot (JSON)'**. Upload it on the **Dashboard** page to view it anytime.")
+st.caption("To save this run: **Routes page → Download full snapshot (JSON)**, then upload on **Dashboard**.")

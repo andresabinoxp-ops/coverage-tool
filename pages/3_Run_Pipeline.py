@@ -4869,6 +4869,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                     return tm
                 _max_existing_rid = max((s.get("rep_id", 0) for s in _mixed_pool), default=0)
                 _next_split_rid = max(_max_existing_rid, _n_dedicated_reps) + 1
+                _splits_done = 0
+                _initial_rep_count = len({s.get("rep_id") for s in _mixed_pool if s.get("rep_id")})
                 for _split_iter in range(30):
                     _rep_groups = {}
                     for s in _mixed_pool:
@@ -4888,8 +4890,16 @@ if st.button("  Run Coverage Agent", type="primary"):
                         for s in _far_half:
                             s["rep_id"] = _new_rid
                         _any_split = True
+                        _splits_done += 1
                     if not _any_split:
                         break
+                if _splits_done > 0:
+                    _final_rep_count = len({s.get("rep_id") for s in _mixed_pool if s.get("rep_id")})
+                    status.info(
+                        f"  Overload safety: {_splits_done} split(s) — "
+                        f"{_initial_rep_count} reps → {_final_rep_count} reps "
+                        f"to keep every rep ≤ 110% utilisation."
+                    )
 
                 # Rebuild zone_centres from FINAL rep_ids — write the
                 # exec+travel value into time_needed_min and utilisation_pct
@@ -5855,11 +5865,18 @@ if st.button("  Run Coverage Agent", type="primary"):
             rep_recommendation["total_minutes_needed"] = round(zc_total)
             rep_recommendation["monthly_cap_per_rep"]  = round(_eff_cap)
             rep_recommendation["recommended_reps"]     = correct_reps
-            # In fixed mode, preserve the user's configured rep count
-            if rep_recommendation.get("mode") == "fixed":
-                rep_recommendation["actual_routed_reps"] = rep_recommendation.get("rep_count", n_kept)
-            else:
-                rep_recommendation["actual_routed_reps"] = n_kept
+            # Always report the actual unique rep_ids with routed stores —
+            # this is the truth, regardless of mode or configured count.
+            rep_recommendation["actual_routed_reps"]   = n_kept
+
+            # Final summary so the run log shows the same numbers Results does.
+            _util_final = round(zc_total / max(_eff_cap * n_kept, 1) * 100)
+            status.success(
+                f"  Final: {n_kept} reps routed · "
+                f"{round(zc_total):,} min exec+travel · "
+                f"capacity {n_kept * _eff_cap:,} min · "
+                f"utilisation {_util_final}%"
+            )
 
         bar.progress(80)
 
