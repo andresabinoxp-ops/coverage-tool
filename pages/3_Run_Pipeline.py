@@ -5003,11 +5003,66 @@ if st.button("  Run Coverage Agent", type="primary"):
                 for s, lbl in zip(_mixed_pool, labels):
                     s["rep_id"] = int(lbl) + 1 + _n_dedicated_reps
 
-                # Calculate time utilisation per rep
+                # ── Fixed-mode honest capacity: drop overflow, don't overload ─
+                # User picked N reps. We honor N strictly. For each rep that
+                # would be over 110% (exec + travel), drop its lowest-priority
+                # stores until the rep fits. Dropped stores become uncovered
+                # with a clear reason — user can see what their chosen N is
+                # too small to cover.
+                _FIXED_CAP = effective_daily * working_days * 1.10  # 110%
+                _dropped_fixed = 0
+                _rep_groups_f = {}
+                for s in _mixed_pool:
+                    if s.get("rep_id"):
+                        _rep_groups_f.setdefault(s["rep_id"], []).append(s)
+
+                for _rid, _zs in _rep_groups_f.items():
+                    if not _zs:
+                        continue
+                    _zt, _ = calc_zone_monthly_time(_zs, avg_speed, daily_minutes)
+                    if _zt <= _FIXED_CAP:
+                        continue
+                    # Sort by priority ascending — drop lowest first
+                    # Never drop: Large, portfolio, dedicated, covered
+                    def _droppable(s):
+                        return (s.get("size_tier") != "Large"
+                                and s.get("source") != "portfolio"
+                                and not s.get("covered")
+                                and not s.get("_rule_name"))
+                    _zs_sorted = sorted(
+                        _zs,
+                        key=lambda s: (s.get("score", 0), s.get("visits_per_month", 1)),
+                    )
+                    _kept = list(_zs)
+                    for _cand in _zs_sorted:
+                        if not _droppable(_cand):
+                            continue
+                        _zt_now, _ = calc_zone_monthly_time(_kept, avg_speed, daily_minutes)
+                        if _zt_now <= _FIXED_CAP:
+                            break
+                        _kept = [s for s in _kept if s is not _cand]
+                        _cand["rep_id"]            = 0
+                        _cand["plan_visits"]       = 0
+                        _cand["assigned_day"]      = ""
+                        _cand["day_visit_order"]   = 0
+                        _cand["exclusion_reason"]  = (
+                            f"Fixed mode: chosen rep count ({rep_count}) too small "
+                            f"to cover this store — lowest-priority drop"
+                        )
+                        _dropped_fixed += 1
+
+                if _dropped_fixed > 0:
+                    status.warning(
+                        f"Fixed mode capacity cap: dropped {_dropped_fixed} low-priority "
+                        f"stores from overloaded reps. Increase rep_count to cover them."
+                    )
+
+                # Calculate time utilisation per rep (after capacity-drop)
                 zone_centres = list(_dedicated_zones)  # start with dedicated zones
                 monthly_cap  = effective_daily * working_days
                 for zone in range(len(_unique_labels)):
-                    zone_stores = [_mixed_pool[i] for i in range(len(_mixed_pool)) if labels[i] == zone]
+                    zone_stores = [_mixed_pool[i] for i in range(len(_mixed_pool))
+                                   if labels[i] == zone and _mixed_pool[i].get("rep_id")]
                     if not zone_stores:
                         continue
                     _zid = zone + 1 + _n_dedicated_reps
