@@ -4855,15 +4855,18 @@ if st.button("  Run Coverage Agent", type="primary"):
                     s["rep_id"] = int(lbl) + 1 + _n_dedicated_reps
 
                 # ── Overload safety: iteratively split any rep zone whose
-                # visit-only load exceeds 110% capacity. Earlier this whole
-                # block had no overload protection — k-means could produce
-                # zones at 200%+. Now: each pass finds the worst overloaded
-                # zone, moves its geographically far half to a NEW rep_id,
-                # repeats until all zones fit (max 30 passes).
+                # exec + travel load exceeds 110% capacity. Travel can be
+                # the dominant cost on geographically spread reps, so the
+                # check uses calc_zone_monthly_time (exec+travel) rather
+                # than visit-only minutes.
                 _MAX_UTIL_REC = eff_cap_rec * 1.10
                 def _zload(stores):
-                    return sum(s.get("visits_per_month",1) * s.get("visit_duration_min",25)
-                               for s in stores)
+                    # exec + travel monthly time — matches the dashboard
+                    # utilisation formula
+                    if not stores:
+                        return 0
+                    tm, _ = calc_zone_monthly_time(stores, avg_speed, daily_minutes)
+                    return tm
                 _max_existing_rid = max((s.get("rep_id", 0) for s in _mixed_pool), default=0)
                 _next_split_rid = max(_max_existing_rid, _n_dedicated_reps) + 1
                 for _split_iter in range(30):
@@ -4888,14 +4891,16 @@ if st.button("  Run Coverage Agent", type="primary"):
                     if not _any_split:
                         break
 
-                # Rebuild zone_centres from FINAL rep_ids (after any splits)
+                # Rebuild zone_centres from FINAL rep_ids — write the
+                # exec+travel value into time_needed_min and utilisation_pct
+                # so the dashboard matches.
                 _final_rids = sorted(set(s.get("rep_id") for s in _mixed_pool
                                           if s.get("rep_id")))
                 for _rid in _final_rids:
                     zs = [s for s in _mixed_pool if s.get("rep_id") == _rid]
                     if not zs:
                         continue
-                    z_time = _zload(zs)
+                    z_time, _ = calc_zone_monthly_time(zs, avg_speed, daily_minutes)
                     zone_centres.append({
                         "zone":             _rid,
                         "centre_lat":       round(sum(s["lat"] for s in zs) / len(zs), 4),
