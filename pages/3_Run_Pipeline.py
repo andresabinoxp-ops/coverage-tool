@@ -939,11 +939,15 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
         })
 
     # ── Step 4: Split overloaded zones ──────────────────────────────────────
-    # If any zone exceeds 100% utilisation, split it into 2 zones using k-means.
-    # Repeat until no zone exceeds 110% (allow small buffer).
+    # If any zone exceeds 110% utilisation, split it into 2+ zones using k-means.
+    # Loop until no zone is over 110% (capped at 30 passes for safety).
+    # If still overloaded after 30 passes (k-means produces unbalanced splits on
+    # dense city clusters), force-split by adding a NEW rep with the furthest
+    # half of the worst zone's stores. This guarantees we never return a
+    # routing plan with a zone running over capacity.
     MAX_UTIL = eff_cap * 1.10  # 110% hard ceiling
 
-    for _split_pass in range(5):  # max 5 split passes
+    for _split_pass in range(30):
         _did_split = False
         new_zone_centres = []
         _next_zone = max(z["zone"] for z in zone_centres) + 1 if zone_centres else 1
@@ -964,6 +968,61 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
             n_split = max(2, math.ceil(zc["time_needed_min"] / eff_cap))
             pts_z = [(s["lat"], s["lng"]) for s in zstores]
             labels_z = kmeans_simple(pts_z, n_split)
+
+            # Check k-means produced more than one non-empty cluster — otherwise
+            # fall through to the force-split below.
+            cluster_sizes = [sum(1 for lbl in labels_z if lbl == sub) for sub in range(n_split)]
+            non_empty = sum(1 for c in cluster_sizes if c > 0)
+
+            if non_empty < 2:
+                # Force-split: take the half furthest from the centroid as a new zone.
+                c_lat = sum(s["lat"] for s in zstores) / len(zstores)
+                c_lng = sum(s["lng"] for s in zstores) / len(zstores)
+                zstores_sorted = sorted(
+                    zstores,
+                    key=lambda s: haversine_m(c_lat, c_lng, s["lat"], s["lng"]),
+                )
+                half = max(1, len(zstores_sorted) // 2)
+                far_half = zstores_sorted[-half:]
+                near_half = zstores_sorted[:-half]
+
+                # Original zone keeps near_half
+                for s in near_half:
+                    s["rep_id"] = zid
+                if near_half:
+                    nm, nd = calc_zone_monthly_time(near_half, avg_speed_kmh, daily_minutes)
+                    ne = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in near_half)
+                    new_zone_centres.append({
+                        "zone":            zid,
+                        "centre_lat":      round(sum(s["lat"] for s in near_half)/len(near_half), 4),
+                        "centre_lng":      round(sum(s["lng"] for s in near_half)/len(near_half), 4),
+                        "store_count":     len(near_half),
+                        "time_needed_min": nm,
+                        "exec_min":        round(ne),
+                        "capacity_min":    eff_cap,
+                        "utilisation_pct": round(nm / eff_cap * 100),
+                        "daily_breakdown": nd,
+                    })
+                # New rep takes far_half
+                new_zid = _next_zone
+                _next_zone += 1
+                for s in far_half:
+                    s["rep_id"] = new_zid
+                fm, fd = calc_zone_monthly_time(far_half, avg_speed_kmh, daily_minutes)
+                fe = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in far_half)
+                new_zone_centres.append({
+                    "zone":            new_zid,
+                    "centre_lat":      round(sum(s["lat"] for s in far_half)/len(far_half), 4),
+                    "centre_lng":      round(sum(s["lng"] for s in far_half)/len(far_half), 4),
+                    "store_count":     len(far_half),
+                    "time_needed_min": fm,
+                    "exec_min":        round(fe),
+                    "capacity_min":    eff_cap,
+                    "utilisation_pct": round(fm / eff_cap * 100),
+                    "daily_breakdown": fd,
+                })
+                _did_split = True
+                continue
 
             for sub in range(n_split):
                 sub_stores = [zstores[i] for i in range(len(zstores)) if labels_z[i] == sub]
@@ -996,6 +1055,43 @@ def plan_reps_by_supercity(supercities, priority_set, daily_minutes=480,
         zone_centres = new_zone_centres
         if not _did_split:
             break
+
+    # Final safety: any zone still over 110% after the convergence loop gets
+    # force-split into 2 reps (geographic far half → new rep). One last pass.
+    _final_force = []
+    _next_zone_f = max(z["zone"] for z in zone_centres) + 1 if zone_centres else 1
+    for zc in zone_centres:
+        if zc["time_needed_min"] <= MAX_UTIL:
+            _final_force.append(zc); continue
+        zid = zc["zone"]
+        zstores = [s for s in priority_geo if s.get("rep_id") == zid]
+        if len(zstores) < 2:
+            _final_force.append(zc); continue
+        c_lat = sum(s["lat"] for s in zstores) / len(zstores)
+        c_lng = sum(s["lng"] for s in zstores) / len(zstores)
+        zstores_sorted = sorted(zstores, key=lambda s: haversine_m(c_lat, c_lng, s["lat"], s["lng"]))
+        half = max(1, len(zstores_sorted) // 2)
+        far_half = zstores_sorted[-half:]
+        near_half = zstores_sorted[:-half]
+        for s in near_half: s["rep_id"] = zid
+        new_zid = _next_zone_f; _next_zone_f += 1
+        for s in far_half: s["rep_id"] = new_zid
+        for label, stores_ in (("near", near_half), ("far", far_half)):
+            if not stores_: continue
+            sm, sd = calc_zone_monthly_time(stores_, avg_speed_kmh, daily_minutes)
+            se = sum(s.get("visits_per_month",1)*s.get("visit_duration_min",25) for s in stores_)
+            _final_force.append({
+                "zone":            zid if label == "near" else new_zid,
+                "centre_lat":      round(sum(s["lat"] for s in stores_)/len(stores_), 4),
+                "centre_lng":      round(sum(s["lng"] for s in stores_)/len(stores_), 4),
+                "store_count":     len(stores_),
+                "time_needed_min": sm,
+                "exec_min":        round(se),
+                "capacity_min":    eff_cap,
+                "utilisation_pct": round(sm / eff_cap * 100),
+                "daily_breakdown": sd,
+            })
+    zone_centres = _final_force
 
     # ── Step 5: Merge underloaded zones ──────────────────────────────────────
     # After splitting, some zones may be very small. Merge any zone < 40%
@@ -2099,14 +2195,20 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
         _cluster_exec = sum(s.get("visit_duration_min", 25) for s in _cluster)
         # If cluster is too big for one day, split across multiple days
         if _cluster_exec > MAX_DAY - BREAK - 60:  # leave room for travel + break
-            # Split cluster into day-sized chunks using k-means
-            _n_days = max(1, min(len(active_days), math.ceil(_cluster_exec / (MAX_DAY - BREAK - 60))))
+            _n_days = max(1, min(len(active_days),
+                                 math.ceil(_cluster_exec / (MAX_DAY - BREAK - 60))))
             if len(_cluster) > _n_days:
-                _c_pts = [(s["lat"], s["lng"]) for s in _cluster]
-                _c_labels = kmeans_simple(_c_pts, _n_days)
+                # Balanced chunk split (replaces k-means which produced unbalanced
+                # sub-clusters on dense city data — left one day with 60+ stores).
+                # NN-sort first so each contiguous chunk stays geographically tight.
+                _ordered = nn_sequence(_cluster)
+                _chunk = len(_ordered) // _n_days
+                _rem   = len(_ordered) % _n_days
+                _idx   = 0
                 for _sub in range(_n_days):
-                    _sub_stores = [_cluster[i] for i in range(len(_cluster)) if _c_labels[i] == _sub]
-                    # Find lightest day
+                    _size = _chunk + (1 if _sub < _rem else 0)
+                    _sub_stores = _ordered[_idx:_idx + _size]
+                    _idx += _size
                     _lightest = min(active_days, key=lambda d: _day_loads[d])
                     day_groups[_lightest].extend(_sub_stores)
                     _day_loads[_lightest] += sum(s.get("visit_duration_min", 25) for s in _sub_stores)
@@ -2233,6 +2335,48 @@ def build_daily_routes(rep_stores, year=None, month=None, daily_minutes=480, avg
                     break
 
         if not changed:
+            break
+
+    # ── Hard daily cap: cross-city moves allowed as last resort ──────────────
+    # The earlier rebalance keeps city groups intact when possible. If after
+    # convergence a day is STILL over MAX_DAY (e.g., one city has more stores
+    # than fit on one day even after splitting), force-move its
+    # lowest-priority stores to the lightest day, even if that mixes cities.
+    for _hc_pass in range(30):
+        overloaded = [d for d in active_days
+                      if day_metrics(day_groups[d])[2] > MAX_DAY]
+        if not overloaded:
+            break
+        _moved_any = False
+        for day in overloaded:
+            stores = day_groups[day]
+            if not stores:
+                continue
+            # Lowest priority first: lowest score, lowest vpm
+            stores_by_pri = sorted(
+                stores,
+                key=lambda s: (s.get("score", 0), s.get("visits_per_month", 1)),
+            )
+            for cand in stores_by_pri:
+                _candidate_days = sorted(
+                    [d for d in active_days if d != day],
+                    key=lambda d: day_metrics(day_groups[d])[2],
+                )
+                placed = False
+                for target in _candidate_days:
+                    test = nn_sequence(day_groups[target] + [cand])
+                    _, _, tl = day_metrics(test)
+                    if tl <= MAX_DAY:
+                        day_groups[day]   = nn_sequence([s for s in stores if s is not cand])
+                        day_groups[target] = test
+                        _moved_any = True
+                        placed = True
+                        break
+                if placed:
+                    break  # restart outer-loop scan
+            if _moved_any:
+                break
+        if not _moved_any:
             break
 
     # ── Step 5: Iterative 2-opt cross-day swap ────────────────────────────────
