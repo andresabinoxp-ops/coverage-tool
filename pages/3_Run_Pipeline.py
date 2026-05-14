@@ -447,6 +447,80 @@ def region_for_point(lat, lng, boundaries):
     return min(matches, key=lambda reg: haversine_m(
         lat, lng, boundaries[reg]["centroid"][0], boundaries[reg]["centroid"][1]))
 
+def _is_junk_city(name):
+    """True if a city label is genuinely unusable and should be re-derived
+    from coordinates: blank, Arabic script, the concatenated-governorate junk
+    string, purely numeric, or absurdly long. A plausible clean Latin city
+    name (e.g. "Barka") is NOT junk even if it's absent from the coverage
+    file — it just isn't covered yet."""
+    c = str(name or "").strip()
+    if not c:
+        return True
+    if len(c) > 40:
+        return True
+    if c.replace(".", "").replace("-", "").isdigit():
+        return True
+    # Arabic script
+    if any("؀" <= ch <= "ۿ" for ch in c):
+        return True
+    # Concatenated-governorate junk ("Dhofar Governorate, Musandam ...")
+    if c.lower().count("governorate") >= 2:
+        return True
+    return False
+
+def snap_cities_to_canonical(all_stores, portfolio, snap_km=20.0):
+    """Clean up genuinely-junk city labels by coordinate.
+
+    Canonical cities = the distinct city names in the coverage (portfolio)
+    file, each with a centroid built from its outlets' coordinates. Only
+    stores whose `city` is genuine junk (see _is_junk_city) are snapped to
+    the nearest canonical city centroid within snap_km — their `city` field
+    is overwritten. Clean city names are left untouched, even if absent from
+    the coverage file. Stores beyond snap_km of every canonical city keep
+    their original label. Returns the count of stores relabelled.
+    """
+    from collections import defaultdict
+    city_pts = defaultdict(list)
+    for s in portfolio:
+        c = str(s.get("city", "") or "").strip()
+        try:
+            la, ln = float(s.get("lat")), float(s.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        if not c or la == 0 or ln == 0:
+            continue
+        city_pts[c].append((la, ln))
+
+    canon = []
+    for c, pts in city_pts.items():
+        clat = sum(p[0] for p in pts) / len(pts)
+        clng = sum(p[1] for p in pts) / len(pts)
+        canon.append((c, clat, clng))
+    if not canon:
+        return 0
+
+    relabelled = 0
+    for s in all_stores:
+        cur = str(s.get("city", "") or "").strip()
+        if not _is_junk_city(cur):
+            continue  # clean name — leave it (even if not in coverage file)
+        try:
+            la, ln = float(s.get("lat")), float(s.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        if la == 0 or ln == 0:
+            continue
+        best_c, best_d = None, float("inf")
+        for c, clat, clng in canon:
+            d = haversine_m(la, ln, clat, clng) / 1000.0
+            if d < best_d:
+                best_d, best_c = d, c
+        if best_c and best_d <= snap_km:
+            s["_original_city"] = cur
+            s["city"] = best_c
+            relabelled += 1
+    return relabelled
+
 def kmeans_simple(points, k, iterations=20):
     if len(points) <= k: return list(range(len(points)))
     centroids = random.sample(points, k)
@@ -4159,6 +4233,17 @@ if st.button("  Run Coverage Agent", type="primary"):
         # Stage 3: Score
         status.info(f"Stage 3/{total_steps} — Scoring all stores...")
         all_stores = portfolio + universe
+
+        # City cleanup — snap messy/Arabic/junk city labels to the nearest
+        # canonical city (from the coverage file) within 20 km. Collapses the
+        # scrape's huge, inconsistent city list into the clean coverage set.
+        _city_snapped = snap_cities_to_canonical(all_stores, portfolio, snap_km=20.0)
+        if _city_snapped > 0:
+            status.info(
+                f"Stage 3/{total_steps} — City cleanup: {_city_snapped:,} stores "
+                f"relabelled to nearest coverage city (within 20 km)."
+            )
+
         # Ensure poi_count and price_level exist on all stores
         for _s in all_stores:
             if "poi_count"   not in _s: _s["poi_count"]   = 0
