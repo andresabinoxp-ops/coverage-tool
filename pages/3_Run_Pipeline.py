@@ -1376,7 +1376,8 @@ def assign_cross_city_stores(all_stores, zone_centres, daily_minutes=480,
         # If no rep has capacity, store stays unassigned (plan_visits=0)
 
 def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
-                   break_minutes=30, avg_speed_kmh=30, region_boundaries=None):
+                   break_minutes=30, avg_speed_kmh=30, region_boundaries=None,
+                   city_region_map=None):
     """
     Apply Sales Force Structure rules to assign stores to dedicated reps.
 
@@ -1451,39 +1452,61 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
                     _debug_size_skip += 1
                     continue
 
-            # Geography filter — boundary-based.
-            # A store matches if its lat/lng falls inside the fence of one of
-            # the rule's selected regions. The fence is built from the coverage
-            # file's outlets, so this works identically for coverage and
-            # scraped stores regardless of inconsistent city/region text.
-            # Falls back to text matching when the store has no coords or no
-            # boundary model is available.
+            # Geography filter — region-structure based.
+            #   Coverage store  → matched by its own (clean, trusted) `region`
+            #                     field directly. No fence, no centroid.
+            #   Scraped store   → city is looked up in the city→region map
+            #                     (built from the coverage file). If the city
+            #                     resolves to a region, that's used. Else
+            #                     fall back to the coordinate fence: the store
+            #                     matches if it falls inside ANY of the rule's
+            #                     targeted region fences. Else text match.
             if "All" not in geo_scope:
+                _geo_set   = {g.strip() for g in geo_scope}
                 _geo_match = False
-                _s_lat = s.get("lat")
-                _s_lng = s.get("lng")
-                _have_coords = False
-                try:
-                    _s_lat = float(_s_lat); _s_lng = float(_s_lng)
-                    _have_coords = (_s_lat != 0 and _s_lng != 0)
-                except (TypeError, ValueError):
-                    _have_coords = False
 
-                if region_boundaries and _have_coords:
-                    _store_region = region_for_point(_s_lat, _s_lng, region_boundaries)
-                    _geo_match = _store_region in {g.strip() for g in geo_scope}
+                if s.get("source") == "portfolio":
+                    # Coverage store — trust its region label
+                    _geo_match = str(s.get("region", "") or "").strip() in _geo_set
                 else:
-                    # Fallback: text match across location fields
-                    _loc_combined = " ".join([
-                        str(s.get("city", "")).strip().lower(),
-                        str(s.get("region", "")).strip().lower(),
-                        str(s.get("address", "")).strip().lower(),
-                        str(s.get("district", "")).strip().lower(),
-                        str(s.get("area", "")).strip().lower(),
-                        str(s.get("governorate", "")).strip().lower(),
-                        str(s.get("province", "")).strip().lower(),
-                    ])
-                    _geo_match = any(g.strip().lower() in _loc_combined for g in geo_scope)
+                    # Scraped store — city→region lookup first
+                    _city_key = str(s.get("city", "") or "").strip().lower()
+                    _store_region = (city_region_map or {}).get(_city_key)
+                    if _store_region:
+                        _geo_match = _store_region in _geo_set
+                    else:
+                        # Fallback 1: coordinate fence — inside ANY targeted region
+                        _s_lat = s.get("lat"); _s_lng = s.get("lng")
+                        try:
+                            _s_lat = float(_s_lat); _s_lng = float(_s_lng)
+                            _have_coords = (_s_lat != 0 and _s_lng != 0)
+                        except (TypeError, ValueError):
+                            _have_coords = False
+                        if region_boundaries and _have_coords:
+                            for _rg in _geo_set:
+                                _b = region_boundaries.get(_rg)
+                                if not _b:
+                                    continue
+                                _poly = _b.get("polygon")
+                                if _poly and _point_in_polygon(_s_lat, _s_lng, _poly):
+                                    _geo_match = True; break
+                                if not _poly:
+                                    _clat, _clng = _b.get("centroid", (0, 0))
+                                    _rkm = _b.get("radius_km") or 0
+                                    if _rkm > 0 and haversine_m(_s_lat, _s_lng, _clat, _clng) / 1000.0 <= _rkm:
+                                        _geo_match = True; break
+                        # Fallback 2: text match across location fields
+                        if not _geo_match:
+                            _loc_combined = " ".join([
+                                str(s.get("city", "")).strip().lower(),
+                                str(s.get("region", "")).strip().lower(),
+                                str(s.get("address", "")).strip().lower(),
+                                str(s.get("district", "")).strip().lower(),
+                                str(s.get("area", "")).strip().lower(),
+                                str(s.get("governorate", "")).strip().lower(),
+                                str(s.get("province", "")).strip().lower(),
+                            ])
+                            _geo_match = any(g.strip().lower() in _loc_combined for g in geo_scope)
 
                 if not _geo_match:
                     _debug_geo_skip += 1
@@ -4244,6 +4267,26 @@ if st.button("  Run Coverage Agent", type="primary"):
                 f"relabelled to nearest coverage city (within 20 km)."
             )
 
+        # Build city → region structure from the coverage file. Used by
+        # dedicated rep rules: a coverage store matches a rule's geography by
+        # its own `region` field; a scraped store matches by looking up its
+        # (now-cleaned) city in this map. A city appearing under two regions
+        # maps to whichever region it appears in most often.
+        from collections import Counter as _Counter, defaultdict as _dd
+        _cr_counts = _dd(_Counter)
+        for _s in portfolio:
+            _c = str(_s.get("city", "") or "").strip().lower()
+            _r = str(_s.get("region", "") or "").strip()
+            if _c and _r:
+                _cr_counts[_c][_r] += 1
+        _city_region_map = {c: rc.most_common(1)[0][0] for c, rc in _cr_counts.items()}
+        if _city_region_map:
+            status.info(
+                f"Stage 3/{total_steps} — Region structure: "
+                f"{len(_city_region_map)} cities mapped across "
+                f"{len(set(_city_region_map.values()))} regions."
+            )
+
         # Ensure poi_count and price_level exist on all stores
         for _s in all_stores:
             if "poi_count"   not in _s: _s["poi_count"]   = 0
@@ -4925,6 +4968,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     break_minutes=break_minutes,
                     avg_speed_kmh=avg_speed,
                     region_boundaries=cfg.get("region_boundaries"),
+                    city_region_map=_city_region_map,
                 )
             for _w in _sf_warnings:
                 status.info(f"  {_w}")
