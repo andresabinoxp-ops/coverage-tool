@@ -1611,13 +1611,54 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
                     f"stores to keep '{rule_name}' within the 110% threshold."
                 )
 
-        # Assign rep_ids using k-means if multiple reps, else single assignment
-        matched_geo = [s for s in matched if s.get("lat") and s.get("lng")]
+        # Assign rep_ids across the rule's reps.
+        matched_geo   = [s for s in matched if s.get("lat") and s.get("lng")]
+        matched_nogeo = [s for s in matched if not (s.get("lat") and s.get("lng"))]
         if actual_reps > 1 and len(matched_geo) > actual_reps:
-            pts = [(s["lat"], s["lng"]) for s in matched_geo]
-            labels = kmeans_simple(pts, actual_reps)
-            for s, lbl in zip(matched_geo, labels):
-                s["rep_id"] = next_rep_id + int(lbl)
+            if n_reps > 0:
+                # Fixed-count dedicated rule — BALANCED CHUNK SPLIT.
+                # k-means clusters purely by geography with no load balance,
+                # so an isolated pocket of a few stores became its own
+                # under-utilised rep (a VAN rep with 4 stores). Instead:
+                # nearest-neighbour order the stores, then split into N
+                # equal-size contiguous chunks — every rep gets a similar
+                # store count and chunks stay geographically tight.
+                def _nn_order(stores_):
+                    if len(stores_) <= 2:
+                        return list(stores_)
+                    _rem = list(stores_)
+                    _ordered = [_rem.pop(0)]
+                    while _rem:
+                        _last = _ordered[-1]
+                        _nxt = min(_rem, key=lambda s: haversine_m(
+                            float(_last["lat"]), float(_last["lng"]),
+                            float(s["lat"]), float(s["lng"])))
+                        _rem.remove(_nxt)
+                        _ordered.append(_nxt)
+                    return _ordered
+                _ordered = _nn_order(matched_geo)
+                _chunk = len(_ordered) // actual_reps
+                _rem_n = len(_ordered) % actual_reps
+                _idx = 0
+                for _r in range(actual_reps):
+                    _size = _chunk + (1 if _r < _rem_n else 0)
+                    for s in _ordered[_idx:_idx + _size]:
+                        s["rep_id"]     = next_rep_id + _r
+                        s["_rule_name"] = rule_name
+                        s["_rule_type"] = rule_type
+                    _idx += _size
+            else:
+                # Auto dedicated rule — keep k-means (rep count was sized
+                # from workload, not fixed by the user).
+                pts = [(s["lat"], s["lng"]) for s in matched_geo]
+                labels = kmeans_simple(pts, actual_reps)
+                for s, lbl in zip(matched_geo, labels):
+                    s["rep_id"]     = next_rep_id + int(lbl)
+                    s["_rule_name"] = rule_name
+                    s["_rule_type"] = rule_type
+            # Stores with no coordinates — attach to the rule's first rep
+            for s in matched_nogeo:
+                s["rep_id"]     = next_rep_id
                 s["_rule_name"] = rule_name
                 s["_rule_type"] = rule_type
         else:
