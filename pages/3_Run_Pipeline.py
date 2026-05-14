@@ -5253,49 +5253,47 @@ if st.button("  Run Coverage Agent", type="primary"):
                 _mixed_rep_count = max(1, _mixed_rep_count)  # fallback to 1
             status.info(f"Stage 6/{total_steps} [v3] — Allocating {_mixed_rep_count} mixed rep routes (fixed mode)...")
             if _mixed_pool:
-                pts    = [(s["lat"],s["lng"]) for s in _mixed_pool]
-                labels = kmeans_simple(pts, _mixed_rep_count)
+                # ── Balanced chunk split (replaces raw k-means) ─────────────
+                # Raw k-means clustered the mixed pool purely by geography
+                # with no load balancing — some reps got huge clusters (over
+                # capacity, dropped stores) while others got tiny ones
+                # (6 stores, 11% utilisation, wasted capacity). Instead:
+                # geographic snake-order the pool, then split into N
+                # equal-size contiguous chunks so every rep gets a balanced
+                # share. Dropping then only fires where genuinely needed.
+                def _snake_order(stores_):
+                    _geo = [s for s in stores_ if s.get("lat") and s.get("lng")]
+                    _nogeo = [s for s in stores_ if not (s.get("lat") and s.get("lng"))]
+                    if len(_geo) <= 2:
+                        return list(stores_)
+                    _n_strips = max(1, int(math.sqrt(len(_geo) / 2)))
+                    _by_lng = sorted(_geo, key=lambda s: float(s["lng"]))
+                    _strip_size = max(1, len(_by_lng) // _n_strips)
+                    _ordered = []
+                    for _si in range(0, len(_by_lng), _strip_size):
+                        _strip = _by_lng[_si:_si + _strip_size]
+                        _rev = (_si // _strip_size) % 2 == 1
+                        _strip.sort(key=lambda s: float(s["lat"]), reverse=_rev)
+                        _ordered.extend(_strip)
+                    _ordered.extend(_nogeo)
+                    return _ordered
 
-                # ── GUARANTEE exactly _mixed_rep_count non-empty zones ──────
-                _actual_zones = len(set(labels))
-                while _actual_zones < _mixed_rep_count and len(_mixed_pool) >= _mixed_rep_count:
-                    # Find the largest cluster
-                    from collections import Counter as _Counter
-                    _counts = _Counter(labels)
-                    _biggest_lbl = max(_counts, key=lambda x: _counts[x])
-                    if _counts[_biggest_lbl] < 2:
-                        break  # can't split a single-store cluster
-
-                    # Find an unused label
-                    _used = set(labels)
-                    _new_lbl = None
-                    for _candidate in range(_mixed_rep_count):
-                        if _candidate not in _used:
-                            _new_lbl = _candidate
-                            break
-                    if _new_lbl is None:
-                        break
-
-                    # Split: take the half of the biggest cluster that is
-                    # furthest from the cluster centroid
-                    _big_indices = [i for i, l in enumerate(labels) if l == _biggest_lbl]
-                    _c_lat = sum(pts[i][0] for i in _big_indices) / len(_big_indices)
-                    _c_lng = sum(pts[i][1] for i in _big_indices) / len(_big_indices)
-                    _big_indices.sort(
-                        key=lambda i: haversine_m(pts[i][0], pts[i][1], _c_lat, _c_lng),
-                        reverse=True
-                    )
-                    # Move the furthest half to the new label
-                    _half = len(_big_indices) // 2
-                    for _idx in _big_indices[:_half]:
-                        labels[_idx] = _new_lbl
-
-                    _actual_zones = len(set(labels))
-
-                # Remap labels to contiguous 0..N-1 so rep_ids are 1..N
+                _ordered_mix = _snake_order(_mixed_pool)
+                _chunk_m = len(_ordered_mix) // _mixed_rep_count
+                _rem_m   = len(_ordered_mix) % _mixed_rep_count
+                _store_label = {}
+                _idx_m = 0
+                for _r in range(_mixed_rep_count):
+                    _size_m = _chunk_m + (1 if _r < _rem_m else 0)
+                    for s in _ordered_mix[_idx_m:_idx_m + _size_m]:
+                        _store_label[id(s)] = _r
+                    _idx_m += _size_m
+                labels = [_store_label.get(id(s), 0) for s in _mixed_pool]
+                # Contiguous 0..N-1 labels (empty chunks only if pool < reps)
                 _unique_labels = sorted(set(labels))
                 _label_map     = {old: new for new, old in enumerate(_unique_labels)}
                 labels         = [_label_map[l] for l in labels]
+                _unique_labels = sorted(set(labels))
 
                 # Offset rep_ids by dedicated reps count
                 for s, lbl in zip(_mixed_pool, labels):
