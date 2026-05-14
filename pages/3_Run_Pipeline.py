@@ -1555,117 +1555,124 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
         for s in matched:
             matched_ids.add(id(s))
 
-        # Determine rep count:
-        # - dedicated_reps = 0 → Auto: calculate from workload (min 1)
-        # - dedicated_reps > 0 → Fixed: validate (override if too many for store count)
+        # Determine rep count + assign stores to the rule's reps.
         matched_workload = sum(
             s.get("visits_per_month", 1) * s.get("visit_duration_min", 25)
             for s in matched
         )
         needed_reps = max(1, math.ceil(matched_workload / eff_cap)) if eff_cap > 0 else 1
 
-        if n_reps == 0:
-            # Auto mode — system recommends
-            actual_reps = needed_reps
-            warnings.append(f"  Auto → {actual_reps} rep(s) for {len(matched)} stores ({matched_workload:,} min workload).")
-        else:
-            # Fixed — respect user's choice. Rep count is HARD-FIXED at n_reps;
-            # it never balloons. If the matched stores exceed what n_reps can
-            # carry within the 110% threshold, the lowest-score overflow is
-            # dropped (coverage + gap alike) until the rule fits — same
-            # principle as Fixed mode on the mixed pool.
-            actual_reps = n_reps
-            _fixed_cap = eff_cap * actual_reps * 1.10  # total exec+travel budget at 110%
-            _rule_load, _ = calc_zone_monthly_time(matched, avg_speed_kmh, daily_minutes)
-            if _rule_load > _fixed_cap and len(matched) > actual_reps:
-                # Drop lowest-score stores until the rule fits within budget.
-                # Batch the drops — recomputing exec+travel after every single
-                # pop would be O(n^3) for a 500-store rule. Each pass estimates
-                # the batch size from the current overage and converges fast.
-                _kept = sorted(matched, key=lambda s: s.get("score", 0), reverse=True)
-                _dropped = []
-                for _ in range(50):  # safety cap on passes
-                    _load, _ = calc_zone_monthly_time(_kept, avg_speed_kmh, daily_minutes)
-                    if _load <= _fixed_cap or len(_kept) <= actual_reps:
-                        break
-                    _overage_frac = (_load - _fixed_cap) / _load
-                    _batch = max(1, int(len(_kept) * _overage_frac))
-                    for _ in range(_batch):
-                        if len(_kept) <= actual_reps:
-                            break
-                        _dropped.append(_kept.pop())  # remove lowest-score
-                for _ds in _dropped:
-                    _ds["rep_id"]           = 0
-                    _ds["plan_visits"]      = 0
-                    _ds["assigned_day"]     = ""
-                    _ds["day_visit_order"]  = 0
-                    _ds.pop("_rule_name", None)
-                    _ds.pop("_rule_type", None)
-                    _ds["exclusion_reason"] = (
-                        f"Dedicated rule '{rule_name}': {actual_reps} fixed rep(s) "
-                        f"can't cover all matched stores — lowest-score drop"
-                    )
-                matched = _kept
-                warnings.append(
-                    f"  Fixed {actual_reps} rep(s): dropped {len(_dropped)} lowest-score "
-                    f"stores to keep '{rule_name}' within the 110% threshold."
-                )
+        # Nearest-neighbour order — geographic ordering for the chunk split.
+        def _nn_order(stores_):
+            if len(stores_) <= 2:
+                return list(stores_)
+            _rem = list(stores_)
+            _ordered = [_rem.pop(0)]
+            while _rem:
+                _last = _ordered[-1]
+                _nxt = min(_rem, key=lambda s: haversine_m(
+                    float(_last["lat"]), float(_last["lng"]),
+                    float(s["lat"]), float(s["lng"])))
+                _rem.remove(_nxt)
+                _ordered.append(_nxt)
+            return _ordered
 
-        # Assign rep_ids across the rule's reps.
         matched_geo   = [s for s in matched if s.get("lat") and s.get("lng")]
         matched_nogeo = [s for s in matched if not (s.get("lat") and s.get("lng"))]
-        if actual_reps > 1 and len(matched_geo) > actual_reps:
-            if n_reps > 0:
-                # Fixed-count dedicated rule — BALANCED CHUNK SPLIT.
-                # k-means clusters purely by geography with no load balance,
-                # so an isolated pocket of a few stores became its own
-                # under-utilised rep (a VAN rep with 4 stores). Instead:
-                # nearest-neighbour order the stores, then split into N
-                # equal-size contiguous chunks — every rep gets a similar
-                # store count and chunks stay geographically tight.
-                def _nn_order(stores_):
-                    if len(stores_) <= 2:
-                        return list(stores_)
-                    _rem = list(stores_)
-                    _ordered = [_rem.pop(0)]
-                    while _rem:
-                        _last = _ordered[-1]
-                        _nxt = min(_rem, key=lambda s: haversine_m(
-                            float(_last["lat"]), float(_last["lng"]),
-                            float(s["lat"]), float(s["lng"])))
-                        _rem.remove(_nxt)
-                        _ordered.append(_nxt)
-                    return _ordered
-                _ordered = _nn_order(matched_geo)
-                _chunk = len(_ordered) // actual_reps
-                _rem_n = len(_ordered) % actual_reps
-                _idx = 0
-                for _r in range(actual_reps):
-                    _size = _chunk + (1 if _r < _rem_n else 0)
-                    for s in _ordered[_idx:_idx + _size]:
-                        s["rep_id"]     = next_rep_id + _r
-                        s["_rule_name"] = rule_name
-                        s["_rule_type"] = rule_type
-                    _idx += _size
-            else:
-                # Auto dedicated rule — keep k-means (rep count was sized
-                # from workload, not fixed by the user).
+
+        if n_reps == 0:
+            # ── AUTO — size from workload, k-means split, no dropping ──────
+            actual_reps = needed_reps
+            warnings.append(f"  Auto → {actual_reps} rep(s) for {len(matched)} stores ({matched_workload:,} min workload).")
+            if actual_reps > 1 and len(matched_geo) > actual_reps:
                 pts = [(s["lat"], s["lng"]) for s in matched_geo]
                 labels = kmeans_simple(pts, actual_reps)
                 for s, lbl in zip(matched_geo, labels):
                     s["rep_id"]     = next_rep_id + int(lbl)
                     s["_rule_name"] = rule_name
                     s["_rule_type"] = rule_type
-            # Stores with no coordinates — attach to the rule's first rep
-            for s in matched_nogeo:
-                s["rep_id"]     = next_rep_id
-                s["_rule_name"] = rule_name
-                s["_rule_type"] = rule_type
+                for s in matched_nogeo:
+                    s["rep_id"]     = next_rep_id
+                    s["_rule_name"] = rule_name
+                    s["_rule_type"] = rule_type
+            else:
+                for s in matched:
+                    s["rep_id"]     = next_rep_id
+                    s["_rule_name"] = rule_name
+                    s["_rule_type"] = rule_type
         else:
-            for s in matched:
-                s["rep_id"] = next_rep_id
-                s["_rule_name"] = rule_name
-                s["_rule_type"] = rule_type
+            # ── FIXED count — hard-fixed at n_reps. Order of operations:
+            #   1. Balanced chunk split FIRST (NN-order → equal-size chunks)
+            #   2. Measure EACH rep's own exec+travel workload (its own area)
+            #   3. Drop lowest-score stores ONLY from reps over 110%
+            # Replaces the old drop-first logic, which measured travel as if
+            # ONE rep drove all matched stores — a wildly inflated number
+            # that over-dropped hundreds of stores before the split ran.
+            actual_reps = n_reps
+            _ordered = _nn_order(matched_geo)
+            _rep_groups = {next_rep_id + r: [] for r in range(actual_reps)}
+            if len(_ordered) <= actual_reps:
+                for i, s in enumerate(_ordered):
+                    _rep_groups[next_rep_id + (i % actual_reps)].append(s)
+            else:
+                _chunk = len(_ordered) // actual_reps
+                _rem_n = len(_ordered) % actual_reps
+                _idx = 0
+                for _r in range(actual_reps):
+                    _size = _chunk + (1 if _r < _rem_n else 0)
+                    _rep_groups[next_rep_id + _r] = _ordered[_idx:_idx + _size]
+                    _idx += _size
+            # Stores with no coordinates → the rule's first rep
+            _rep_groups[next_rep_id].extend(matched_nogeo)
+
+            # Per-rep drop — trim lowest-score stores from any rep over 110%.
+            # Each rep's load is measured on ITS OWN stores only (real travel
+            # for its own small area), not the whole rule as one mega-route.
+            _per_rep_cap = eff_cap * 1.10
+            _all_dropped = []
+            for _rid, _grp in _rep_groups.items():
+                if len(_grp) <= 1:
+                    continue
+                _kept = sorted(_grp, key=lambda s: s.get("score", 0), reverse=True)
+                _dropped = []
+                for _ in range(50):  # safety cap; batched to avoid O(n^3)
+                    _load, _ = calc_zone_monthly_time(_kept, avg_speed_kmh, daily_minutes)
+                    if _load <= _per_rep_cap or len(_kept) <= 1:
+                        break
+                    _frac  = (_load - _per_rep_cap) / _load
+                    _batch = max(1, int(len(_kept) * _frac))
+                    for _ in range(_batch):
+                        if len(_kept) <= 1:
+                            break
+                        _dropped.append(_kept.pop())
+                _rep_groups[_rid] = _kept
+                _all_dropped.extend(_dropped)
+
+            # Assign rep_ids to the survivors
+            for _rid, _grp in _rep_groups.items():
+                for s in _grp:
+                    s["rep_id"]     = _rid
+                    s["_rule_name"] = rule_name
+                    s["_rule_type"] = rule_type
+            # Mark dropped stores as uncovered
+            for _ds in _all_dropped:
+                _ds["rep_id"]          = 0
+                _ds["plan_visits"]     = 0
+                _ds["assigned_day"]    = ""
+                _ds["day_visit_order"] = 0
+                _ds.pop("_rule_name", None)
+                _ds.pop("_rule_type", None)
+                _ds["exclusion_reason"] = (
+                    f"Dedicated rule '{rule_name}': rep over 110% capacity "
+                    f"— lowest-score drop"
+                )
+            if _all_dropped:
+                _dropped_ids = {id(s) for s in _all_dropped}
+                matched = [s for s in matched if id(s) not in _dropped_ids]
+                warnings.append(
+                    f"  Fixed {actual_reps} rep(s): dropped {len(_all_dropped)} lowest-score "
+                    f"stores from over-capacity reps to keep '{rule_name}' within 110%."
+                )
 
         # Build zone centres for dedicated reps
         for r in range(actual_reps):
