@@ -1436,10 +1436,12 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
         _debug_size_skip = 0
         _debug_no_match  = 0
         _debug_checked   = 0
+        _debug_claimed   = 0  # skipped — already matched by an earlier rule
         _debug_by_cond   = {i: 0 for i in range(len(prepared_conditions))}
 
         for s in stores:
             if id(s) in matched_ids:
+                _debug_claimed += 1
                 continue
             _debug_checked += 1
 
@@ -1533,11 +1535,21 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             else:
                 _debug_no_match += 1
 
+        # Per-rule gate breakdown — shows exactly where stores were dropped.
+        warnings.append(
+            f"'{rule_name}' — {len(stores):,} in pool · "
+            f"{_debug_claimed:,} already claimed by earlier rule · "
+            f"{_debug_checked:,} examined · "
+            f"{_debug_size_skip:,} dropped by size filter · "
+            f"{_debug_geo_skip:,} dropped by geography · "
+            f"{_debug_no_match:,} failed name/account match · "
+            f"{len(matched):,} MATCHED"
+        )
+
         # Clean status summary for this rule
         if not matched:
             warnings.append(f"'{rule_name}' — no matching stores found. Rule skipped.")
             continue
-        warnings.append(f"'{rule_name}' — {len(matched)} stores matched.")
 
         # Mark as matched
         for s in matched:
