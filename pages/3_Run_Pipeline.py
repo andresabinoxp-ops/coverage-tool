@@ -408,6 +408,45 @@ def haversine_m(lat1, lng1, lat2, lng2):
     a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
     return 2*R*math.asin(math.sqrt(a))
 
+def _point_in_polygon(lat, lng, poly):
+    """Ray-casting test. poly = list of (lat, lng) vertices."""
+    inside = False
+    n = len(poly)
+    if n < 3:
+        return False
+    j = n - 1
+    for i in range(n):
+        lat_i, lng_i = poly[i]
+        lat_j, lng_j = poly[j]
+        if ((lng_i > lng) != (lng_j > lng)) and \
+           (lat < (lat_j - lat_i) * (lng - lng_i) / ((lng_j - lng_i) or 1e-12) + lat_i):
+            inside = not inside
+        j = i
+    return inside
+
+def region_for_point(lat, lng, boundaries):
+    """Return the region name whose fence contains (lat, lng). On overlap,
+    the region with the nearest centroid wins. None if inside no fence."""
+    if not boundaries:
+        return None
+    matches = []
+    for reg, b in boundaries.items():
+        poly = b.get("polygon")
+        if poly:
+            if _point_in_polygon(lat, lng, poly):
+                matches.append(reg)
+        else:
+            clat, clng = b.get("centroid", (0, 0))
+            r_km = b.get("radius_km") or 0
+            if r_km > 0 and haversine_m(lat, lng, clat, clng) / 1000.0 <= r_km:
+                matches.append(reg)
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    return min(matches, key=lambda reg: haversine_m(
+        lat, lng, boundaries[reg]["centroid"][0], boundaries[reg]["centroid"][1]))
+
 def kmeans_simple(points, k, iterations=20):
     if len(points) <= k: return list(range(len(points)))
     centroids = random.sample(points, k)
@@ -1263,7 +1302,7 @@ def assign_cross_city_stores(all_stores, zone_centres, daily_minutes=480,
         # If no rep has capacity, store stays unassigned (plan_visits=0)
 
 def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
-                   break_minutes=30, avg_speed_kmh=30):
+                   break_minutes=30, avg_speed_kmh=30, region_boundaries=None):
     """
     Apply Sales Force Structure rules to assign stores to dedicated reps.
 
@@ -1338,20 +1377,41 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
                     _debug_size_skip += 1
                     continue
 
-            # Geography filter — check all location fields
+            # Geography filter — boundary-based.
+            # A store matches if its lat/lng falls inside the fence of one of
+            # the rule's selected regions. The fence is built from the coverage
+            # file's outlets, so this works identically for coverage and
+            # scraped stores regardless of inconsistent city/region text.
+            # Falls back to text matching when the store has no coords or no
+            # boundary model is available.
             if "All" not in geo_scope:
-                _loc_fields = [
-                    str(s.get("city", "")).strip().lower(),
-                    str(s.get("region", "")).strip().lower(),
-                    str(s.get("address", "")).strip().lower(),
-                    str(s.get("district", "")).strip().lower(),
-                    str(s.get("area", "")).strip().lower(),
-                    str(s.get("governorate", "")).strip().lower(),
-                    str(s.get("province", "")).strip().lower(),
-                ]
-                _loc_combined = " ".join(_loc_fields)
-                geo_match = any(g.strip().lower() in _loc_combined for g in geo_scope)
-                if not geo_match:
+                _geo_match = False
+                _s_lat = s.get("lat")
+                _s_lng = s.get("lng")
+                _have_coords = False
+                try:
+                    _s_lat = float(_s_lat); _s_lng = float(_s_lng)
+                    _have_coords = (_s_lat != 0 and _s_lng != 0)
+                except (TypeError, ValueError):
+                    _have_coords = False
+
+                if region_boundaries and _have_coords:
+                    _store_region = region_for_point(_s_lat, _s_lng, region_boundaries)
+                    _geo_match = _store_region in {g.strip() for g in geo_scope}
+                else:
+                    # Fallback: text match across location fields
+                    _loc_combined = " ".join([
+                        str(s.get("city", "")).strip().lower(),
+                        str(s.get("region", "")).strip().lower(),
+                        str(s.get("address", "")).strip().lower(),
+                        str(s.get("district", "")).strip().lower(),
+                        str(s.get("area", "")).strip().lower(),
+                        str(s.get("governorate", "")).strip().lower(),
+                        str(s.get("province", "")).strip().lower(),
+                    ])
+                    _geo_match = any(g.strip().lower() in _loc_combined for g in geo_scope)
+
+                if not _geo_match:
                     _debug_geo_skip += 1
                     continue
 
@@ -4779,6 +4839,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                     working_days=working_days,
                     break_minutes=break_minutes,
                     avg_speed_kmh=avg_speed,
+                    region_boundaries=cfg.get("region_boundaries"),
                 )
             for _w in _sf_warnings:
                 status.info(f"  {_w}")

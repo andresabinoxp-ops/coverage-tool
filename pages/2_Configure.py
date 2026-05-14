@@ -1,6 +1,108 @@
 import streamlit as st
 import pandas as pd
 import requests
+import math
+
+
+# ── Region boundary model ─────────────────────────────────────────────────────
+# Builds an "invisible fence" per region from the coverage file's outlets.
+# Scraped outlets are later classified by whether their lat/lng falls inside a
+# fence — this removes the coverage-vs-scrape city-name mismatch.
+def _hav_km(la1, ln1, la2, ln2):
+    R = 6371.0
+    p = math.pi / 180
+    a = (math.sin((la2 - la1) * p / 2) ** 2 +
+         math.cos(la1 * p) * math.cos(la2 * p) *
+         math.sin((ln2 - ln1) * p / 2) ** 2)
+    return 2 * R * math.asin(math.sqrt(max(0, a)))
+
+
+def _convex_hull(pts):
+    """Andrew's monotone chain. pts = list of (lat, lng). Returns hull points."""
+    pts = sorted(set(pts))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def _buffer_hull(hull, centroid, km):
+    """Push every hull vertex outward from the centroid by ~km kilometres."""
+    clat, clng = centroid
+    buf_deg = km / 111.0  # ~111 km per degree
+    out = []
+    for la, ln in hull:
+        dlat, dlng = la - clat, ln - clng
+        dist = math.sqrt(dlat ** 2 + dlng ** 2)
+        if dist == 0:
+            out.append((la, ln))
+            continue
+        scale = (dist + buf_deg) / dist
+        out.append((clat + dlat * scale, clng + dlng * scale))
+    return out
+
+
+def build_region_boundaries(rows, buffer_km=3.0):
+    """rows = list of dicts with 'region', 'lat', 'lng'. Returns
+    {region: {centroid, polygon, radius_km}}. polygon is the buffered hull
+    (or None for sparse regions, which fall back to centroid + radius_km)."""
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in rows:
+        reg = str(r.get("region", "") or "").strip()
+        try:
+            la, ln = float(r.get("lat")), float(r.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        if not reg or la == 0 or ln == 0:
+            continue
+        groups[reg].append((la, ln))
+
+    boundaries = {}
+    for reg, pts in groups.items():
+        if not pts:
+            continue
+        clat = sum(p[0] for p in pts) / len(pts)
+        clng = sum(p[1] for p in pts) / len(pts)
+        # Drop geographic outliers (beyond 2.5× median distance from centroid)
+        dists = sorted(_hav_km(clat, clng, p[0], p[1]) for p in pts)
+        median_d = dists[len(dists) // 2] if dists else 0
+        if median_d > 0:
+            pts = [p for p in pts if _hav_km(clat, clng, p[0], p[1]) <= 2.5 * median_d] or pts
+            clat = sum(p[0] for p in pts) / len(pts)
+            clng = sum(p[1] for p in pts) / len(pts)
+        # Build the fence
+        if len(pts) >= 3:
+            hull = _convex_hull(pts)
+            if len(hull) >= 3:
+                boundaries[reg] = {
+                    "centroid": (clat, clng),
+                    "polygon": _buffer_hull(hull, (clat, clng), buffer_km),
+                    "radius_km": None,
+                }
+                continue
+        # Sparse region — centroid + radius circle
+        max_d = max((_hav_km(clat, clng, p[0], p[1]) for p in pts), default=0)
+        boundaries[reg] = {
+            "centroid": (clat, clng),
+            "polygon": None,
+            "radius_km": max_d + buffer_km,
+        }
+    return boundaries
+
 
 st.set_page_config(page_title="Configure - Coverage Tool", page_icon=" ", layout="wide")
 
@@ -255,6 +357,18 @@ with tab_market:
                         st.info(f"Categories detected: **{', '.join(c.replace('_',' ').title() for c in detected_categories)}**")
 
                 st.session_state["portfolio_df"] = portfolio_df
+
+                # Build region boundary model from coverage outlet coordinates
+                if "region" in df.columns and "lat" in df.columns and "lng" in df.columns:
+                    _bnd = build_region_boundaries(df.to_dict("records"), buffer_km=3.0)
+                    st.session_state["region_boundaries"] = _bnd
+                    if _bnd:
+                        st.caption(
+                            f"Region fences built from coverage outlets: "
+                            f"{', '.join(sorted(_bnd.keys()))}"
+                        )
+                else:
+                    st.session_state["region_boundaries"] = {}
         except Exception as e:
             st.error(f"Error reading file: {e}")
 
@@ -538,13 +652,15 @@ with tab_team:
         _match_phrase_map[_phrase] = {"column": "category", "value": _cat, "field": "Category"}
     _match_phrases.append("Store name contains keyword...")
 
-    # Collect geography options
+    # Collect geography options — region fences from the coverage file first
+    # (clean, coordinate-backed), then any manually-typed scraping scope.
+    _region_fences = sorted((st.session_state.get("region_boundaries") or {}).keys())
     _configured_cities = sorted(set(
         [e.get("name","") for e in st.session_state.get("city_entries", []) or []] +
         [e.get("name","") for e in st.session_state.get("region_entries", []) or []]
     ))
-    _configured_cities = [c for c in _configured_cities if c]
-    _geo_options = ["All"] + _configured_cities
+    _configured_cities = [c for c in _configured_cities if c and c not in _region_fences]
+    _geo_options = ["All"] + _region_fences + _configured_cities
 
     # Display existing rules
     if _sf_rules:
@@ -866,6 +982,7 @@ else:
                 {"rating":25,"reviews":25,"affluence":25,"poi":25}).items()},
             "sf_rules":                st.session_state.get("sf_rules", []),
             "store_select_pct":        _store_select_pct,
+            "region_boundaries":       st.session_state.get("region_boundaries", {}),
         }
         st.markdown(f"""
         <div style="background:#E8F5E9;border:1.5px solid #66BB6A;border-left:5px solid #2E7D32;
