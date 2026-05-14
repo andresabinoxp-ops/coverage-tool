@@ -4982,13 +4982,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                     region_boundaries=cfg.get("region_boundaries"),
                     city_region_map=_city_region_map,
                 )
-            # Show the per-rule gate breakdown in a PERSISTENT expander —
-            # status.info() is an st.empty() placeholder that overwrites itself,
-            # so these diagnostics would otherwise flash by and vanish.
-            if _sf_warnings:
-                with st.expander("Dedicated rep rule breakdown — why stores matched / dropped", expanded=True):
-                    for _w in _sf_warnings:
-                        st.write(f"- {_w}")
+            for _w in _sf_warnings:
+                status.info(f"  {_w}")
             if _dedicated_stores:
                 status.info(
                     f"Stage 6/{total_steps} — {len(_dedicated_stores):,} stores assigned to "
