@@ -5253,43 +5253,64 @@ if st.button("  Run Coverage Agent", type="primary"):
                 _mixed_rep_count = max(1, _mixed_rep_count)  # fallback to 1
             status.info(f"Stage 6/{total_steps} [v3] — Allocating {_mixed_rep_count} mixed rep routes (fixed mode)...")
             if _mixed_pool:
-                # ── Balanced chunk split (replaces raw k-means) ─────────────
-                # Raw k-means clustered the mixed pool purely by geography
-                # with no load balancing — some reps got huge clusters (over
-                # capacity, dropped stores) while others got tiny ones
-                # (6 stores, 11% utilisation, wasted capacity). Instead:
-                # geographic snake-order the pool, then split into N
-                # equal-size contiguous chunks so every rep gets a balanced
-                # share. Dropping then only fires where genuinely needed.
-                def _snake_order(stores_):
-                    _geo = [s for s in stores_ if s.get("lat") and s.get("lng")]
-                    _nogeo = [s for s in stores_ if not (s.get("lat") and s.get("lng"))]
-                    if len(_geo) <= 2:
-                        return list(stores_)
-                    _n_strips = max(1, int(math.sqrt(len(_geo) / 2)))
-                    _by_lng = sorted(_geo, key=lambda s: float(s["lng"]))
-                    _strip_size = max(1, len(_by_lng) // _n_strips)
-                    _ordered = []
-                    for _si in range(0, len(_by_lng), _strip_size):
-                        _strip = _by_lng[_si:_si + _strip_size]
-                        _rev = (_si // _strip_size) % 2 == 1
-                        _strip.sort(key=lambda s: float(s["lat"]), reverse=_rev)
-                        _ordered.extend(_strip)
-                    _ordered.extend(_nogeo)
-                    return _ordered
+                # ── Capacitated spatial clustering ──────────────────────────
+                # Raw k-means was geographically tight but unbalanced (11%
+                # reps next to overloaded ones). A 1D snake-order chunk split
+                # balanced the counts but, because Oman's population sits in
+                # disconnected clusters at similar longitudes (Salalah ~54E,
+                # Buraimi ~56E, 700km apart), it placed far-apart stores
+                # adjacent — a rep ended up spanning north + south.
+                # Capacitated clustering gets BOTH: every store goes to its
+                # NEAREST centroid that isn't already full (cap = ceil(n/N)),
+                # so each rep is geographically tight AND balanced by count.
+                def _balanced_spatial_split(stores_, n_clusters):
+                    _geo = [(i, s) for i, s in enumerate(stores_)
+                            if s.get("lat") and s.get("lng")]
+                    _labels = [0] * len(stores_)
+                    if len(_geo) <= n_clusters or n_clusters <= 1:
+                        for _k, (_i, _s) in enumerate(_geo):
+                            _labels[_i] = _k % max(1, n_clusters)
+                        return _labels
+                    _pts = [(float(s["lat"]), float(s["lng"])) for _i, s in _geo]
+                    # Initial centroids from k-means
+                    _init = kmeans_simple(_pts, n_clusters)
+                    _centroids = []
+                    for _c in range(n_clusters):
+                        _cp = [_pts[j] for j in range(len(_pts)) if _init[j] == _c]
+                        if _cp:
+                            _centroids.append((sum(p[0] for p in _cp) / len(_cp),
+                                               sum(p[1] for p in _cp) / len(_cp)))
+                        else:
+                            _centroids.append(_pts[_c % len(_pts)])
+                    _cap = math.ceil(len(_pts) / n_clusters)
+                    _assign = [0] * len(_pts)
+                    for _round in range(3):  # refine centroids 3x
+                        _counts = [0] * n_clusters
+                        # Closest-to-any-centroid points get first pick
+                        _order = sorted(range(len(_pts)), key=lambda j: min(
+                            haversine_m(_pts[j][0], _pts[j][1], c[0], c[1])
+                            for c in _centroids))
+                        for j in _order:
+                            _ranked = sorted(range(n_clusters), key=lambda c: haversine_m(
+                                _pts[j][0], _pts[j][1], _centroids[c][0], _centroids[c][1]))
+                            _placed = False
+                            for _c in _ranked:
+                                if _counts[_c] < _cap:
+                                    _assign[j] = _c; _counts[_c] += 1; _placed = True
+                                    break
+                            if not _placed:
+                                _assign[j] = _ranked[0]; _counts[_ranked[0]] += 1
+                        for _c in range(n_clusters):
+                            _cp = [_pts[j] for j in range(len(_pts)) if _assign[j] == _c]
+                            if _cp:
+                                _centroids[_c] = (sum(p[0] for p in _cp) / len(_cp),
+                                                  sum(p[1] for p in _cp) / len(_cp))
+                    for _k, (_i, _s) in enumerate(_geo):
+                        _labels[_i] = _assign[_k]
+                    return _labels
 
-                _ordered_mix = _snake_order(_mixed_pool)
-                _chunk_m = len(_ordered_mix) // _mixed_rep_count
-                _rem_m   = len(_ordered_mix) % _mixed_rep_count
-                _store_label = {}
-                _idx_m = 0
-                for _r in range(_mixed_rep_count):
-                    _size_m = _chunk_m + (1 if _r < _rem_m else 0)
-                    for s in _ordered_mix[_idx_m:_idx_m + _size_m]:
-                        _store_label[id(s)] = _r
-                    _idx_m += _size_m
-                labels = [_store_label.get(id(s), 0) for s in _mixed_pool]
-                # Contiguous 0..N-1 labels (empty chunks only if pool < reps)
+                labels = _balanced_spatial_split(_mixed_pool, _mixed_rep_count)
+                # Contiguous 0..N-1 labels
                 _unique_labels = sorted(set(labels))
                 _label_map     = {old: new for new, old in enumerate(_unique_labels)}
                 labels         = [_label_map[l] for l in labels]
