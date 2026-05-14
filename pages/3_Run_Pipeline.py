@@ -1569,9 +1569,47 @@ def apply_sf_rules(stores, rules, daily_minutes=480, working_days=22,
             actual_reps = needed_reps
             warnings.append(f"  Auto → {actual_reps} rep(s) for {len(matched)} stores ({matched_workload:,} min workload).")
         else:
-            # Fixed — respect user's choice (they know geographic needs)
+            # Fixed — respect user's choice. Rep count is HARD-FIXED at n_reps;
+            # it never balloons. If the matched stores exceed what n_reps can
+            # carry within the 110% threshold, the lowest-score overflow is
+            # dropped (coverage + gap alike) until the rule fits — same
+            # principle as Fixed mode on the mixed pool.
             actual_reps = n_reps
-            actual_reps = n_reps
+            _fixed_cap = eff_cap * actual_reps * 1.10  # total exec+travel budget at 110%
+            _rule_load, _ = calc_zone_monthly_time(matched, avg_speed_kmh, daily_minutes)
+            if _rule_load > _fixed_cap and len(matched) > actual_reps:
+                # Drop lowest-score stores until the rule fits within budget.
+                # Batch the drops — recomputing exec+travel after every single
+                # pop would be O(n^3) for a 500-store rule. Each pass estimates
+                # the batch size from the current overage and converges fast.
+                _kept = sorted(matched, key=lambda s: s.get("score", 0), reverse=True)
+                _dropped = []
+                for _ in range(50):  # safety cap on passes
+                    _load, _ = calc_zone_monthly_time(_kept, avg_speed_kmh, daily_minutes)
+                    if _load <= _fixed_cap or len(_kept) <= actual_reps:
+                        break
+                    _overage_frac = (_load - _fixed_cap) / _load
+                    _batch = max(1, int(len(_kept) * _overage_frac))
+                    for _ in range(_batch):
+                        if len(_kept) <= actual_reps:
+                            break
+                        _dropped.append(_kept.pop())  # remove lowest-score
+                for _ds in _dropped:
+                    _ds["rep_id"]           = 0
+                    _ds["plan_visits"]      = 0
+                    _ds["assigned_day"]     = ""
+                    _ds["day_visit_order"]  = 0
+                    _ds.pop("_rule_name", None)
+                    _ds.pop("_rule_type", None)
+                    _ds["exclusion_reason"] = (
+                        f"Dedicated rule '{rule_name}': {actual_reps} fixed rep(s) "
+                        f"can't cover all matched stores — lowest-score drop"
+                    )
+                matched = _kept
+                warnings.append(
+                    f"  Fixed {actual_reps} rep(s): dropped {len(_dropped)} lowest-score "
+                    f"stores to keep '{rule_name}' within the 110% threshold."
+                )
 
         # Assign rep_ids using k-means if multiple reps, else single assignment
         matched_geo = [s for s in matched if s.get("lat") and s.get("lng")]
