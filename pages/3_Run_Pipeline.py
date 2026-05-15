@@ -3139,14 +3139,28 @@ else:
     # ── Enrichment options — set before scraping ─────────────────────────────
     st.markdown("**Enrichment options** *(applied once at scrape time, stored in cache)*")
     _admin_enrich_s2 = st.session_state.get("admin_enrichment", {
-        "run_place_details": True, "run_poi": True, "poi_radius_m": 500})
+        "run_place_details": True, "run_poi": True, "run_rating": True, "poi_radius_m": 500})
     _ec1, _ec2, _ec3 = st.columns(3)
     with _ec1:
-        st.markdown("  **Price level** — always on (affluence scoring)")
-        st.markdown("  **Nearby POI count** — always on (POI scoring)")
+        _run_rating_s2 = st.toggle(
+            "  Rating/review search (Step C)",
+            value=_admin_enrich_s2.get("run_rating", True),
+            key="enrich_rating_s2",
+            help="Text-searches Google to find ratings/reviews for stores "
+                 "missing them. Turn off for categories without rating data "
+                 "(gas stations, ATMs, etc.) — saves ~10 min per run. "
+                 "Auto-aborts if no ratings are found in the first sample."
+        )
+        _run_poi_s2 = st.toggle(
+            "  Nearby POI count (Step E)",
+            value=_admin_enrich_s2.get("run_poi", True),
+            key="enrich_poi_s2",
+            help="Counts POIs around each store (feeds the POI score). "
+                 "Turn off for fast test runs."
+        )
     with _ec2:
         _run_phone_s2 = st.toggle(
-            "  Phone & opening hours",
+            "  Phone & opening hours (Step D)",
             value=_admin_enrich_s2.get("run_place_details", True),
             key="enrich_phone_s2",
             help="~$0.017/store. Turn off for test runs to save credits."
@@ -3160,11 +3174,9 @@ else:
     # Save to session so pipeline picks it up
     st.session_state["admin_enrichment"] = {
         "run_place_details": _run_phone_s2,
-        "run_poi": True,
-
-
-
-        "poi_radius_m": _poi_radius_s2,
+        "run_poi":           _run_poi_s2,
+        "run_rating":        _run_rating_s2,
+        "poi_radius_m":      _poi_radius_s2,
     }
 
     # Cost estimate
@@ -3424,81 +3436,104 @@ else:
             # ── Step C: Google enrichment — ONLY stores missing data ─────────
             # Skip stores already enriched by Google Places scraping (have rating > 0
             # AND review_count > 0) — these already got their data in Step B.
-            _need_enrich = [s for s in _all_universe
-                           if not (s.get("rating", 0) > 0 and s.get("review_count", 0) > 0)]
-            _already_ok  = len(_all_universe) - len(_need_enrich)
-            _scrape_status.info(
-                f"Step C: Enriching {len(_need_enrich):,} stores missing data "
-                f"(skipping {_already_ok:,} already enriched by Google Places)..."
-            )
-            _mkt_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
-            _mkt_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
-            _enriched_g = 0
-            # Cancel support
-            if "_cancel_scrape" not in st.session_state:
-                st.session_state["_cancel_scrape"] = False
+            # Toggle in Run page; defensive streak-based abort when the category
+            # genuinely has no rating data on Google (e.g. gas stations).
+            if not st.session_state.get("admin_enrichment", {}).get("run_rating", True):
+                _scrape_status.info("Step C: skipped (rating/review search disabled).")
+            else:
+                _need_enrich = [s for s in _all_universe
+                               if not (s.get("rating", 0) > 0 and s.get("review_count", 0) > 0)]
+                _already_ok  = len(_all_universe) - len(_need_enrich)
+                _scrape_status.info(
+                    f"Step C: Enriching {len(_need_enrich):,} stores missing data "
+                    f"(skipping {_already_ok:,} already enriched by Google Places)..."
+                )
+                _mkt_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
+                _mkt_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
+                _enriched_g  = 0
+                _zero_streak = 0  # consecutive attempts that yielded nothing
+                if "_cancel_scrape" not in st.session_state:
+                    st.session_state["_cancel_scrape"] = False
 
-            _enrich_start_c = time.time()
-            for _ei, _s in enumerate(_need_enrich):
-                # Check cancel flag
-                if st.session_state.get("_cancel_scrape"):
-                    _scrape_status.warning(f"Step C: Cancelled at {_ei}/{len(_need_enrich)}. Saving progress...")
-                    break
-                try:
-                    _sname = str(_s.get("store_name","")).strip()
-                    _scity = str(_s.get("city","")).strip()
-                    _query = f"{_sname} {_scity}".strip() if _scity else _sname
-                    if not _query: continue
-                    _slat  = _s.get("lat") or _mkt_lat
-                    _slng  = _s.get("lng") or _mkt_lng
-                    _gr    = _api_retry(
-                        requests.get,
-                        "https://maps.googleapis.com/maps/api/place/textsearch/json",
-                        params={"query":_query,"location":f"{_slat},{_slng}","radius":"2000","key":_scrape_api_key},
-                        timeout=8
-                    )
-                    _gdata = _gr.json() if _gr else {}
-                    if _gdata.get("status") == "OK" and _gdata.get("results"):
-                        for _res in _gdata["results"]:
-                            _rloc = _res.get("geometry",{}).get("location",{})
-                            _rlat,_rlng = _rloc.get("lat",0),_rloc.get("lng",0)
-                            if _s.get("lat") and haversine_m(_s["lat"],_s["lng"],_rlat,_rlng) > 1500:
-                                continue
-                            if _res.get("rating") and float(_res["rating"]) > 0:
-                                _s["rating"] = float(_res["rating"])
-                            if _res.get("user_ratings_total") and int(_res["user_ratings_total"]) > 0:
-                                _s["review_count"] = int(_res["user_ratings_total"])
-                            if _res.get("price_level") is not None:
-                                _s["price_level"] = int(_res["price_level"])
-                            _pid = _res.get("place_id","")
-                            if _pid and not _s.get("place_id"):
-                                _s["place_id"] = _pid
-                            if not _s.get("lat") and _rlat:
-                                _s["lat"] = _rlat; _s["lng"] = _rlng
-                            _enriched_g += 1
-                            break
-                    time.sleep(0.05)
-                except Exception:
-                    pass
+                _enrich_start_c = time.time()
+                for _ei, _s in enumerate(_need_enrich):
+                    # Check cancel flag
+                    if st.session_state.get("_cancel_scrape"):
+                        _scrape_status.warning(f"Step C: Cancelled at {_ei}/{len(_need_enrich)}. Saving progress...")
+                        break
+                    _before = _enriched_g
+                    try:
+                        _sname = str(_s.get("store_name","")).strip()
+                        _scity = str(_s.get("city","")).strip()
+                        _query = f"{_sname} {_scity}".strip() if _scity else _sname
+                        if not _query: continue
+                        _slat  = _s.get("lat") or _mkt_lat
+                        _slng  = _s.get("lng") or _mkt_lng
+                        _gr    = _api_retry(
+                            requests.get,
+                            "https://maps.googleapis.com/maps/api/place/textsearch/json",
+                            params={"query":_query,"location":f"{_slat},{_slng}","radius":"2000","key":_scrape_api_key},
+                            timeout=8
+                        )
+                        _gdata = _gr.json() if _gr else {}
+                        if _gdata.get("status") == "OK" and _gdata.get("results"):
+                            for _res in _gdata["results"]:
+                                _rloc = _res.get("geometry",{}).get("location",{})
+                                _rlat,_rlng = _rloc.get("lat",0),_rloc.get("lng",0)
+                                if _s.get("lat") and haversine_m(_s["lat"],_s["lng"],_rlat,_rlng) > 1500:
+                                    continue
+                                if _res.get("rating") and float(_res["rating"]) > 0:
+                                    _s["rating"] = float(_res["rating"])
+                                if _res.get("user_ratings_total") and int(_res["user_ratings_total"]) > 0:
+                                    _s["review_count"] = int(_res["user_ratings_total"])
+                                if _res.get("price_level") is not None:
+                                    _s["price_level"] = int(_res["price_level"])
+                                _pid = _res.get("place_id","")
+                                if _pid and not _s.get("place_id"):
+                                    _s["place_id"] = _pid
+                                if not _s.get("lat") and _rlat:
+                                    _s["lat"] = _rlat; _s["lng"] = _rlng
+                                _enriched_g += 1
+                                break
+                        time.sleep(0.05)
+                    except Exception:
+                        pass
 
-                # Batch checkpoint — save progress every 100 stores
-                if (_ei + 1) % CHECKPOINT_BATCH_SIZE == 0:
-                    st.session_state["_scrape_checkpoint"] = {
-                        "universe": list(_all_universe),
-                        "step": f"enrich_c_{_ei+1}",
-                        "saved_at": time.strftime("%d %b %Y %H:%M"),
-                    }
+                    # Track consecutive zero-result attempts
+                    if _enriched_g > _before:
+                        _zero_streak = 0
+                    else:
+                        _zero_streak += 1
 
-                if (_ei+1) % 20 == 0 or _ei == len(_need_enrich)-1:
-                    _elapsed_c = time.time() - _enrich_start_c
-                    _rem     = (_elapsed_c/(_ei+1))*(len(_need_enrich)-_ei-1) if _ei > 0 else 0
-                    _pct     = 30 + int((_ei+1)/max(len(_need_enrich),1)*55)
-                    _scrape_status.info(
-                        f"Step C: {_ei+1}/{len(_need_enrich)} · {_enriched_g} enriched · "
-                        f"skipped {_already_ok:,} · "
-                        f"  {fmt_time(_rem).replace('~','')} remaining"
-                    )
-                    _scrape_bar.progress(min(_pct, 85))
+                    # Streak-based abort: ≥200 attempts AND last 100 in a row
+                    # yielded nothing → this category has no rating data on
+                    # Google. Saves the rest of the loop (~minutes of waste).
+                    if _ei >= 200 and _zero_streak >= 100:
+                        _scrape_status.info(
+                            f"Step C: aborted at {_ei+1}/{len(_need_enrich)} "
+                            f"— last 100 attempts found no ratings, skipping "
+                            f"the rest (this category has no rating data on Google)."
+                        )
+                        break
+
+                    # Batch checkpoint — save progress every 100 stores
+                    if (_ei + 1) % CHECKPOINT_BATCH_SIZE == 0:
+                        st.session_state["_scrape_checkpoint"] = {
+                            "universe": list(_all_universe),
+                            "step": f"enrich_c_{_ei+1}",
+                            "saved_at": time.strftime("%d %b %Y %H:%M"),
+                        }
+
+                    if (_ei+1) % 20 == 0 or _ei == len(_need_enrich)-1:
+                        _elapsed_c = time.time() - _enrich_start_c
+                        _rem     = (_elapsed_c/(_ei+1))*(len(_need_enrich)-_ei-1) if _ei > 0 else 0
+                        _pct     = 30 + int((_ei+1)/max(len(_need_enrich),1)*55)
+                        _scrape_status.info(
+                            f"Step C: {_ei+1}/{len(_need_enrich)} · {_enriched_g} enriched · "
+                            f"skipped {_already_ok:,} · "
+                            f"  {fmt_time(_rem).replace('~','')} remaining"
+                        )
+                        _scrape_bar.progress(min(_pct, 85))
 
             # ── Step D: Phone & hours (optional) ─────────────────────────────
             if _run_phone_s2:
@@ -3538,10 +3573,14 @@ else:
                         )
                     time.sleep(0.05)
 
-            # ── Step E: POI enrichment (always done at cache time) ────────────
-            _poi_radius_use = st.session_state.get("admin_enrichment",{}).get("poi_radius_m", 500)
-            _poi_api_key    = _scrape_api_key
-            _need_poi = [s for s in _all_universe if s.get("lat") and s.get("lng") and not s.get("poi_count",0)]
+            # ── Step E: POI enrichment (toggle in Run page) ───────────────────
+            if not st.session_state.get("admin_enrichment", {}).get("run_poi", True):
+                _scrape_status.info("Step E: skipped (POI count disabled).")
+                _need_poi = []
+            else:
+                _poi_radius_use = st.session_state.get("admin_enrichment",{}).get("poi_radius_m", 500)
+                _poi_api_key    = _scrape_api_key
+                _need_poi = [s for s in _all_universe if s.get("lat") and s.get("lng") and not s.get("poi_count",0)]
             if _need_poi and _poi_api_key:
                 _scrape_status.info(f"Step E: POI count for {len(_need_poi):,} stores...")
                 _poi_done = 0
