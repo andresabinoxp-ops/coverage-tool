@@ -4176,6 +4176,29 @@ if st.button("  Run Coverage Agent", type="primary"):
             }
 
             _before_filter = len(universe)
+            # ── Oman-only neighbour exclusion ─────────────────────────────────
+            # Oman's borders are long (UAE on 3 sides for Musandam, twin-city
+            # with Al Ain for Buraimi). Google Places' radius doesn't respect
+            # borders and UAE has ~100× the retail density of Oman, so even a
+            # small geographic leak floods results with ADNOC/Emarat/ENOC etc.
+            # Two extra checks block them — scoped to Oman only.
+            _is_oman = str(cfg.get("country_name", "") or cfg.get("country","")).strip().lower() == "oman"
+            _UAE_BRANDS = {"adnoc", "emarat", "enoc", "eppco"}
+            def _in_oman_block(la, ln, name):
+                if not _is_oman:
+                    return False
+                _n = str(name or "").lower()
+                if any(b in _n for b in _UAE_BRANDS):
+                    return True
+                # Preserve Musandam exclave and Al Buraimi proper
+                if 25.7 <= la <= 26.45 and 56.0 <= ln <= 56.55: return False
+                if 24.2 <= la <= 24.3 and 55.75 <= ln <= 55.85: return False
+                # Mainland UAE
+                if 22.5 <= la <= 26.4 and 51.0 <= ln <= 56.0: return True
+                # Fujairah/Dibba UAE side (just south of Musandam)
+                if 24.5 <= la < 25.7 and 56.0 <= ln <= 56.6: return True
+                return False
+
             if _area_bboxes:
                 def _in_coverage_area(s):
                     lat = s.get("lat")
@@ -4186,6 +4209,9 @@ if st.button("  Run Coverage Agent", type="primary"):
                         lat, lng = float(lat), float(lng)
                     except (ValueError, TypeError):
                         return True
+                    # Check 0: Oman neighbour block (UAE coords + UAE brands)
+                    if _in_oman_block(lat, lng, s.get("store_name","")):
+                        return False
                     # Check 1: Foreign city name filter
                     _s_city = str(s.get("city", "") or "").strip().lower()
                     _s_addr = str(s.get("address", "") or "").strip().lower()
@@ -4210,6 +4236,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                         lat, lng = float(lat), float(lng)
                     except (ValueError, TypeError):
                         return True
+                    if _in_oman_block(lat, lng, s.get("store_name","")):
+                        return False
                     # Foreign city name filter
                     _s_city = str(s.get("city", "") or "").strip().lower()
                     _s_addr = str(s.get("address", "") or "").strip().lower()
