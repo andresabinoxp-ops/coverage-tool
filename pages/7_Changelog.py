@@ -41,9 +41,46 @@ st.markdown("""
 
 versions = [
     {
+        "version": "v1.5",
+        "date": "20 May 2026",
+        "tag": "current",
+        "summary": "Capacity balancing, dedicated-rule geography, scrape controls and uncovered-outlet reporting",
+        "sections": {
+            "Rep Capacity & Balancing": [
+                "Overloaded rep zones now split iteratively until every rep is at or below 110% utilisation — no more reps at 200%+",
+                "Overload-split decision uses exec + travel time (matches the dashboard), not visit time alone",
+                "Mixed pool now uses capacitated spatial clustering — every rep gets a balanced store count AND a geographically tight territory (fixes reps spanning north + south)",
+                "Daily capacity enforcement rewritten: per-rep, per-day, with a hard cap of 2 store removals per day — ends the wholesale 200–300 store drops",
+                "Final pipeline summary line: actual reps routed, exec+travel, capacity and utilisation",
+            ],
+            "Fixed Mode": [
+                "Fixed mode now honours the chosen rep count strictly — overflow stores are dropped (lowest-score first) instead of overloading reps",
+                "Fixed-count dedicated rules: balanced split first, then per-rep drop only where genuinely over 110%",
+                "Dropped stores carry a clear exclusion reason and appear in the Uncovered Outlets list",
+            ],
+            "Dedicated Rep Rules": [
+                "Geography matching is now region-structure based — coverage stores match by their own region field, scraped stores by a city→region lookup with a coordinate-fence fallback",
+                "Per-rule diagnostic breakdown in the run log — shows how many stores were claimed by an earlier rule, dropped by size, dropped by geography or failed the name match",
+                "Region fences built from the coverage file's outlet coordinates — lets the whole country run in one pass",
+            ],
+            "Geography & Data Cleanup": [
+                "City cleanup — junk city labels (blank, Arabic, concatenated-governorate strings) are snapped to the nearest coverage city within 20 km; clean names left untouched",
+                "Oman scrapes now block UAE neighbour stations at scrape time — UAE-mainland coordinates and UAE-only brands (ADNOC, Emarat, ENOC, EPPCO) are filtered out",
+            ],
+            "Scraping Controls": [
+                "Rating/review search (Step C) and Nearby POI count (Step E) are now toggleable in the Run page — previously hardwired on",
+                "Step C auto-aborts when a category has no rating data on Google (streak-based) — saves long, useless API loops on categories like gas stations",
+            ],
+            "Coverage Reporting": [
+                "Every uncovered outlet now carries an exclusion_reason — visible in the rep route files and a dedicated Uncovered Outlets download",
+                "Results page rep count shows the true routed rep count, not the mathematical ideal; simplified utilisation display",
+            ],
+        }
+    },
+    {
         "version": "v1.4",
         "date": "29 March 2026",
-        "tag": "current",
+        "tag": "stable",
         "summary": "Route planning, rep capacity and coverage matching overhaul",
         "sections": {
             "Route Planning": [
@@ -90,7 +127,7 @@ versions = [
     {
         "version": "v1.3",
         "date": "28 March 2026",
-        "tag": "stable",
+        "tag": "previous",
         "summary": "Scoring stability, size tiers and pipeline error handling",
         "sections": {
             "Scoring": [
