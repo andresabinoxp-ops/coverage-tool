@@ -3165,6 +3165,14 @@ else:
             key="enrich_phone_s2",
             help="~$0.017/store. Turn off for test runs to save credits."
         )
+        _parallel_scrape = st.toggle(
+            "  Parallel scraping (faster)",
+            value=_admin_enrich_s2.get("parallel_scrape", True),
+            key="parallel_scrape_s2",
+            help="Step B scrapes ~5 tiles in parallel instead of one at a time. "
+                 "Same data, ~5× faster. Turn off to use the original sequential "
+                 "method (slower but identical results)."
+        )
     with _ec3:
         _poi_radius_s2 = st.number_input(
             "POI radius (m)", min_value=100, max_value=2000,
@@ -3176,6 +3184,7 @@ else:
         "run_place_details": _run_phone_s2,
         "run_poi":           _run_poi_s2,
         "run_rating":        _run_rating_s2,
+        "parallel_scrape":   _parallel_scrape,
         "poi_radius_m":      _poi_radius_s2,
     }
 
@@ -3278,71 +3287,127 @@ else:
             _done_tiles  = 0
             _type_filtered = 0
 
+            # Per-tile result builder — same logic for both sequential and
+            # parallel paths. Returns (list_of_stores, type_filtered_count).
+            def _scrape_one_tile(_cat, _tlat, _tlng):
+                _local_shops = []
+                _local_filtered = 0
+                _token_l = None
+                while True:
+                    if st.session_state.get("_cancel_scrape"):
+                        break
+                    _data_l = fetch_places(_tlat, _tlng, _radius_m, _cat, _scrape_api_key, _token_l)
+                    for _place in _data_l.get("results", []):
+                        _pid = _place.get("place_id", "")
+                        if not _pid: continue
+                        if _place.get("business_status") == "CLOSED_PERMANENTLY": continue
+                        _ptypes = _place.get("types", [])
+                        if not _is_grocery_by_types(_ptypes):
+                            _local_filtered += 1
+                            continue
+                        _loc = _place.get("geometry", {}).get("location", {})
+                        _slat = _loc.get("lat", 0); _slng = _loc.get("lng", 0)
+                        if _slat and _slng:
+                            if (_slat < cfg["lat_min"] or _slat > cfg["lat_max"] or
+                                _slng < cfg["lng_min"] or _slng > cfg["lng_max"]):
+                                continue
+                        _vic    = _place.get("vicinity", "")
+                        _vparts = [_p.strip() for _p in _vic.split(",") if _p.strip()]
+                        _scity  = _vparts[-1] if len(_vparts) >= 2 else cfg.get("city","")
+                        _saddr  = ", ".join(_vparts[:-1]) if len(_vparts) >= 2 else (_vparts[0] if _vparts else "")
+                        _cname  = clean_store_name(_place.get("name", ""))
+                        if not _cname: continue
+                        _local_shops.append({
+                            "store_id": _pid, "place_id": _pid, "store_name": _cname,
+                            "address": _saddr, "city": _scity, "region": cfg.get("city",""),
+                            "lat": _loc.get("lat"), "lng": _loc.get("lng"),
+                            "rating": float(_place.get("rating",0) or 0),
+                            "review_count": int(_place.get("user_ratings_total",0) or 0),
+                            "price_level": int(_place.get("price_level",0) or 0),
+                            "business_status": _map_biz_status(_place.get("business_status","")),
+                            "category": _cat, "annual_sales_usd": 0.0, "lines_per_store": 0,
+                            "covered": False, "source": "scraped",
+                            "phone": "", "opening_hours": "", "website": "", "poi_count": 0,
+                            "google_types": _ptypes,
+                        })
+                    _token_l = _data_l.get("next_page_token")
+                    if not _token_l: break
+                return _local_shops, _local_filtered
+
             _scrape_cancelled = False
-            for _cat in cfg["categories"]:
-                if _scrape_cancelled:
-                    break
-                for _tlat,_tlng in _centres:
+            _use_parallel = st.session_state.get("admin_enrichment", {}).get("parallel_scrape", True)
+            _work_units = [(_cat, _tlat, _tlng)
+                           for _cat in cfg["categories"]
+                           for _tlat, _tlng in _centres]
+
+            if _use_parallel:
+                # ── PARALLEL: scrape ~5 tiles at a time via ThreadPoolExecutor ─
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                import threading as _threading_p
+                _PARALLEL_WORKERS = 5
+                _lock = _threading_p.Lock()
+                with ThreadPoolExecutor(max_workers=_PARALLEL_WORKERS) as _ex:
+                    _futures = {_ex.submit(_scrape_one_tile, _cat, _tlat, _tlng):
+                                (_cat, _tlat, _tlng) for (_cat, _tlat, _tlng) in _work_units}
+                    for _fut in as_completed(_futures):
+                        if st.session_state.get("_cancel_scrape"):
+                            _scrape_status.warning(f"Step B: Cancelled at {_done_tiles}/{_total_tiles} tiles. Saving {len(_osm_shops):,} stores...")
+                            _scrape_cancelled = True
+                            for _pending in _futures: _pending.cancel()
+                            break
+                        try:
+                            _tile_shops, _tile_filtered = _fut.result()
+                        except Exception:
+                            _tile_shops, _tile_filtered = [], 0
+                        with _lock:
+                            for _s in _tile_shops:
+                                _pid = _s.get("place_id", "")
+                                if _pid and _pid not in _seen_ids:
+                                    _seen_ids.add(_pid)
+                                    _osm_shops.append(_s)
+                            _type_filtered += _tile_filtered
+                            _done_tiles += 1
+                            _pct = 5 + int(_done_tiles / _total_tiles * 20)
+                            _elapsed = time.time() - _scrape_t0
+                            _rem = (_elapsed / _done_tiles) * (_total_tiles - _done_tiles) if _done_tiles > 0 else 0
+                        # UI updates on main thread (as_completed is on main thread)
+                        if _done_tiles % 5 == 0 or _done_tiles == _total_tiles:
+                            _scrape_status.info(
+                                f"Step B: {_done_tiles}/{_total_tiles} tiles · "
+                                f"{len(_osm_shops):,} kept · {_type_filtered} filtered by type · "
+                                f"  {fmt_time(_rem).replace('~','')} remaining (parallel)"
+                            )
+                            _scrape_bar.progress(_pct)
+                        if _done_tiles % 20 == 0:
+                            st.session_state["_scrape_checkpoint"] = {
+                                "universe": list(_osm_shops),
+                                "step": f"scrape_tile_{_done_tiles}",
+                                "saved_at": time.strftime("%d %b %Y %H:%M"),
+                            }
+            else:
+                # ── SEQUENTIAL: original tile-by-tile loop (unchanged behaviour) ─
+                for _cat, _tlat, _tlng in _work_units:
                     if st.session_state.get("_cancel_scrape"):
                         _scrape_status.warning(f"Step B: Cancelled at {_done_tiles}/{_total_tiles} tiles. Saving {len(_osm_shops):,} stores...")
                         _scrape_cancelled = True
                         break
-                    _token = None
-                    while True:
-                        _data = fetch_places(_tlat,_tlng,_radius_m,_cat,_scrape_api_key,_token)
-                        for _place in _data.get("results",[]):
-                            _pid = _place.get("place_id","")
-                            if _pid in _seen_ids: continue
-                            if _place.get("business_status") == "CLOSED_PERMANENTLY": continue
-                            # Filter by Google's own types array — most reliable signal
-                            _ptypes = _place.get("types", [])
-                            if not _is_grocery_by_types(_ptypes):
-                                _type_filtered += 1
-                                continue
+                    _tile_shops, _tile_filtered = _scrape_one_tile(_cat, _tlat, _tlng)
+                    for _s in _tile_shops:
+                        _pid = _s.get("place_id", "")
+                        if _pid and _pid not in _seen_ids:
                             _seen_ids.add(_pid)
-                            _loc    = _place.get("geometry",{}).get("location",{})
-                            # Filter by configured bounding box — drop stores outside country
-                            _slat = _loc.get("lat", 0)
-                            _slng = _loc.get("lng", 0)
-                            if _slat and _slng:
-                                if (_slat < cfg["lat_min"] or _slat > cfg["lat_max"] or
-                                    _slng < cfg["lng_min"] or _slng > cfg["lng_max"]):
-                                    continue
-                            _vic    = _place.get("vicinity","")
-                            _vparts = [_p.strip() for _p in _vic.split(",") if _p.strip()]
-                            _scity  = _vparts[-1] if len(_vparts)>=2 else cfg.get("city","")
-                            _saddr  = ", ".join(_vparts[:-1]) if len(_vparts)>=2 else (_vparts[0] if _vparts else "")
-                            _cname  = clean_store_name(_place.get("name",""))
-                            if not _cname: continue
-                            _osm_shops.append({
-                                "store_id":_pid,"place_id":_pid,"store_name":_cname,
-                                "address":_saddr,"city":_scity,"region":cfg.get("city",""),
-                                "lat":_loc.get("lat"),"lng":_loc.get("lng"),
-                                "rating":float(_place.get("rating",0) or 0),
-
-
-
-                                "review_count":int(_place.get("user_ratings_total",0) or 0),
-                                "price_level":int(_place.get("price_level",0) or 0),
-                                "business_status":_map_biz_status(_place.get("business_status","")),
-                                "category":_cat,"annual_sales_usd":0.0,"lines_per_store":0,
-                                "covered":False,"source":"scraped",
-                                "phone":"","opening_hours":"","website":"","poi_count":0,
-                                "google_types": _ptypes,
-                            })
-                        _token = _data.get("next_page_token")
-                        if not _token: break
+                            _osm_shops.append(_s)
+                    _type_filtered += _tile_filtered
                     _done_tiles += 1
-                    _pct = 5 + int(_done_tiles/_total_tiles*20)
+                    _pct = 5 + int(_done_tiles / _total_tiles * 20)
                     _elapsed = time.time() - _scrape_t0
-                    _rem = (_elapsed/_done_tiles)*(_total_tiles-_done_tiles) if _done_tiles>0 else 0
+                    _rem = (_elapsed / _done_tiles) * (_total_tiles - _done_tiles) if _done_tiles > 0 else 0
                     _scrape_status.info(
                         f"Step B: {_done_tiles}/{_total_tiles} tiles · "
                         f"{len(_osm_shops):,} kept · {_type_filtered} filtered by type · "
                         f"  {fmt_time(_rem).replace('~','')} remaining"
                     )
                     _scrape_bar.progress(_pct)
-                    # Checkpoint every 20 tiles — crash recovery
                     if _done_tiles % 20 == 0:
                         st.session_state["_scrape_checkpoint"] = {
                             "universe": list(_osm_shops),
