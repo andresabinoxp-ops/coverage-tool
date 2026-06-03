@@ -3073,6 +3073,44 @@ if _cached:
         )
         st.caption("  Download to preserve cache across sessions")
 
+        # One-click encoding repair for an in-memory cache that already has
+        # mojibake (Atacadão → Atacadão) — no re-scrape, no re-upload.
+        _mojibake_rows = sum(
+            1 for s in _cached["universe"]
+            if any(
+                isinstance(v, str) and ("Ã" in v or "Â" in v)
+                for v in s.values()
+            )
+        )
+        if _mojibake_rows > 0:
+            if st.button(
+                f"  Repair encoding in cache ({_mojibake_rows:,} rows affected)",
+                key="btn_fix_cache_encoding",
+                help="Reverses Excel round-trip damage on store_name / address / city / district fields. No re-scrape needed."
+            ):
+                def _fix_mojibake_cache(text):
+                    if not isinstance(text, str) or not text:
+                        return text
+                    if "Ã" not in text and "Â" not in text:
+                        return text
+                    try:
+                        fixed = text.encode("latin-1").decode("utf-8")
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        return text
+                    before = text.count("Ã") + text.count("Â")
+                    after = fixed.count("Ã") + fixed.count("Â")
+                    return fixed if after < before else text
+                _repaired = 0
+                for s in _cached["universe"]:
+                    for k, v in list(s.items()):
+                        if isinstance(v, str):
+                            nv = _fix_mojibake_cache(v)
+                            if nv != v:
+                                s[k] = nv
+                                _repaired += 1
+                st.success(f"  Repaired {_repaired:,} field(s) in cache.")
+                st.rerun()
+
     # ── Import CSV to replace existing cache ─────────────────────────────────
     with st.expander("  Replace cache by importing a CSV"):
         st.caption("Upload a previously downloaded universe CSV to replace the current cache.")
@@ -3083,6 +3121,30 @@ if _cached:
             try:
                 import pandas as _pd_imp2
                 _imp_df2 = _pd_imp2.read_csv(_imp_file2)
+
+                # Reverse mojibake on string columns (Excel round-trip damage)
+                def _fix_mojibake_imp(text):
+                    if not isinstance(text, str) or not text:
+                        return text
+                    if "Ã" not in text and "Â" not in text:
+                        return text
+                    try:
+                        fixed = text.encode("latin-1").decode("utf-8")
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        return text
+                    before = text.count("Ã") + text.count("Â")
+                    after = fixed.count("Ã") + fixed.count("Â")
+                    return fixed if after < before else text
+                _fixed_cells = 0
+                for _col in _imp_df2.columns:
+                    if _imp_df2[_col].dtype == object:
+                        _before_col = _imp_df2[_col].astype(str).str.contains("Ã|Â", regex=True, na=False).sum()
+                        _imp_df2[_col] = _imp_df2[_col].map(_fix_mojibake_imp)
+                        _after_col = _imp_df2[_col].astype(str).str.contains("Ã|Â", regex=True, na=False).sum()
+                        _fixed_cells += max(0, _before_col - _after_col)
+                if _fixed_cells > 0:
+                    st.info(f"  Repaired encoding in {_fixed_cells} cells.")
+
                 _imp_df2.columns = [c.strip().lower().replace(" ","_") for c in _imp_df2.columns]
                 if "store_name" not in _imp_df2.columns or "lat" not in _imp_df2.columns:
                     st.error("File must have at least store_name and lat columns.")
@@ -3125,6 +3187,30 @@ else:
         try:
             import pandas as _pd_imp
             _imp_df = _pd_imp.read_csv(_imp_file)
+
+            # Reverse mojibake on string columns (Excel round-trip damage)
+            def _fix_mojibake_imp(text):
+                if not isinstance(text, str) or not text:
+                    return text
+                if "Ã" not in text and "Â" not in text:
+                    return text
+                try:
+                    fixed = text.encode("latin-1").decode("utf-8")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    return text
+                before = text.count("Ã") + text.count("Â")
+                after = fixed.count("Ã") + fixed.count("Â")
+                return fixed if after < before else text
+            _fixed_cells = 0
+            for _col in _imp_df.columns:
+                if _imp_df[_col].dtype == object:
+                    _before_col = _imp_df[_col].astype(str).str.contains("Ã|Â", regex=True, na=False).sum()
+                    _imp_df[_col] = _imp_df[_col].map(_fix_mojibake_imp)
+                    _after_col = _imp_df[_col].astype(str).str.contains("Ã|Â", regex=True, na=False).sum()
+                    _fixed_cells += max(0, _before_col - _after_col)
+            if _fixed_cells > 0:
+                st.info(f"  Repaired encoding in {_fixed_cells} cells.")
+
             _imp_df.columns = [c.strip().lower().replace(" ","_") for c in _imp_df.columns]
             if "store_name" not in _imp_df.columns or "lat" not in _imp_df.columns:
                 st.error("File must have at least store_name and lat columns.")
