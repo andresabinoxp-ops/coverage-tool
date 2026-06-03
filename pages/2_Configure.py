@@ -318,6 +318,28 @@ with tab_market:
             if df is None:
                 st.error("Could not read the file — please save as UTF-8 CSV.")
                 st.stop()
+
+            # Fix double-encoded text (mojibake) — when a UTF-8 CSV has been
+            # round-tripped through Excel, accented characters land in memory as
+            # e.g. "Atacadão" instead of "Atacadão". Reverse the damage by
+            # re-encoding as latin-1 and decoding as utf-8; only keep the
+            # result when it strictly reduces the mojibake-marker count.
+            def _fix_mojibake(text):
+                if not isinstance(text, str) or not text:
+                    return text
+                if "Ã" not in text and "Â" not in text:
+                    return text
+                try:
+                    fixed = text.encode("latin-1").decode("utf-8")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    return text
+                before = text.count("Ã") + text.count("Â")
+                after = fixed.count("Ã") + fixed.count("Â")
+                return fixed if after < before else text
+            for _col in df.columns:
+                if df[_col].dtype == object:
+                    df[_col] = df[_col].map(_fix_mojibake)
+
             df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
             df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
             df = df[df["store_name"].fillna("").str.strip() != ""].reset_index(drop=True)
