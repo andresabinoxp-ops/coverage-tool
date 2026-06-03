@@ -4003,16 +4003,27 @@ if st.button("  Run Coverage Agent", type="primary"):
 
 
                       "rating":0.0,"review_count":0,"phone":"","opening_hours":"","website":""})
-            # Restore original coordinates — only clear if they were missing/invalid
-            try:
-                s["lat"] = float(_orig_lat) if _orig_lat not in (None,"","nan") else None
-                s["lng"] = float(_orig_lng) if _orig_lng not in (None,"","nan") else None
-                # Validate range — zero coords are invalid
-                if s["lat"] == 0.0: s["lat"] = None
-                if s["lng"] == 0.0: s["lng"] = None
-            except (TypeError, ValueError):
-                s["lat"] = None
-                s["lng"] = None
+            # Restore original coordinates — only clear if they were missing/invalid.
+            # Empty CSV cells come through as float NaN from pandas — we must detect
+            # that explicitly because float('nan') is not in the string-tuple below
+            # and would otherwise slip past as a "valid" coordinate.
+            def _coord_or_none(v):
+                if v is None:
+                    return None
+                if isinstance(v, float) and math.isnan(v):
+                    return None
+                s_v = str(v).strip().lower()
+                if s_v in ("", "nan", "none", "null"):
+                    return None
+                try:
+                    f = float(v)
+                    if math.isnan(f) or f == 0.0:
+                        return None
+                    return f
+                except (TypeError, ValueError):
+                    return None
+            s["lat"] = _coord_or_none(_orig_lat)
+            s["lng"] = _coord_or_none(_orig_lng)
             if "category" not in s: s["category"] = cfg["categories"][0] if cfg["categories"] else "supermarket"
 
         radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
