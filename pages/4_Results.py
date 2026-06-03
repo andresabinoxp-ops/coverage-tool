@@ -401,7 +401,8 @@ with col1:
         for mk in ([_m1k] if _m1k else []) + ([_m2k] if _m2k else []):
             _date_visit_cols += [f"{mk}_dates", f"{mk}_visits"]
         priority = ["store_id","store_name","address","city","district","region",
-                    "lat","lng","category","source","covered","coverage_status",
+                    "postal_code","lat","lng","geocode_confidence",
+                    "category","source","covered","coverage_status",
                     "rating","review_count","price_level","poi_count",
                     "score","size_tier","visits_per_month","visit_duration_min",
                     "annual_sales_usd","lines_per_store","cluster_id","cluster_name",

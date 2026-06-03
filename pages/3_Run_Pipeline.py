@@ -361,7 +361,13 @@ def geocode_store(address, city, api_key, district="", region="", country="", po
     """Geocode using address + optional district, region, postal_code and country
     for better accuracy. Postal code (CEP/ZIP) dramatically improves precision
     when addresses are imprecise. Including country is critical to avoid
-    geocoding to wrong countries."""
+    geocoding to wrong countries.
+
+    Returns (lat, lng, confidence) where confidence is one of:
+      - 'precise'     : ROOFTOP or RANGE_INTERPOLATED (street/building level)
+      - 'approximate' : GEOMETRIC_CENTER or APPROXIMATE (block/neighbourhood/city level)
+      - 'failed'      : geocoding failed or returned no result
+    """
     try:
         parts = [p for p in [address, district, city, region, postal_code, country] if p and str(p).strip()]
         full_address = ", ".join(parts)
@@ -369,11 +375,14 @@ def geocode_store(address, city, api_key, district="", region="", country="", po
             params={"address": full_address, "key": api_key}, timeout=10)
         data = r.json()
         if data.get("status") == "OK":
-            loc = data["results"][0]["geometry"]["location"]
-            return loc["lat"], loc["lng"]
+            result = data["results"][0]
+            loc = result["geometry"]["location"]
+            loc_type = result["geometry"].get("location_type", "")
+            confidence = "precise" if loc_type in ("ROOFTOP", "RANGE_INTERPOLATED") else "approximate"
+            return loc["lat"], loc["lng"], confidence
     except Exception:
         pass
-    return None, None
+    return None, None, "failed"
 
 def fetch_places(lat, lng, radius, place_type, api_key, token=None):
     try:
@@ -4043,14 +4052,24 @@ if st.button("  Run Coverage Agent", type="primary"):
 
 
 
+        # Pre-fill postal_code + geocode_confidence for ALL portfolio rows so the
+        # output CSV always has these diagnostic columns, even when geocoding was skipped.
+        for s in portfolio:
+            if "postal_code" not in s or not s.get("postal_code"):
+                s["postal_code"] = _get_location_field(s, POSTAL_COLS)
+            if "geocode_confidence" not in s:
+                s["geocode_confidence"] = "input" if (s.get("lat") and s.get("lng")) else ""
+
         market_country = cfg.get("country_name","") or st.session_state.get("country_name","")
         for s in needs_geocode:
             district    = _get_location_field(s, DISTRICT_COLS)
             region      = _get_location_field(s, REGION_COLS)
             postal_code = _get_location_field(s, POSTAL_COLS)
-            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key,
-                                     district, region, market_country, postal_code)
+            lat, lng, confidence = geocode_store(s.get("address",""), s.get("city",""), api_key,
+                                                 district, region, market_country, postal_code)
             s["lat"], s["lng"] = lat, lng
+            s["postal_code"] = postal_code
+            s["geocode_confidence"] = confidence
             time.sleep(0.05)
 
         # ── Geocoding quality check — ALL portfolio stores ──────────────────────
