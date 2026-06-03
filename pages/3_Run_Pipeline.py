@@ -347,6 +347,7 @@ def calculate_estimate(enrich_count, enrich_scope):
 # Auto-detect sub-city and region column names
 DISTRICT_COLS = ["district","area","neighbourhood","neighborhood","bairro","zone","suburb","quarter"]
 REGION_COLS   = ["region","state","governorate","province","county","wilaya","emirate","prefecture"]
+POSTAL_COLS   = ["postal_code","postcode","cep","zip","zip_code","zipcode","pin","pincode"]
 
 def _get_location_field(store, col_list):
     """Return first non-empty value from a list of possible column names."""
@@ -356,11 +357,13 @@ def _get_location_field(store, col_list):
             return str(v).strip()
     return ""
 
-def geocode_store(address, city, api_key, district="", region="", country=""):
-    """Geocode using address + optional district, region and country for better accuracy.
-    Including country is critical to avoid geocoding to wrong countries."""
+def geocode_store(address, city, api_key, district="", region="", country="", postal_code=""):
+    """Geocode using address + optional district, region, postal_code and country
+    for better accuracy. Postal code (CEP/ZIP) dramatically improves precision
+    when addresses are imprecise. Including country is critical to avoid
+    geocoding to wrong countries."""
     try:
-        parts = [p for p in [address, district, city, region, country] if p and str(p).strip()]
+        parts = [p for p in [address, district, city, region, postal_code, country] if p and str(p).strip()]
         full_address = ", ".join(parts)
         r = requests.get(GEOCODE_URL,
             params={"address": full_address, "key": api_key}, timeout=10)
@@ -4042,9 +4045,11 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         market_country = cfg.get("country_name","") or st.session_state.get("country_name","")
         for s in needs_geocode:
-            district = _get_location_field(s, DISTRICT_COLS)
-            region   = _get_location_field(s, REGION_COLS)
-            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key, district, region, market_country)
+            district    = _get_location_field(s, DISTRICT_COLS)
+            region      = _get_location_field(s, REGION_COLS)
+            postal_code = _get_location_field(s, POSTAL_COLS)
+            lat, lng = geocode_store(s.get("address",""), s.get("city",""), api_key,
+                                     district, region, market_country, postal_code)
             s["lat"], s["lng"] = lat, lng
             time.sleep(0.05)
 
