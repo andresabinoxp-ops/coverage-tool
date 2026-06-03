@@ -4518,6 +4518,24 @@ if st.button("  Run Coverage Agent", type="primary"):
             status.info(f"Stage 2/{total_steps} — Found {len(universe):,} stores (auto-saved to cache)")
             bar.progress(45)
 
+        # ── Direct-accounts exclusion ────────────────────────────────────────
+        # Remove scraped stores whose name matches a banner the user listed as
+        # "serviced directly by the manufacturer". Pure pre-filter — no logic
+        # downstream is touched, the universe just enters Stage 3 smaller.
+        _direct_banners = [b.strip().lower() for b in st.session_state.get("direct_accounts", []) if b.strip()]
+        if _direct_banners:
+            _before_direct = len(universe)
+            universe = [
+                s for s in universe
+                if not any(b in str(s.get("store_name","") or s.get("name","")).lower() for b in _direct_banners)
+            ]
+            _removed_direct = _before_direct - len(universe)
+            if _removed_direct > 0:
+                status.info(
+                    f"Stage 2/{total_steps} — Excluded {_removed_direct} direct-account stores "
+                    f"({len(_direct_banners)} banners on list)"
+                )
+
         # Stage 3: Score
         status.info(f"Stage 3/{total_steps} — Scoring all stores...")
         all_stores = portfolio + universe
