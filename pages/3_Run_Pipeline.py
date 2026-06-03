@@ -4042,37 +4042,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["lng"] = None
                 needs_geocode.append(s)
 
-        # ── Detect bogus duplicated coordinates ──────────────────────────────────
-        # If many portfolio rows share the EXACT same lat/lng, the input file has
-        # placeholder/default coordinates (e.g. city centroid stamped on every row).
-        # Null them out and force re-geocoding using address + CEP for each store.
-        from collections import Counter
-        _coord_counts = Counter(
-            (round(s["lat"], 5), round(s["lng"], 5))
-            for s in has_coords
-            if s.get("lat") is not None and s.get("lng") is not None
-        )
-        _collapsed_points = {pt for pt, n in _coord_counts.items() if n >= 3}
-        if _collapsed_points:
-            _moved = []
-            for s in has_coords[:]:
-                key = (round(s["lat"], 5), round(s["lng"], 5))
-                if key in _collapsed_points:
-                    s["lat"] = None
-                    s["lng"] = None
-                    has_coords.remove(s)
-                    needs_geocode.append(s)
-                    _moved.append(s)
-            if _moved:
-                _pts_str = ", ".join(f"({lat:.5f}, {lng:.5f})" for lat, lng in list(_collapsed_points)[:3])
-                if len(_collapsed_points) > 3:
-                    _pts_str += f" +{len(_collapsed_points) - 3} more"
-                status.warning(
-                    f"  Detected {len(_moved)} portfolio rows sharing {len(_collapsed_points)} "
-                    f"duplicate coordinate point(s) [{_pts_str}] — treating as invalid pre-fills "
-                    f"and forcing re-geocode."
-                )
-
         if has_coords and not needs_geocode:
             status.info(f"Stage 1/{total_steps} — All {len(has_coords)} portfolio stores have coordinates — geocoding skipped.")
         elif has_coords:
