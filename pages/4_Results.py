@@ -420,7 +420,7 @@ with col1:
     _clean_df = pd.DataFrame(all_stores).drop(columns=[c for c in _explicit_drop if c in pd.DataFrame(all_stores).columns], errors="ignore")
     _clean_df = _reorder_cols(_clean_df)
     st.download_button("  Full scored universe CSV",
-        _clean_df.reset_index(drop=True).to_csv(index=False),
+        "﻿" + _clean_df.reset_index(drop=True).to_csv(index=False),
         f"scored_universe_{mkt_safe}.csv", "text/csv")
 with col2:
     _gap_df = pd.DataFrame(gap_stores).reset_index(drop=True) if gap_stores else pd.DataFrame()
@@ -431,7 +431,7 @@ with col2:
         _score_thresh = _gap_df["score"].quantile(0.40)  # top 60% = above 40th percentile
         _gap_df["top_gap_opportunity"] = (_gap_df["score"] >= _score_thresh).map({True:"Yes", False:"No"})
     st.download_button("  Gap report CSV",
-        _gap_df.reset_index(drop=True).to_csv(index=False),
+        "﻿" + _gap_df.reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 with col3:
     features = [

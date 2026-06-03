@@ -2953,6 +2953,24 @@ if portfolio_df is None:
             if df is None:
                 st.error("Could not read the file — unsupported encoding. Please save as UTF-8 CSV and try again.")
                 st.stop()
+
+            # Reverse Excel-induced mojibake (e.g. "Atacadão" → "Atacadão")
+            def _fix_mojibake(text):
+                if not isinstance(text, str) or not text:
+                    return text
+                if "Ã" not in text and "Â" not in text:
+                    return text
+                try:
+                    fixed = text.encode("latin-1").decode("utf-8")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    return text
+                before = text.count("Ã") + text.count("Â")
+                after = fixed.count("Ã") + fixed.count("Â")
+                return fixed if after < before else text
+            for _col in df.columns:
+                if df[_col].dtype == object:
+                    df[_col] = df[_col].map(_fix_mojibake)
+
             df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
             # Drop completely blank rows (empty Excel rows at end of file)
             df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
@@ -3049,7 +3067,7 @@ if _cached:
         _dl_df = _pd_dl.DataFrame(_cached["universe"])
         st.download_button(
             "  Download universe CSV",
-            _dl_df.to_csv(index=False),
+            "﻿" + _dl_df.to_csv(index=False),
             f"{cfg.get('market_name','market')}_universe.csv",
             "text/csv", key="dl_universe_cache"
         )
@@ -4517,6 +4535,24 @@ if st.button("  Run Coverage Agent", type="primary"):
             }
             status.info(f"Stage 2/{total_steps} — Found {len(universe):,} stores (auto-saved to cache)")
             bar.progress(45)
+
+        # ── Direct-accounts exclusion ────────────────────────────────────────
+        # Remove scraped stores whose name matches a banner the user listed as
+        # "serviced directly by the manufacturer". Pure pre-filter — no logic
+        # downstream is touched, the universe just enters Stage 3 smaller.
+        _direct_banners = [b.strip().lower() for b in st.session_state.get("direct_accounts", []) if b.strip()]
+        if _direct_banners:
+            _before_direct = len(universe)
+            universe = [
+                s for s in universe
+                if not any(b in str(s.get("store_name","") or s.get("name","")).lower() for b in _direct_banners)
+            ]
+            _removed_direct = _before_direct - len(universe)
+            if _removed_direct > 0:
+                status.info(
+                    f"Stage 2/{total_steps} — Excluded {_removed_direct} direct-account stores "
+                    f"({len(_direct_banners)} banners on list)"
+                )
 
         # Stage 3: Score
         status.info(f"Stage 3/{total_steps} — Scoring all stores...")

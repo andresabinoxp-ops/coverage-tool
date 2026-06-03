@@ -457,12 +457,12 @@ if all_reps:
         _dl1, _dl2, _dl3 = st.columns(3)
         with _dl1:
             st.download_button("  Download all reps — full month CSV",
-                all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
+                "﻿" + all_df.to_csv(index=False), f"all_reps_{mkt_safe}.csv", "text/csv", key="dl_all")
         with _dl2:
             if not _uncovered_df.empty:
                 st.download_button(
                     f"  Download uncovered outlets ({len(_uncovered_df):,}) CSV",
-                    _uncovered_df.to_csv(index=False),
+                    "﻿" + _uncovered_df.to_csv(index=False),
                     f"uncovered_outlets_{mkt_safe}.csv",
                     "text/csv", key="dl_uncovered",
                     help="All scraped outlets that are NOT covered by a rep route, "
@@ -508,7 +508,7 @@ if all_reps:
                 <div style="font-size:0.78rem;color:#6B7280">{len(rep_df)} stores · {tv:.0f} visits/mo</div>
             </div>""", unsafe_allow_html=True)
             st.download_button(f"  Rep {rep} CSV",
-                rep_df.to_csv(index=False), f"rep_{rep}_{mkt_safe}.csv", "text/csv", key=f"dl_rep_{rep}")
+                "﻿" + rep_df.to_csv(index=False), f"rep_{rep}_{mkt_safe}.csv", "text/csv", key=f"dl_rep_{rep}")
 
 st.markdown("---")
 

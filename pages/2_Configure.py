@@ -318,6 +318,28 @@ with tab_market:
             if df is None:
                 st.error("Could not read the file — please save as UTF-8 CSV.")
                 st.stop()
+
+            # Fix double-encoded text (mojibake) — when a UTF-8 CSV has been
+            # round-tripped through Excel, accented characters land in memory as
+            # e.g. "Atacadão" instead of "Atacadão". Reverse the damage by
+            # re-encoding as latin-1 and decoding as utf-8; only keep the
+            # result when it strictly reduces the mojibake-marker count.
+            def _fix_mojibake(text):
+                if not isinstance(text, str) or not text:
+                    return text
+                if "Ã" not in text and "Â" not in text:
+                    return text
+                try:
+                    fixed = text.encode("latin-1").decode("utf-8")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    return text
+                before = text.count("Ã") + text.count("Â")
+                after = fixed.count("Ã") + fixed.count("Â")
+                return fixed if after < before else text
+            for _col in df.columns:
+                if df[_col].dtype == object:
+                    df[_col] = df[_col].map(_fix_mojibake)
+
             df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
             df = df.dropna(subset=["store_name","address","city"], how="all").reset_index(drop=True)
             df = df[df["store_name"].fillna("").str.strip() != ""].reset_index(drop=True)
@@ -603,6 +625,63 @@ with tab_team:
         st.markdown("**Current headcount (optional)**")
         rep_count = st.number_input("Current reps (0 = skip comparison)", min_value=0, max_value=200, value=0,
             help="Only used to compare against the recommendation.")
+
+    st.markdown("---")
+
+    # ── Direct accounts to exclude ───────────────────────────────────────────
+    st.markdown("**Direct accounts to exclude** *(optional)*")
+    st.caption(
+        "Banners serviced directly by the manufacturer. Scraped stores whose names match these banners "
+        "will be removed from the universe before scoring and route planning, so distributors don't get "
+        "assigned to visit them. Your portfolio (current coverage) is never filtered."
+    )
+
+    _direct_default = "\n".join(st.session_state.get("direct_accounts", []))
+    _direct_input = st.text_area(
+        "Banner names (one per line)",
+        value=_direct_default,
+        height=140,
+        placeholder="Walmart\nCarrefour\nAtacadão\nAssaí\nSam's Club\nMakro",
+        key="direct_accounts_input",
+    )
+    _direct_list = [b.strip() for b in _direct_input.splitlines() if b.strip()]
+    st.session_state["direct_accounts"] = _direct_list
+
+    _col_da1, _col_da2 = st.columns([1, 2])
+    with _col_da1:
+        st.caption(f"**{len(_direct_list)} banners** on the exclusion list")
+    with _col_da2:
+        if st.button("Preview matches against last scrape", disabled=not _direct_list, key="direct_preview"):
+            _cache = st.session_state.get("universe_cache", {})
+            _last = next(iter(_cache.values()), None) if _cache else None
+            _scraped = (_last or {}).get("universe", [])
+            if not _scraped:
+                st.info("No cached scrape found — run the pipeline at least once to enable preview.")
+            else:
+                _hits = []
+                _banners_lower = [b.lower() for b in _direct_list]
+                for s in _scraped:
+                    _nm = str(s.get("store_name", "") or s.get("name", "")).lower()
+                    for b in _banners_lower:
+                        if b and b in _nm:
+                            _hits.append(s)
+                            break
+                if not _hits:
+                    st.info(f"No matches found in last scrape of {len(_scraped)} stores.")
+                else:
+                    st.success(
+                        f"Would exclude **{len(_hits)} of {len(_scraped)}** scraped stores "
+                        f"({100*len(_hits)/len(_scraped):.1f}%)."
+                    )
+                    _sample = pd.DataFrame([
+                        {"store_name": h.get("store_name") or h.get("name", ""),
+                         "city": h.get("city", ""),
+                         "category": h.get("category", "")}
+                        for h in _hits[:20]
+                    ])
+                    st.dataframe(_sample, use_container_width=True, hide_index=True)
+                    if len(_hits) > 20:
+                        st.caption(f"... and {len(_hits) - 20} more")
 
     st.markdown("---")
 
