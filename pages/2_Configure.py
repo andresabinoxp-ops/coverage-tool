@@ -636,10 +636,38 @@ with tab_market:
                                     _region_names.append(_v)
 
                         _queries = []
-                        # Area-based queries (preferred — true polygon filter)
+                        # Preferred: actual municipalities (admin_level 7/8) inside
+                        # the state polygon. For Brazil admin_level=8 is "município"
+                        # (~185 in Pernambuco); most countries use 7 or 8 for the
+                        # city/municipality level. This avoids pulling in hamlets
+                        # tagged as place=village.
                         for _rn in _region_names:
                             _rn_esc = _rn.replace('"', '\\"')
-                            _queries.append((f"area:{_rn}", f"""
+                            _queries.append((f"area:{_rn} admin8", f"""
+                            [out:json][timeout:90];
+                            area["name"="{_rn_esc}"]["admin_level"~"^(4|5|6)$"]["boundary"="administrative"]->.searchArea;
+                            (
+                              relation["boundary"="administrative"]["admin_level"~"^(7|8)$"](area.searchArea);
+                            );
+                            out center;
+                            """.strip()))
+                        # Second choice: cities and towns only (skip villages) inside
+                        # the polygon — gives ~50 entries for PE but they're the
+                        # densely populated ones.
+                        for _rn in _region_names:
+                            _rn_esc = _rn.replace('"', '\\"')
+                            _queries.append((f"area:{_rn} city+town", f"""
+                            [out:json][timeout:90];
+                            area["name"="{_rn_esc}"]["admin_level"~"^(4|5|6)$"]["boundary"="administrative"]->.searchArea;
+                            (
+                              node["place"~"^(city|town)$"](area.searchArea);
+                            );
+                            out body;
+                            """.strip()))
+                        # Third choice: include villages too (legacy, may over-return)
+                        for _rn in _region_names:
+                            _rn_esc = _rn.replace('"', '\\"')
+                            _queries.append((f"area:{_rn} all places", f"""
                             [out:json][timeout:90];
                             area["name"="{_rn_esc}"]["admin_level"~"^(4|5|6)$"]["boundary"="administrative"]->.searchArea;
                             (
@@ -647,20 +675,20 @@ with tab_market:
                             );
                             out body;
                             """.strip()))
-                        # Bbox fallbacks (used when no admin polygon matched)
-                        _queries.append(("bbox-points", f"""
+                        # Bbox fallbacks if no admin polygon matched
+                        _queries.append(("bbox admin8", f"""
                         [out:json][timeout:90];
                         (
-                          node["place"~"^(city|town|village)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
-                        );
-                        out body;
-                        """.strip()))
-                        _queries.append(("bbox-admin8", f"""
-                        [out:json][timeout:90];
-                        (
-                          relation["boundary"="administrative"]["admin_level"="8"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                          relation["boundary"="administrative"]["admin_level"~"^(7|8)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
                         );
                         out center;
+                        """.strip()))
+                        _queries.append(("bbox city+town", f"""
+                        [out:json][timeout:90];
+                        (
+                          node["place"~"^(city|town)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                        );
+                        out body;
                         """.strip()))
 
                         _elements = []
@@ -698,7 +726,11 @@ with tab_market:
                         if pop >= 100_000:   return 5
                         if pop >= 30_000:    return 3
                         if pop >= 5_000:     return 2
-                        return 5 if pt == "city" else (3 if pt == "town" else 1.5)
+                        if pt == "city": return 5
+                        if pt == "town": return 3
+                        if pt == "village": return 1.5
+                        # No place tag (came from admin_level relation) — assume town-sized
+                        return 4
                     _seen = set(); _loaded = []
                     for el in _elements:
                         _tags = el.get("tags", {}) or {}
@@ -730,7 +762,14 @@ with tab_market:
                         with st.expander("Diagnostic info — what each Overpass server returned"):
                             st.code("\n".join(_tried) if _tried else "no attempts logged")
                     else:
-                        _src = "admin polygon" if _winning_query.startswith("area:") else "bounding box (may include neighbours)"
+                        if _winning_query.startswith("area:") and "admin8" in _winning_query:
+                            _src = "admin polygon · municipalities only"
+                        elif _winning_query.startswith("area:") and "city+town" in _winning_query:
+                            _src = "admin polygon · cities + towns (no villages)"
+                        elif _winning_query.startswith("area:"):
+                            _src = "admin polygon · all populated places"
+                        else:
+                            _src = "bounding box (may include neighbours)"
                         st.success(f"Loaded **{len(_loaded)}** cities from OpenStreetMap · source: {_src}")
                         if _winning_query.startswith("bbox") and _region_names:
                             with st.expander("Why bbox fallback was used"):
