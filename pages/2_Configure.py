@@ -600,7 +600,6 @@ with tab_market:
                     with st.spinner("Querying OpenStreetMap..."):
                         import requests as _req_osm
                         _lat_min, _lat_max, _lng_min, _lng_max = final_bbox
-                        # Many Overpass mirrors reject requests without a User-Agent header.
                         _headers = {
                             "User-Agent": "CoverageTool/1.0 (Streamlit app for FMCG sales planning)",
                             "Accept": "application/json",
@@ -611,41 +610,79 @@ with tab_market:
                             "https://overpass.osm.ch/api/interpreter",
                             "https://overpass.private.coffee/api/interpreter",
                         ]
-                        _queries = [
-                            f"""
+
+                        # Build candidate region names to try as OSM admin areas.
+                        # Bbox queries pull in neighbouring states; area queries
+                        # restrict to the actual admin polygon. We try multiple
+                        # name variants so OSM's local naming (e.g. "Pernambuco"
+                        # rather than "State of Pernambuco") matches.
+                        def _strip_admin_prefix(nm):
+                            s = str(nm or "").strip()
+                            for p in ("State of ", "Estado de ", "Estado do ",
+                                      "Province of ", "Provincia de ", "Província de ",
+                                      "Region of ", "Região de ",
+                                      "Governorate of ", "Governorate ",
+                                      "Department of ", "Departamento de ",
+                                      "Wilaya of ", "Emirate of "):
+                                if s.lower().startswith(p.lower()):
+                                    return s[len(p):].strip()
+                            return s
+                        _region_names = []
+                        for _re in (st.session_state.get("region_entries") or []):
+                            _rn = _re.get("name", "").strip()
+                            if not _rn: continue
+                            for _v in (_rn, _strip_admin_prefix(_rn)):
+                                if _v and _v not in _region_names:
+                                    _region_names.append(_v)
+
+                        _queries = []
+                        # Area-based queries (preferred — true polygon filter)
+                        for _rn in _region_names:
+                            _rn_esc = _rn.replace('"', '\\"')
+                            _queries.append((f"area:{_rn}", f"""
                             [out:json][timeout:90];
+                            area["name"="{_rn_esc}"]["admin_level"~"^(4|5|6)$"]["boundary"="administrative"]->.searchArea;
                             (
-                              node["place"~"^(city|town|village)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                              node["place"~"^(city|town|village)$"](area.searchArea);
                             );
                             out body;
-                            """.strip(),
-                            f"""
-                            [out:json][timeout:90];
-                            (
-                              node["place"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
-                              relation["boundary"="administrative"]["admin_level"="8"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
-                            );
-                            out center;
-                            """.strip(),
-                        ]
+                            """.strip()))
+                        # Bbox fallbacks (used when no admin polygon matched)
+                        _queries.append(("bbox-points", f"""
+                        [out:json][timeout:90];
+                        (
+                          node["place"~"^(city|town|village)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                        );
+                        out body;
+                        """.strip()))
+                        _queries.append(("bbox-admin8", f"""
+                        [out:json][timeout:90];
+                        (
+                          relation["boundary"="administrative"]["admin_level"="8"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                        );
+                        out center;
+                        """.strip()))
+
                         _elements = []
                         _tried = []
+                        _winning_query = ""
                         for _srv in _servers:
-                            for _qi, _q in enumerate(_queries):
+                            for _ql, _q in _queries:
                                 try:
                                     _resp = _req_osm.post(_srv, data={"data": _q}, headers=_headers, timeout=100)
                                     _host = _srv.split('//')[1].split('/')[0]
                                     if _resp.status_code == 200:
                                         _els = _resp.json().get("elements", []) or []
-                                        _tried.append(f"{_host} q{_qi+1}: 200 → {len(_els)} elements")
+                                        _tried.append(f"{_host} {_ql}: 200 → {len(_els)} elements")
                                         if _els:
                                             _elements = _els
+                                            _winning_query = _ql
                                             break
                                     else:
-                                        _tried.append(f"{_host} q{_qi+1}: HTTP {_resp.status_code} — {(_resp.text or '')[:80]}")
+                                        _tried.append(f"{_host} {_ql}: HTTP {_resp.status_code} — {(_resp.text or '')[:80]}")
                                 except Exception as _ex_osm:
                                     _host = _srv.split('//')[1].split('/')[0]
-                                    _tried.append(f"{_host} q{_qi+1}: EXC {str(_ex_osm)[:80]}")
+                                    _tried.append(f"{_host} {_ql}: EXC {str(_ex_osm)[:80]}")
                             if _elements:
                                 break
                     def _pop(tags):
@@ -693,7 +730,11 @@ with tab_market:
                         with st.expander("Diagnostic info — what each Overpass server returned"):
                             st.code("\n".join(_tried) if _tried else "no attempts logged")
                     else:
-                        st.success(f"Loaded **{len(_loaded)}** cities from OpenStreetMap.")
+                        _src = "admin polygon" if _winning_query.startswith("area:") else "bounding box (may include neighbours)"
+                        st.success(f"Loaded **{len(_loaded)}** cities from OpenStreetMap · source: {_src}")
+                        if _winning_query.startswith("bbox") and _region_names:
+                            with st.expander("Why bbox fallback was used"):
+                                st.code("\n".join(_tried))
             with _col_cm2:
                 if _city_list:
                     st.caption(f"**{len(_city_list)}** cities available · sorted by population (largest first)")
