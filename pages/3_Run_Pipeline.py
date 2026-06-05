@@ -209,6 +209,100 @@ def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m):
         lat += dlat
     return centres[:MAX_TILES]
 
+
+def fetch_cities_in_bbox(bbox, timeout_s=60):
+    """Fetch cities/towns inside a bounding box from OpenStreetMap Overpass.
+    Returns list of {name, lat, lng, place_type, population, radius_km, tile_centres}.
+    radius_km is estimated from population so big cities get more sub-tiles.
+    Returns [] on any failure — caller should fall back to bbox mode.
+    """
+    lat_min, lat_max, lng_min, lng_max = bbox
+    overpass = "https://overpass-api.de/api/interpreter"
+    query = f"""
+    [out:json][timeout:{timeout_s}];
+    (
+      node["place"~"^(city|town|village)$"]({lat_min},{lng_min},{lat_max},{lng_max});
+    );
+    out body;
+    """.strip()
+    try:
+        r = requests.post(overpass, data={"data": query}, timeout=timeout_s + 10)
+        if r.status_code != 200:
+            return []
+        elements = r.json().get("elements", []) or []
+    except Exception:
+        return []
+
+    def _pop(tags):
+        for k in ("population", "ref:population"):
+            v = tags.get(k)
+            if v:
+                try:
+                    return int(str(v).replace(",", "").replace(".", "").strip())
+                except (ValueError, TypeError):
+                    pass
+        return 0
+
+    def _radius_km(place_type, pop):
+        if pop >= 1_000_000:  return 12
+        if pop >= 500_000:    return 8
+        if pop >= 100_000:    return 5
+        if pop >= 30_000:     return 3
+        if pop >= 5_000:      return 2
+        if place_type == "city": return 5
+        if place_type == "town": return 3
+        return 1.5
+
+    cities = []
+    seen_names = set()
+    for el in elements:
+        tags = el.get("tags", {}) or {}
+        name = (tags.get("name:en") or tags.get("name") or "").strip()
+        if not name or name.lower() in seen_names:
+            continue
+        seen_names.add(name.lower())
+        place_type = tags.get("place", "")
+        pop = _pop(tags)
+        rad = _radius_km(place_type, pop)
+        cities.append({
+            "name": name,
+            "lat": el.get("lat"),
+            "lng": el.get("lon"),
+            "place_type": place_type,
+            "population": pop,
+            "radius_km": rad,
+        })
+    cities.sort(key=lambda c: (-c["population"], c["name"]))
+    return cities
+
+
+def city_scrape_centres(cities, tile_radius_m=3000):
+    """Convert a list of selected cities to a flat list of (lat, lng) scrape
+    centres. Large cities are gridded into multiple sub-tiles so we capture
+    every store; small cities use a single centre."""
+    centres = []
+    for c in cities:
+        lat, lng = c.get("lat"), c.get("lng")
+        if lat is None or lng is None:
+            continue
+        rad_km = float(c.get("radius_km", 2) or 2)
+        if rad_km * 1000 <= tile_radius_m:
+            centres.append((round(lat, 5), round(lng, 5)))
+            continue
+        dlat = rad_km / 111.32
+        dlng = rad_km / (111.32 * math.cos(math.radians(lat)) or 1e-9)
+        sub_centres = grid_centres(lat - dlat, lat + dlat, lng - dlng, lng + dlng, tile_radius_m)
+        if sub_centres:
+            centres.extend(sub_centres)
+        else:
+            centres.append((round(lat, 5), round(lng, 5)))
+    seen, uniq = set(), []
+    for ll in centres:
+        if ll not in seen:
+            uniq.append(ll); seen.add(ll)
+    return uniq[:MAX_TILES]
+
+
 def fmt_time(seconds):
     mins = seconds / 60
     if mins < 1:      return f"~{round(seconds)} seconds"
@@ -3025,9 +3119,14 @@ st.caption(
 )
 
 def _scrape_cache_key(cfg):
-    """Unique key for this market's bbox + categories combination."""
+    """Unique key for this market's bbox + categories + scrape mode + selected cities."""
     cats = ",".join(sorted(cfg.get("categories", [])))
-    return f"{cfg['lat_min']:.4f},{cfg['lat_max']:.4f},{cfg['lng_min']:.4f},{cfg['lng_max']:.4f}|{cats}"
+    mode = st.session_state.get("scrape_mode", "rectangle")
+    cities_part = ""
+    if mode == "cities":
+        sel = sorted(st.session_state.get("selected_cities", []))
+        cities_part = "|cities:" + ",".join(sel)
+    return f"{cfg['lat_min']:.4f},{cfg['lat_max']:.4f},{cfg['lng_min']:.4f},{cfg['lng_max']:.4f}|{cats}|mode:{mode}{cities_part}"
 
 _cache_key     = _scrape_cache_key(cfg)
 _saved_cache   = st.session_state.get("universe_cache", {})
@@ -4131,8 +4230,23 @@ if st.button("  Run Coverage Agent", type="primary"):
             s["lng"] = _coord_or_none(_orig_lng)
             if "category" not in s: s["category"] = cfg["categories"][0] if cfg["categories"] else "supermarket"
 
-        radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
-        centres     = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
+        # Choose scrape geometry: rectangle bbox (default) or city-anchored
+        _scrape_mode = st.session_state.get("scrape_mode", "rectangle")
+        if _scrape_mode == "cities":
+            _bbox_key = f"{cfg['lat_min']:.3f},{cfg['lat_max']:.3f},{cfg['lng_min']:.3f},{cfg['lng_max']:.3f}"
+            _city_list_all = st.session_state.get("region_city_list_cache", {}).get(_bbox_key, [])
+            _selected_names = set(st.session_state.get("selected_cities", []))
+            _selected_cities = [c for c in _city_list_all if c["name"] in _selected_names]
+            if _selected_cities:
+                radius_m = 3000
+                centres = city_scrape_centres(_selected_cities, tile_radius_m=radius_m)
+            else:
+                # Fall back to bbox if user didn't load/pick cities
+                radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
+                centres = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
+        else:
+            radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
+            centres     = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],radius_m)
         _enrich_cfg   = st.session_state.get("admin_enrichment", {"run_place_details":True,"run_poi":True,"poi_radius_m":500})
         enrich_scope  = "all" if _enrich_cfg.get("run_place_details", True) else "none"
         enrich_poi    = "all" if _enrich_cfg.get("run_poi", True) else "none"

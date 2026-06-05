@@ -570,6 +570,124 @@ with tab_market:
         if _region_filter_val.strip():
             st.caption(f"  Scraped stores whose address contains **'{_region_filter_val.strip()}'** will be kept; others dropped.")
 
+        # ── Scrape mode (rectangle vs city-by-city) ──────────────────────────
+        st.markdown("**Scrape mode**")
+        st.caption(
+            "**Rectangle** scrapes a tile grid across the bounding box — fast to configure but pulls "
+            "in neighbouring states/provinces near borders. "
+            "**Cities** loads the list of cities inside the bbox from OpenStreetMap; you pick which "
+            "ones to scrape (all by default). Stores from outside your chosen cities are never even "
+            "queried — no neighbour-state pollution by design."
+        )
+        _scrape_mode_default = st.session_state.get("scrape_mode", "rectangle")
+        _scrape_mode = st.radio(
+            "Mode",
+            options=["rectangle", "cities"],
+            format_func=lambda m: "Rectangle (default — today's behaviour)" if m == "rectangle" else "Cities (anchor scrape on each city in this region)",
+            index=0 if _scrape_mode_default == "rectangle" else 1,
+            key="scrape_mode_radio",
+            label_visibility="collapsed",
+        )
+        st.session_state["scrape_mode"] = _scrape_mode
+
+        if _scrape_mode == "cities":
+            _cities_key = f"{final_bbox[0]:.3f},{final_bbox[1]:.3f},{final_bbox[2]:.3f},{final_bbox[3]:.3f}"
+            _city_cache = st.session_state.get("region_city_list_cache", {})
+            _city_list = _city_cache.get(_cities_key, [])
+            _col_cm1, _col_cm2 = st.columns([1, 2])
+            with _col_cm1:
+                if st.button("  Load cities in this region", key="btn_load_cities"):
+                    with st.spinner("Querying OpenStreetMap..."):
+                        try:
+                            import requests as _req_osm
+                            _overpass = "https://overpass-api.de/api/interpreter"
+                            _lat_min, _lat_max, _lng_min, _lng_max = final_bbox
+                            _q = f"""
+                            [out:json][timeout:60];
+                            (
+                              node["place"~"^(city|town|village)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                            );
+                            out body;
+                            """.strip()
+                            _resp = _req_osm.post(_overpass, data={"data": _q}, timeout=70)
+                            _elements = _resp.json().get("elements", []) if _resp.status_code == 200 else []
+                        except Exception:
+                            _elements = []
+                    def _pop(tags):
+                        for k in ("population", "ref:population"):
+                            v = tags.get(k)
+                            if v:
+                                try: return int(str(v).replace(",","").replace(".","").strip())
+                                except Exception: pass
+                        return 0
+                    def _radius_km(pt, pop):
+                        if pop >= 1_000_000: return 12
+                        if pop >= 500_000:   return 8
+                        if pop >= 100_000:   return 5
+                        if pop >= 30_000:    return 3
+                        if pop >= 5_000:     return 2
+                        return 5 if pt == "city" else (3 if pt == "town" else 1.5)
+                    _seen = set(); _loaded = []
+                    for el in _elements:
+                        _tags = el.get("tags", {}) or {}
+                        _nm = (_tags.get("name:en") or _tags.get("name") or "").strip()
+                        if not _nm or _nm.lower() in _seen:
+                            continue
+                        _seen.add(_nm.lower())
+                        _pt = _tags.get("place","")
+                        _pp = _pop(_tags)
+                        _loaded.append({
+                            "name": _nm, "lat": el.get("lat"), "lng": el.get("lon"),
+                            "place_type": _pt, "population": _pp,
+                            "radius_km": _radius_km(_pt, _pp),
+                        })
+                    _loaded.sort(key=lambda c: (-c["population"], c["name"]))
+                    _city_cache[_cities_key] = _loaded
+                    st.session_state["region_city_list_cache"] = _city_cache
+                    _city_list = _loaded
+                    if not _loaded:
+                        st.warning("OpenStreetMap returned no cities for this bounding box. You can keep using Rectangle mode or try again later.")
+                    else:
+                        st.success(f"Loaded **{len(_loaded)}** cities from OpenStreetMap.")
+            with _col_cm2:
+                if _city_list:
+                    st.caption(f"**{len(_city_list)}** cities available · sorted by population (largest first)")
+
+            if _city_list:
+                _selected_default = st.session_state.get("selected_cities", [c["name"] for c in _city_list])
+                # Reconcile selection with current city list (drop names no longer present)
+                _valid_names = {c["name"] for c in _city_list}
+                _selected_default = [n for n in _selected_default if n in _valid_names] or [c["name"] for c in _city_list]
+                _options = [f"{c['name']} · pop {c['population']:,}" if c["population"] else c["name"] for c in _city_list]
+                _name_by_opt = {opt: c["name"] for opt, c in zip(_options, _city_list)}
+                _opt_by_name = {c["name"]: opt for opt, c in zip(_options, _city_list)}
+                _default_opts = [_opt_by_name[n] for n in _selected_default if n in _opt_by_name]
+                _col_cs1, _col_cs2, _col_cs3 = st.columns([1,1,3])
+                with _col_cs1:
+                    if st.button("Select all", key="btn_cities_all"):
+                        st.session_state["selected_cities"] = [c["name"] for c in _city_list]
+                        st.rerun()
+                with _col_cs2:
+                    if st.button("Deselect all", key="btn_cities_none"):
+                        st.session_state["selected_cities"] = []
+                        st.rerun()
+                _picked_opts = st.multiselect(
+                    "Cities to scrape",
+                    options=_options,
+                    default=_default_opts,
+                    key="cities_multiselect",
+                )
+                _picked_names = [_name_by_opt[o] for o in _picked_opts]
+                st.session_state["selected_cities"] = _picked_names
+                _picked_objs = [c for c in _city_list if c["name"] in set(_picked_names)]
+                _est_tiles = sum(
+                    max(1, int((c["radius_km"] * 2) // 6)) ** 2 if c["radius_km"] > 3 else 1
+                    for c in _picked_objs
+                )
+                st.caption(f"**{len(_picked_names)}** of {len(_city_list)} cities selected · estimated ~{_est_tiles} scrape tiles")
+            else:
+                st.info("Click **Load cities in this region** to fetch the list from OpenStreetMap. If loading fails or returns nothing, switch back to **Rectangle** mode.")
+
     st.markdown("---")
 
     # ── Scraping categories ──────────────────────────────────────────────────
