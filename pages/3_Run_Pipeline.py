@@ -322,9 +322,25 @@ def calculate_estimate(enrich_count, enrich_scope):
     Full unified cost + time estimate.
     Returns dict with all breakdown figures.
     """
-    radius_m, n_tiles = smart_tile_radius(
-        cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
-    )
+    # When city-by-city mode is active, base tile count on the selected cities
+    # instead of the bbox grid so the estimate matches what the scraper will do.
+    _est_mode = st.session_state.get("scrape_mode", "rectangle")
+    if _est_mode == "cities":
+        _bbox_key_est = f"{cfg['lat_min']:.3f},{cfg['lat_max']:.3f},{cfg['lng_min']:.3f},{cfg['lng_max']:.3f}"
+        _city_list_est = st.session_state.get("region_city_list_cache", {}).get(_bbox_key_est, [])
+        _selected_names_est = set(st.session_state.get("selected_cities", []))
+        _selected_est = [c for c in _city_list_est if c["name"] in _selected_names_est]
+        if _selected_est:
+            radius_m = 3000
+            n_tiles = len(city_scrape_centres(_selected_est, tile_radius_m=radius_m)) or 1
+        else:
+            radius_m, n_tiles = smart_tile_radius(
+                cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
+            )
+    else:
+        radius_m, n_tiles = smart_tile_radius(
+            cfg["lat_min"], cfg["lat_max"], cfg["lng_min"], cfg["lng_max"]
+        )
     n_categories  = len(cfg["categories"])
 
 
@@ -3494,8 +3510,22 @@ else:
                 strong = {"supermarket","grocery_or_supermarket","convenience_store","department_store"}
                 return bool(ts & strong)
 
-            _radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
-            _centres     = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],_radius_m)
+            # Choose scrape geometry: rectangle bbox (default) or city-anchored
+            _scrape_mode_b = st.session_state.get("scrape_mode", "rectangle")
+            if _scrape_mode_b == "cities":
+                _bbox_key_b = f"{cfg['lat_min']:.3f},{cfg['lat_max']:.3f},{cfg['lng_min']:.3f},{cfg['lng_max']:.3f}"
+                _city_list_all_b = st.session_state.get("region_city_list_cache", {}).get(_bbox_key_b, [])
+                _selected_names_b = set(st.session_state.get("selected_cities", []))
+                _selected_cities_b = [c for c in _city_list_all_b if c["name"] in _selected_names_b]
+                if _selected_cities_b:
+                    _radius_m = 3000
+                    _centres = city_scrape_centres(_selected_cities_b, tile_radius_m=_radius_m)
+                else:
+                    _radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
+                    _centres = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],_radius_m)
+            else:
+                _radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
+                _centres     = grid_centres(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"],_radius_m)
             _seen_ids    = set()
             _osm_shops   = []  # reuse variable name for compatibility
             _total_tiles = max(len(_centres)*len(cfg["categories"]),1)
