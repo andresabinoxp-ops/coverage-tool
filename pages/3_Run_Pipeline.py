@@ -4754,7 +4754,15 @@ if st.button("  Run Coverage Agent", type="primary"):
             # ── Apply region + direct-accounts filters BEFORE caching ─────────
             # so the downloaded universe CSV reflects the active exclusions and
             # a mid-pipeline stop still leaves a clean cache.
+            # In Cities mode the scrape is already anchored on cities inside the
+            # region — applying the region filter on top would only drop
+            # legitimate stores whose Google vicinity lacks the state code
+            # (common for smaller interior cities). So skip it when in cities mode.
             _region_filter_pre = str(st.session_state.get("region_filter", "") or "").strip()
+            _skip_region_filter = st.session_state.get("scrape_mode", "rectangle") == "cities"
+            if _skip_region_filter and _region_filter_pre:
+                status.info(f"Stage 2/{total_steps} — Region filter '{_region_filter_pre}' skipped (Cities mode already restricts scrape to the region).")
+                _region_filter_pre = ""
             for s in universe:
                 _vic_pre = str(s.get("vicinity", "") or "")
                 if not _vic_pre:
@@ -4806,7 +4814,12 @@ if st.button("  Run Coverage Agent", type="primary"):
         # store's vicinity. Stores whose vicinity clearly belongs to another
         # state are dropped; stores with no vicinity are kept (benefit of doubt).
         # Tag every scraped store with region_match (yes/no/unknown) for output.
+        # In Cities mode the scrape is already restricted to PE cities, so the
+        # filter is redundant AND harmful (Google's vicinity for smaller
+        # interior cities often lacks the state code, causing legitimate stores
+        # to be dropped). Skip the drop step in cities mode, keep the tagging.
         _region_filter = str(st.session_state.get("region_filter", "") or "").strip()
+        _skip_region_drop = st.session_state.get("scrape_mode", "rectangle") == "cities"
         for s in universe:
             _vic = str(s.get("vicinity", "") or "")
             if not _vic:
@@ -4817,7 +4830,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                 s["region_match"] = "no"
             else:
                 s["region_match"] = ""
-        if _region_filter:
+        if _region_filter and not _skip_region_drop:
             _before_region = len(universe)
             universe = [s for s in universe if s.get("region_match") != "no"]
             _removed_region = _before_region - len(universe)
