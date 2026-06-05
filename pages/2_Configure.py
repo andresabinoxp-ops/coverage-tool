@@ -551,6 +551,25 @@ with tab_market:
     if final_bbox:
         st.success(f"Coverage area: **{final_scope}**")
 
+        # ── Region must appear in address (optional state/province filter) ───
+        st.markdown("**Region must appear in address** *(optional)*")
+        st.caption(
+            "Bounding boxes are rectangles and inevitably overlap neighbouring states/provinces. "
+            "Enter a state code or region name (e.g. `PE` for Pernambuco, `CA` for California, "
+            "`Muscat`, `Dubai`, `MH` or `Maharashtra`) and any scraped store whose Google address "
+            "doesn't mention it will be excluded from the universe. Leave blank to keep today's behaviour."
+        )
+        _region_filter_val = st.text_input(
+            "Filter text",
+            value=st.session_state.get("region_filter", ""),
+            placeholder="e.g. PE",
+            key="region_filter_input",
+            label_visibility="collapsed",
+        )
+        st.session_state["region_filter"] = _region_filter_val.strip()
+        if _region_filter_val.strip():
+            st.caption(f"  Scraped stores whose address contains **'{_region_filter_val.strip()}'** will be kept; others dropped.")
+
     st.markdown("---")
 
     # ── Scraping categories ──────────────────────────────────────────────────

@@ -3445,6 +3445,7 @@ else:
                             "covered": False, "source": "scraped",
                             "phone": "", "opening_hours": "", "website": "", "poi_count": 0,
                             "google_types": _ptypes,
+                            "vicinity": _vic,
                         })
                     _token_l = _data_l.get("next_page_token")
                     if not _token_l: break
@@ -4535,10 +4536,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                                 "business_status":_map_biz_status(place.get("business_status","")),
                                 "category":cat,"annual_sales_usd":0.0,"lines_per_store":0,
                                 "covered":False,"source":"scraped",
-
-
-
                                 "phone":"","opening_hours":"","website":"",
+                                "vicinity":vicinity,
                             })
                         token = data.get("next_page_token")
                         if not token: break
@@ -4621,6 +4620,33 @@ if st.button("  Run Coverage Agent", type="primary"):
             }
             status.info(f"Stage 2/{total_steps} — Found {len(universe):,} stores (auto-saved to cache)")
             bar.progress(45)
+
+        # ── Region filter (state / province must appear in Google address) ───
+        # Bounding boxes overlap neighbouring states; the user-supplied filter
+        # text (e.g. "PE" for Pernambuco) is checked against each scraped
+        # store's vicinity. Stores whose vicinity clearly belongs to another
+        # state are dropped; stores with no vicinity are kept (benefit of doubt).
+        # Tag every scraped store with region_match (yes/no/unknown) for output.
+        _region_filter = str(st.session_state.get("region_filter", "") or "").strip()
+        for s in universe:
+            _vic = str(s.get("vicinity", "") or "")
+            if not _vic:
+                s["region_match"] = "unknown"
+            elif _region_filter and _region_filter.lower() in _vic.lower():
+                s["region_match"] = "yes"
+            elif _region_filter:
+                s["region_match"] = "no"
+            else:
+                s["region_match"] = ""
+        if _region_filter:
+            _before_region = len(universe)
+            universe = [s for s in universe if s.get("region_match") != "no"]
+            _removed_region = _before_region - len(universe)
+            if _removed_region > 0:
+                status.info(
+                    f"Stage 2/{total_steps} — Excluded {_removed_region} stores outside "
+                    f"region filter '{_region_filter}'"
+                )
 
         # ── Direct-accounts exclusion ────────────────────────────────────────
         # Remove scraped stores whose name matches a banner the user listed as

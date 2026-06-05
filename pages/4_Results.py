@@ -402,6 +402,7 @@ with col1:
             _date_visit_cols += [f"{mk}_dates", f"{mk}_visits"]
         priority = ["store_id","store_name","address","city","district","region",
                     "postal_code","lat","lng","geocode_confidence",
+                    "vicinity","region_match",
                     "category","source","covered","coverage_status",
                     "rating","review_count","price_level","poi_count",
                     "score","size_tier","visits_per_month","visit_duration_min",
