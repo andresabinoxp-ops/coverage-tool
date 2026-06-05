@@ -4607,7 +4607,42 @@ if st.button("  Run Coverage Agent", type="primary"):
             if _before - len(universe) > 0:
                 status.info(f"Stage 2/{total_steps} — Filtered {_before-len(universe)} irrelevant stores")
 
-            # Auto-save to cache
+            # ── Apply region + direct-accounts filters BEFORE caching ─────────
+            # so the downloaded universe CSV reflects the active exclusions and
+            # a mid-pipeline stop still leaves a clean cache.
+            _region_filter_pre = str(st.session_state.get("region_filter", "") or "").strip()
+            for s in universe:
+                _vic_pre = str(s.get("vicinity", "") or "")
+                if not _vic_pre:
+                    s["region_match"] = "unknown"
+                elif _region_filter_pre and _region_filter_pre.lower() in _vic_pre.lower():
+                    s["region_match"] = "yes"
+                elif _region_filter_pre:
+                    s["region_match"] = "no"
+                else:
+                    s["region_match"] = ""
+            if _region_filter_pre:
+                _bef_r = len(universe)
+                universe = [s for s in universe if s.get("region_match") != "no"]
+                if _bef_r - len(universe) > 0:
+                    status.info(
+                        f"Stage 2/{total_steps} — Excluded {_bef_r-len(universe)} stores outside "
+                        f"region filter '{_region_filter_pre}'"
+                    )
+            _direct_banners_pre = [b.strip().lower() for b in st.session_state.get("direct_accounts", []) if b.strip()]
+            if _direct_banners_pre:
+                _bef_d = len(universe)
+                universe = [
+                    s for s in universe
+                    if not any(b in str(s.get("store_name","") or s.get("name","")).lower() for b in _direct_banners_pre)
+                ]
+                if _bef_d - len(universe) > 0:
+                    status.info(
+                        f"Stage 2/{total_steps} — Excluded {_bef_d-len(universe)} direct-account stores "
+                        f"({len(_direct_banners_pre)} banners on list)"
+                    )
+
+            # Auto-save to cache (now contains filtered universe)
             import datetime as _dt2
             if "universe_cache" not in st.session_state:
                 st.session_state["universe_cache"] = {}
