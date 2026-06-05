@@ -598,21 +598,56 @@ with tab_market:
             with _col_cm1:
                 if st.button("  Load cities in this region", key="btn_load_cities"):
                     with st.spinner("Querying OpenStreetMap..."):
-                        try:
-                            import requests as _req_osm
-                            _overpass = "https://overpass-api.de/api/interpreter"
-                            _lat_min, _lat_max, _lng_min, _lng_max = final_bbox
-                            _q = f"""
-                            [out:json][timeout:60];
+                        import requests as _req_osm
+                        _lat_min, _lat_max, _lng_min, _lng_max = final_bbox
+                        # Many Overpass mirrors reject requests without a User-Agent header.
+                        _headers = {
+                            "User-Agent": "CoverageTool/1.0 (Streamlit app for FMCG sales planning)",
+                            "Accept": "application/json",
+                        }
+                        _servers = [
+                            "https://overpass-api.de/api/interpreter",
+                            "https://overpass.kumi.systems/api/interpreter",
+                            "https://overpass.osm.ch/api/interpreter",
+                            "https://overpass.private.coffee/api/interpreter",
+                        ]
+                        _queries = [
+                            f"""
+                            [out:json][timeout:90];
                             (
                               node["place"~"^(city|town|village)$"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
                             );
                             out body;
-                            """.strip()
-                            _resp = _req_osm.post(_overpass, data={"data": _q}, timeout=70)
-                            _elements = _resp.json().get("elements", []) if _resp.status_code == 200 else []
-                        except Exception:
-                            _elements = []
+                            """.strip(),
+                            f"""
+                            [out:json][timeout:90];
+                            (
+                              node["place"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                              relation["boundary"="administrative"]["admin_level"="8"]({_lat_min},{_lng_min},{_lat_max},{_lng_max});
+                            );
+                            out center;
+                            """.strip(),
+                        ]
+                        _elements = []
+                        _tried = []
+                        for _srv in _servers:
+                            for _qi, _q in enumerate(_queries):
+                                try:
+                                    _resp = _req_osm.post(_srv, data={"data": _q}, headers=_headers, timeout=100)
+                                    _host = _srv.split('//')[1].split('/')[0]
+                                    if _resp.status_code == 200:
+                                        _els = _resp.json().get("elements", []) or []
+                                        _tried.append(f"{_host} q{_qi+1}: 200 → {len(_els)} elements")
+                                        if _els:
+                                            _elements = _els
+                                            break
+                                    else:
+                                        _tried.append(f"{_host} q{_qi+1}: HTTP {_resp.status_code} — {(_resp.text or '')[:80]}")
+                                except Exception as _ex_osm:
+                                    _host = _srv.split('//')[1].split('/')[0]
+                                    _tried.append(f"{_host} q{_qi+1}: EXC {str(_ex_osm)[:80]}")
+                            if _elements:
+                                break
                     def _pop(tags):
                         for k in ("population", "ref:population"):
                             v = tags.get(k)
@@ -636,8 +671,12 @@ with tab_market:
                         _seen.add(_nm.lower())
                         _pt = _tags.get("place","")
                         _pp = _pop(_tags)
+                        _lat_el = el.get("lat") or el.get("center",{}).get("lat")
+                        _lng_el = el.get("lon") or el.get("center",{}).get("lon")
+                        if _lat_el is None or _lng_el is None:
+                            continue
                         _loaded.append({
-                            "name": _nm, "lat": el.get("lat"), "lng": el.get("lon"),
+                            "name": _nm, "lat": _lat_el, "lng": _lng_el,
                             "place_type": _pt, "population": _pp,
                             "radius_km": _radius_km(_pt, _pp),
                         })
@@ -646,7 +685,13 @@ with tab_market:
                     st.session_state["region_city_list_cache"] = _city_cache
                     _city_list = _loaded
                     if not _loaded:
-                        st.warning("OpenStreetMap returned no cities for this bounding box. You can keep using Rectangle mode or try again later.")
+                        st.warning(
+                            f"OpenStreetMap returned no cities for bbox "
+                            f"({_lat_min:.3f},{_lng_min:.3f},{_lat_max:.3f},{_lng_max:.3f}). "
+                            f"Try again later or use Rectangle mode."
+                        )
+                        with st.expander("Diagnostic info — what each Overpass server returned"):
+                            st.code("\n".join(_tried) if _tried else "no attempts logged")
                     else:
                         st.success(f"Loaded **{len(_loaded)}** cities from OpenStreetMap.")
             with _col_cm2:
