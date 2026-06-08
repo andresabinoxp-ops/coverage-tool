@@ -201,9 +201,12 @@ def grid_centres(lat_min, lat_max, lng_min, lng_max, radius_m):
     dlng = (radius_m*2)/(111320*math.cos(math.radians(mid)))
     centres = []
     lat = lat_min + dlat/2
-    while lat < lat_max:
+    # Use "lat - dlat/2 < lat_max" so we keep placing rows until the lower
+    # edge of the next-would-be tile reaches lat_max. This guarantees the
+    # bbox is fully covered when tile_radius is small relative to the bbox.
+    while lat - dlat/2 < lat_max:
         lng = lng_min + dlng/2
-        while lng < lng_max:
+        while lng - dlng/2 < lng_max:
             centres.append((round(lat,5), round(lng,5)))
             lng += dlng
         lat += dlat
@@ -276,10 +279,30 @@ def fetch_cities_in_bbox(bbox, timeout_s=60):
     return cities
 
 
-def city_scrape_centres(cities, tile_radius_m=3000):
+def cities_mode_tile_radius_m(cities):
+    """Pick a tile radius for Cities mode based on the dense cities in the
+    selection. Any city with population >= 100k (or coverage radius >= 5 km
+    when population is unknown) triggers 2 km tiles so Google's 60-result
+    cap doesn't silently drop stores in dense commercial zones. Pure
+    small-town selections stay at 3 km tiles to save API calls."""
+    for c in cities:
+        if (c.get("population") or 0) >= 100_000:
+            return 2000
+        if float(c.get("radius_km", 0) or 0) >= 5:
+            return 2000
+    return 3000
+
+
+def city_scrape_centres(cities, tile_radius_m=None):
     """Convert a list of selected cities to a flat list of (lat, lng) scrape
     centres. Large cities are gridded into multiple sub-tiles so we capture
-    every store; small cities use a single centre."""
+    every store; small cities use a single centre.
+
+    When tile_radius_m is None the helper picks adaptively from the city
+    population distribution — 2 km tiles when any selection contains a 100k+
+    city, 3 km otherwise."""
+    if tile_radius_m is None:
+        tile_radius_m = cities_mode_tile_radius_m(cities)
     centres = []
     for c in cities:
         lat, lng = c.get("lat"), c.get("lng")
@@ -331,7 +354,7 @@ def calculate_estimate(enrich_count, enrich_scope):
         _selected_names_est = set(st.session_state.get("selected_cities", []))
         _selected_est = [c for c in _city_list_est if c["name"] in _selected_names_est]
         if _selected_est:
-            radius_m = 3000
+            radius_m = cities_mode_tile_radius_m(_selected_est)
             n_tiles = len(city_scrape_centres(_selected_est, tile_radius_m=radius_m)) or 1
         else:
             radius_m, n_tiles = smart_tile_radius(
@@ -3518,7 +3541,7 @@ else:
                 _selected_names_b = set(st.session_state.get("selected_cities", []))
                 _selected_cities_b = [c for c in _city_list_all_b if c["name"] in _selected_names_b]
                 if _selected_cities_b:
-                    _radius_m = 3000
+                    _radius_m = cities_mode_tile_radius_m(_selected_cities_b)
                     _centres = city_scrape_centres(_selected_cities_b, tile_radius_m=_radius_m)
                 else:
                     _radius_m, _ = smart_tile_radius(cfg["lat_min"],cfg["lat_max"],cfg["lng_min"],cfg["lng_max"])
@@ -4268,7 +4291,7 @@ if st.button("  Run Coverage Agent", type="primary"):
             _selected_names = set(st.session_state.get("selected_cities", []))
             _selected_cities = [c for c in _city_list_all if c["name"] in _selected_names]
             if _selected_cities:
-                radius_m = 3000
+                radius_m = cities_mode_tile_radius_m(_selected_cities)
                 centres = city_scrape_centres(_selected_cities, tile_radius_m=radius_m)
             else:
                 # Fall back to bbox if user didn't load/pick cities
