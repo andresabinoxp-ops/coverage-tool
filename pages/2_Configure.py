@@ -1264,6 +1264,12 @@ with tab_playbook:
     # Visit benchmarks
     st.markdown("**Visit frequency & duration per category**")
 
+    admin_defaults = st.session_state.get("admin_benchmarks", {
+        "large_pct": 20, "medium_pct": 60, "small_pct": 20,
+        "large_visits": 4, "medium_visits": 2, "small_visits": 1,
+        "large_duration": 40, "medium_duration": 25, "small_duration": 15,
+    })
+
     # ── Bulk import / export of the visit playbook via CSV ──────────────────
     # Saves users from clicking through 80 number_input widgets every session.
     # Pure data flow: reads the CSV rows, writes lv_/ld_/mv_/md_/sv_/sd_ keys
@@ -1348,12 +1354,6 @@ with tab_playbook:
                         st.warning("No values applied — check your CSV columns and category names.")
             except Exception as _e:
                 st.error(f"Could not read CSV: {_e}")
-
-    admin_defaults = st.session_state.get("admin_benchmarks", {
-        "large_pct": 20, "medium_pct": 60, "small_pct": 20,
-        "large_visits": 4, "medium_visits": 2, "small_visits": 1,
-        "large_duration": 40, "medium_duration": 25, "small_duration": 15,
-    })
 
     st.caption(
         f"Size splits: Large = top {admin_defaults.get('large_pct',20)}% · "
