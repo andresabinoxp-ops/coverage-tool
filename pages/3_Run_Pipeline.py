@@ -3999,17 +3999,48 @@ st.markdown('<div class="section-title">3. Run the agent</div>', unsafe_allow_ht
 _run_cache_check = st.session_state.get("universe_cache", {}).get(_scrape_cache_key(cfg))
 _portfolio_ready = st.session_state.get("portfolio_df") is not None
 _n_portfolio     = len(st.session_state["portfolio_df"]) if _portfolio_ready else 0
-_geocode_cost    = round(_n_portfolio * PRICE_GEOCODE_PER_CALL, 2)
+
+# Only count portfolio rows that actually need geocoding — rows that already
+# have valid lat AND lng are skipped by Stage 1 and don't cost anything.
+def _row_needs_geocode(row):
+    for col in ("lat", "lng"):
+        v = row.get(col) if hasattr(row, "get") else None
+        if v is None:
+            return True
+        try:
+            if isinstance(v, float) and math.isnan(v):
+                return True
+        except Exception:
+            pass
+        s_v = str(v).strip().lower()
+        if s_v in ("", "nan", "none", "null"):
+            return True
+        try:
+            f = float(v)
+            if math.isnan(f) or f == 0.0:
+                return True
+        except (TypeError, ValueError):
+            return True
+    return False
+_n_needs_geocode = 0
+if _portfolio_ready:
+    _pf_df = st.session_state["portfolio_df"]
+    if "lat" in _pf_df.columns and "lng" in _pf_df.columns:
+        _n_needs_geocode = sum(1 for _r in _pf_df.to_dict("records") if _row_needs_geocode(_r))
+    else:
+        _n_needs_geocode = _n_portfolio
+_geocode_cost    = round(_n_needs_geocode * PRICE_GEOCODE_PER_CALL, 2)
 
 if _run_cache_check and _portfolio_ready:
     _cached_n_run = len(_run_cache_check["universe"])
+    if _n_needs_geocode == 0:
+        _geocode_msg = "no geocoding needed (all portfolio rows already have lat/lng)"
+    else:
+        _geocode_msg = f"estimated geocoding cost ~**${_geocode_cost}** ({_n_needs_geocode:,} of {_n_portfolio:,} rows missing coords)"
     st.success(
-
-
-
         f"  Ready — **{_n_portfolio}** portfolio stores · "
         f"**{_cached_n_run:,}** universe stores cached · "
-        f"estimated geocoding cost ~**${_geocode_cost}**"
+        f"{_geocode_msg}"
     )
 elif not _run_cache_check:
     st.warning("  Universe not scraped yet — go to Step 2 to scrape first. The pipeline will scrape on run if you proceed.")
@@ -4023,7 +4054,10 @@ dry_run = st.checkbox(
 if not dry_run:
     _cached_check = st.session_state.get("universe_cache", {}).get(_scrape_cache_key(cfg))
     if _cached_check:
-        st.info("  Live mode — universe cached, only geocoding costs apply.")
+        if _n_needs_geocode == 0:
+            st.info("  Live mode — universe cached and all portfolio rows already have lat/lng, so no API calls will be made.")
+        else:
+            st.info(f"  Live mode — universe cached, only {_n_needs_geocode:,} portfolio rows need geocoding (~${_geocode_cost}).")
     else:
         st.warning("  Live mode will call Google APIs for scraping and geocoding.")
 
