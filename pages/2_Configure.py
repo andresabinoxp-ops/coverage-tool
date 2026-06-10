@@ -1369,10 +1369,23 @@ with tab_playbook:
         else:
             st.info("Define at least one scrape category or upload a portfolio first, then a template will appear here.")
 
+        # Show a persistent success banner after the rerun that the apply triggers
+        _pb_just_applied = st.session_state.pop("_pb_just_applied", None)
+        if _pb_just_applied:
+            st.success(
+                f"  Applied **{_pb_just_applied}** playbook values from your CSV. "
+                "Scroll down to the per-category table to confirm — every number_input "
+                "below should now show the values you uploaded."
+            )
+
+        # Rotating nonce key so the uploader is empty on the next rerun.
+        # Otherwise the apply block fires again, calls st.rerun() again, and
+        # the page enters an infinite blink-loop.
+        _pb_nonce = st.session_state.get("_pb_upload_nonce", 0)
         _pb_upload = st.file_uploader(
             "Upload visit-playbook CSV",
             type=["csv"],
-            key="pb_csv_upload",
+            key=f"pb_csv_upload_{_pb_nonce}",
             label_visibility="collapsed",
         )
         if _pb_upload is not None:
@@ -1383,15 +1396,15 @@ with tab_playbook:
                     st.error("CSV must have a 'category' column.")
                 else:
                     _applied = 0
+                    _mapping = {
+                        "lv": "large_visits",   "ld": "large_duration",
+                        "mv": "medium_visits",  "md": "medium_duration",
+                        "sv": "small_visits",   "sd": "small_duration",
+                    }
                     for _r in _pb_df.to_dict("records"):
                         _cat = str(_r.get("category", "") or "").strip().lower()
                         if not _cat:
                             continue
-                        _mapping = {
-                            "lv": "large_visits",   "ld": "large_duration",
-                            "mv": "medium_visits",  "md": "medium_duration",
-                            "sv": "small_visits",   "sd": "small_duration",
-                        }
                         for _prefix, _col in _mapping.items():
                             if _col in _pb_df.columns:
                                 _v = _r.get(_col)
@@ -1403,7 +1416,10 @@ with tab_playbook:
                                 st.session_state[f"{_prefix}_{_cat}"] = _vv
                                 _applied += 1
                     if _applied:
-                        st.success(f"Applied **{_applied}** playbook values. Refreshing...")
+                        # Rotate the nonce so the uploader is empty on rerun and the
+                        # apply block doesn't fire again.
+                        st.session_state["_pb_upload_nonce"] = _pb_nonce + 1
+                        st.session_state["_pb_just_applied"] = _applied
                         st.rerun()
                     else:
                         st.warning("No values applied — check your CSV columns and category names.")
