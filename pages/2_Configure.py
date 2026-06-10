@@ -342,42 +342,88 @@ def _apply_config_snapshot(snap):
         n += 1
     return n
 
-st.markdown("**Save / load configuration**")
-st.caption(
-    "Save your current setup (country, regions, cities, scrape mode, categories, "
-    "rep rules, direct-accounts list, visit playbook, route plan, etc.) to a JSON "
-    "file. Upload it next session to restore everything in one click — no manual "
-    "re-clicking required."
-)
-_save_col1, _save_col2, _save_col3 = st.columns([2, 2, 3])
-with _save_col1:
-    _cfg_snap = _collect_config_snapshot()
-    _cfg_json_str = _cfg_json.dumps(_cfg_snap, indent=2, default=str)
-    _save_name = (st.session_state.get("country_name") or "config").replace(" ", "_")
-    st.download_button(
-        "  Save configuration (JSON)",
-        _cfg_json_str,
-        file_name=f"coverage_config_{_save_name}.json",
-        mime="application/json",
-        help="Downloads every Configure setting into a single file.",
+# Persistent banner that survives the rerun triggered by a successful load
+# so the user actually sees what was restored.
+_just_loaded = st.session_state.pop("_config_just_loaded", None)
+if _just_loaded:
+    _summary_bits = []
+    if _just_loaded.get("country"):
+        _summary_bits.append(f"Country: **{_just_loaded['country']}**")
+    if _just_loaded.get("regions"):
+        _summary_bits.append(f"{_just_loaded['regions']} region(s)")
+    if _just_loaded.get("cities"):
+        _summary_bits.append(f"{_just_loaded['cities']} city/area entry/entries")
+    if _just_loaded.get("scrape_mode"):
+        _summary_bits.append(f"scrape mode = **{_just_loaded['scrape_mode']}**")
+    if _just_loaded.get("selected_cities"):
+        _summary_bits.append(f"{_just_loaded['selected_cities']} cities selected")
+    if _just_loaded.get("categories"):
+        _summary_bits.append(f"{_just_loaded['categories']} scrape categories")
+    if _just_loaded.get("playbook_entries"):
+        _summary_bits.append(f"visit playbook for {_just_loaded['playbook_entries']} categories")
+    if _just_loaded.get("sf_rules"):
+        _summary_bits.append(f"{_just_loaded['sf_rules']} dedicated rep rule(s)")
+    if _just_loaded.get("direct_accounts"):
+        _summary_bits.append(f"{_just_loaded['direct_accounts']} direct-account banner(s)")
+    _body = " · ".join(_summary_bits) if _summary_bits else f"{_just_loaded.get('total', 0)} settings"
+    st.success(
+        f"  Configuration restored — {_body}. "
+        "Open each tab below to confirm everything is back as you saved it."
     )
-with _save_col2:
-    _cfg_upload = st.file_uploader(
-        "Load configuration (JSON)",
-        type=["json"],
-        key="cfg_upload",
-        label_visibility="collapsed",
+
+with st.expander("  Save / load configuration", expanded=False):
+    st.caption(
+        "Save your current setup (country, regions, cities, scrape mode, categories, "
+        "rep rules, direct-accounts list, visit playbook, route plan, etc.) to a JSON "
+        "file. Upload it next session to restore everything in one click — no manual "
+        "re-clicking required."
     )
-    if _cfg_upload is not None:
-        try:
-            _loaded = _cfg_json.load(_cfg_upload)
-            _n = _apply_config_snapshot(_loaded)
-            st.success(f"Restored **{_n}** settings from the configuration file. Reloading...")
-            st.rerun()
-        except Exception as _e:
-            st.error(f"Could not read configuration file: {_e}")
-with _save_col3:
-    st.caption("Tip: save once after your first setup, then load it on every future session.")
+    _save_col1, _save_col2 = st.columns(2)
+    with _save_col1:
+        _cfg_snap = _collect_config_snapshot()
+        _cfg_json_str = _cfg_json.dumps(_cfg_snap, indent=2, default=str)
+        _save_name = (st.session_state.get("country_name") or "config").replace(" ", "_")
+        st.download_button(
+            "  Save configuration (JSON)",
+            _cfg_json_str,
+            file_name=f"coverage_config_{_save_name}.json",
+            mime="application/json",
+            help="Downloads every Configure setting into a single file.",
+            use_container_width=True,
+        )
+        st.caption("Tip: save after first setup, load on future sessions.")
+    with _save_col2:
+        _cfg_upload = st.file_uploader(
+            "Load configuration (JSON)",
+            type=["json"],
+            key="cfg_upload",
+        )
+        if _cfg_upload is not None:
+            try:
+                _loaded = _cfg_json.load(_cfg_upload)
+                _n = _apply_config_snapshot(_loaded)
+                # Build a richer summary for the post-rerun banner so user knows
+                # *what* came back, not just "115 things".
+                _pb_count = sum(
+                    1 for k in (_loaded.get("_visit_playbook_widgets") or {}).keys()
+                    if k.startswith("lv_")
+                )
+                _just_loaded_payload = {
+                    "total":            _n,
+                    "country":          _loaded.get("country_name", ""),
+                    "regions":          len(_loaded.get("region_entries") or []),
+                    "cities":           len(_loaded.get("city_entries") or []),
+                    "scrape_mode":      _loaded.get("scrape_mode", ""),
+                    "selected_cities":  len(_loaded.get("selected_cities") or []),
+                    "categories":       len((_loaded.get("market_config") or {}).get("categories") or []),
+                    "playbook_entries": _pb_count,
+                    "sf_rules":         len(_loaded.get("sf_rules") or []),
+                    "direct_accounts":  len(_loaded.get("direct_accounts") or []),
+                }
+                st.session_state["_config_just_loaded"] = _just_loaded_payload
+                st.rerun()
+            except Exception as _e:
+                st.error(f"Could not read configuration file: {_e}")
 
 st.markdown("---")
 
