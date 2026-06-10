@@ -5928,7 +5928,15 @@ if st.button("  Run Coverage Agent", type="primary"):
                     f"Increase total reps or reduce dedicated rules."
                 )
                 _mixed_rep_count = max(1, _mixed_rep_count)  # fallback to 1
-            status.info(f"Stage 6/{total_steps} [v3] — Allocating {_mixed_rep_count} mixed rep routes (fixed mode)...")
+            # Heads-up about confusing label: this allocator is shared between
+            # recommended and fixed modes — naming it "fixed-mode allocator"
+            # made users in recommended mode think the pipeline had silently
+            # switched on them. Use a neutral label instead.
+            if rep_mode == "recommended":
+                _mode_label = "recommended mode — mixed pool routing"
+            else:
+                _mode_label = "fixed mode"
+            status.info(f"Stage 6/{total_steps} [v3] — Allocating {_mixed_rep_count} mixed rep routes ({_mode_label})...")
             if _mixed_pool:
                 # ── Capacitated spatial clustering ──────────────────────────
                 # Raw k-means was geographically tight but unbalanced (11%
