@@ -435,16 +435,47 @@ with col2:
         "﻿" + _gap_df.reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
 
-    # Enriched portfolio — use this file as your portfolio on future runs to
-    # skip Stage 4 enrichment API calls entirely (rating/phone/place_id are
-    # already populated, pipeline detects this and doesn't re-fetch).
-    _portfolio_df = pd.DataFrame([s for s in all_stores if s.get("source") == "portfolio"])
-    if not _portfolio_df.empty:
+    # Enriched portfolio — produces a CSV in the exact same shape as the
+    # original portfolio template the user uploaded, just with the Google
+    # enrichment fields (rating, review_count, place_id, phone, etc.) added
+    # at the end. Upload this on future runs to skip Stage 4 enrichment
+    # API calls entirely (the pipeline detects existing rating > 0 and
+    # doesn't re-fetch).
+    _orig_pf_df = st.session_state.get("portfolio_df")
+    _pf_records  = [s for s in all_stores if s.get("source") == "portfolio"]
+    if _orig_pf_df is not None and _pf_records:
+        _orig_cols = list(_orig_pf_df.columns)
+        # Add enrichment columns at the end if they aren't already there
+        _enrich_cols = ["lat", "lng", "rating", "review_count", "price_level",
+                        "place_id", "phone", "opening_hours", "website"]
+        _all_cols = _orig_cols + [c for c in _enrich_cols if c not in _orig_cols]
+        # Match each scored portfolio row back to its original row by store_id
+        _by_sid = {str(r.get("store_id", "") or ""): r for r in _pf_records}
+        _rows = []
+        for _orig in _orig_pf_df.to_dict("records"):
+            _sid = str(_orig.get("store_id", "") or "")
+            _scored = _by_sid.get(_sid, {})
+            _row = {}
+            for _c in _all_cols:
+                # Prefer the scored row's value when it has one — that's the
+                # enriched data (rating/phone/place_id etc. and corrected lat/lng).
+                # Fall back to the original upload's value.
+                _v = _scored.get(_c) if _scored else None
+                if _v is None or (isinstance(_v, float) and _v != _v):
+                    _v = _orig.get(_c)
+                _row[_c] = _v
+            _rows.append(_row)
+        _enriched_pf_df = pd.DataFrame(_rows, columns=_all_cols)
         st.download_button(
             "  Download enriched portfolio CSV (reuse to skip enrichment)",
-            "﻿" + _portfolio_df.reset_index(drop=True).to_csv(index=False),
+            "﻿" + _enriched_pf_df.reset_index(drop=True).to_csv(index=False),
             f"enriched_portfolio_{mkt_safe}.csv", "text/csv",
-            help="Save this file. Upload it as your portfolio on future runs to avoid paying again for Google data already fetched.",
+            help=(
+                "Same template as your upload, with Google enrichment fields "
+                "(rating, review_count, place_id, phone, etc.) appended. Use this "
+                "file as your portfolio on future runs to skip the Stage 4 enrichment "
+                "API calls — the pipeline sees rating > 0 and doesn't re-fetch."
+            ),
         )
 with col3:
     features = [
