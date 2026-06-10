@@ -303,6 +303,7 @@ import json as _cfg_json
 def _collect_config_snapshot():
     """Read every relevant Configure setting from session_state into a dict."""
     snap = {}
+    # Direct session_state keys we write/manage from our own code
     for k in [
         "country_name", "country_bbox",
         "region_entries", "city_entries",
@@ -314,16 +315,27 @@ def _collect_config_snapshot():
     ]:
         if k in st.session_state:
             snap[k] = st.session_state[k]
+    # Streamlit widget keys whose values persist user choices in the UI but
+    # which we don't otherwise own. Saving them lets a load restore the
+    # widgets exactly as the user left them — including the categories
+    # multiselect, rep mode radio, region-filter text, etc.
+    for wk in [
+        "cats_tab1", "extra_cats_tab1",
+        "rep_mode_radio", "store_select_pct_input",
+        "region_filter_input", "scrape_mode_radio",
+        "cities_multiselect",
+        "direct_accounts_input",
+        "route_month_sel", "route_year_sel",
+        "country_input_field", "region_input_field", "city_input_field",
+    ]:
+        if wk in st.session_state:
+            snap[wk] = st.session_state[wk]
     # Visit playbook widget values (per category: lv_*, ld_*, mv_*, md_*, sv_*, sd_*)
     pb = {}
     for k, v in st.session_state.items():
         if isinstance(k, str) and any(k.startswith(p) for p in ("lv_", "ld_", "mv_", "md_", "sv_", "sd_")):
             pb[k] = v
     snap["_visit_playbook_widgets"] = pb
-    # Route plan month/year and a few simple widgets
-    for k in ["route_month_sel", "route_year_sel"]:
-        if k in st.session_state:
-            snap[k] = st.session_state[k]
     return snap
 
 def _apply_config_snapshot(snap):
