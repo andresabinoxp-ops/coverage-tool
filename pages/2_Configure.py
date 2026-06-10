@@ -1072,225 +1072,225 @@ with tab_team:
     st.markdown("---")
 
     # ── Direct accounts to exclude ───────────────────────────────────────────
-    st.markdown("**Direct accounts to exclude** *(optional)*")
-    st.caption(
-        "Banners serviced directly by the manufacturer. Scraped stores whose names match these banners "
-        "will be removed from the universe before scoring and route planning, so distributors don't get "
-        "assigned to visit them. Your portfolio (current coverage) is never filtered."
-    )
+    with st.expander('Direct accounts to exclude (optional)', expanded=False):
+        st.caption(
+            "Banners serviced directly by the manufacturer. Scraped stores whose names match these banners "
+            "will be removed from the universe before scoring and route planning, so distributors don't get "
+            "assigned to visit them. Your portfolio (current coverage) is never filtered."
+        )
 
-    _direct_default = "\n".join(st.session_state.get("direct_accounts", []))
-    _direct_input = st.text_area(
-        "Banner names (one per line)",
-        value=_direct_default,
-        height=140,
-        placeholder="Walmart\nCarrefour\nAtacadão\nAssaí\nSam's Club\nMakro",
-        key="direct_accounts_input",
-    )
-    _direct_list = [b.strip() for b in _direct_input.splitlines() if b.strip()]
-    st.session_state["direct_accounts"] = _direct_list
+        _direct_default = "\n".join(st.session_state.get("direct_accounts", []))
+        _direct_input = st.text_area(
+            "Banner names (one per line)",
+            value=_direct_default,
+            height=140,
+            placeholder="Walmart\nCarrefour\nAtacadão\nAssaí\nSam's Club\nMakro",
+            key="direct_accounts_input",
+        )
+        _direct_list = [b.strip() for b in _direct_input.splitlines() if b.strip()]
+        st.session_state["direct_accounts"] = _direct_list
 
-    _col_da1, _col_da2 = st.columns([1, 2])
-    with _col_da1:
-        st.caption(f"**{len(_direct_list)} banners** on the exclusion list")
-    with _col_da2:
-        if st.button("Preview matches against last scrape", disabled=not _direct_list, key="direct_preview"):
-            _cache = st.session_state.get("universe_cache", {})
-            _last = next(iter(_cache.values()), None) if _cache else None
-            _scraped = (_last or {}).get("universe", [])
-            if not _scraped:
-                st.info("No cached scrape found — run the pipeline at least once to enable preview.")
-            else:
-                _hits = []
-                _banners_lower = [b.lower() for b in _direct_list]
-                for s in _scraped:
-                    _nm = str(s.get("store_name", "") or s.get("name", "")).lower()
-                    for b in _banners_lower:
-                        if b and b in _nm:
-                            _hits.append(s)
-                            break
-                if not _hits:
-                    st.info(f"No matches found in last scrape of {len(_scraped)} stores.")
+        _col_da1, _col_da2 = st.columns([1, 2])
+        with _col_da1:
+            st.caption(f"**{len(_direct_list)} banners** on the exclusion list")
+        with _col_da2:
+            if st.button("Preview matches against last scrape", disabled=not _direct_list, key="direct_preview"):
+                _cache = st.session_state.get("universe_cache", {})
+                _last = next(iter(_cache.values()), None) if _cache else None
+                _scraped = (_last or {}).get("universe", [])
+                if not _scraped:
+                    st.info("No cached scrape found — run the pipeline at least once to enable preview.")
                 else:
-                    st.success(
-                        f"Would exclude **{len(_hits)} of {len(_scraped)}** scraped stores "
-                        f"({100*len(_hits)/len(_scraped):.1f}%)."
-                    )
-                    _sample = pd.DataFrame([
-                        {"store_name": h.get("store_name") or h.get("name", ""),
-                         "city": h.get("city", ""),
-                         "category": h.get("category", "")}
-                        for h in _hits[:20]
-                    ])
-                    st.dataframe(_sample, use_container_width=True, hide_index=True)
-                    if len(_hits) > 20:
-                        st.caption(f"... and {len(_hits) - 20} more")
+                    _hits = []
+                    _banners_lower = [b.lower() for b in _direct_list]
+                    for s in _scraped:
+                        _nm = str(s.get("store_name", "") or s.get("name", "")).lower()
+                        for b in _banners_lower:
+                            if b and b in _nm:
+                                _hits.append(s)
+                                break
+                    if not _hits:
+                        st.info(f"No matches found in last scrape of {len(_scraped)} stores.")
+                    else:
+                        st.success(
+                            f"Would exclude **{len(_hits)} of {len(_scraped)}** scraped stores "
+                            f"({100*len(_hits)/len(_scraped):.1f}%)."
+                        )
+                        _sample = pd.DataFrame([
+                            {"store_name": h.get("store_name") or h.get("name", ""),
+                             "city": h.get("city", ""),
+                             "category": h.get("category", "")}
+                            for h in _hits[:20]
+                        ])
+                        st.dataframe(_sample, use_container_width=True, hide_index=True)
+                        if len(_hits) > 20:
+                            st.caption(f"... and {len(_hits) - 20} more")
 
-    st.markdown("---")
+        st.markdown("---")
 
     # ── Sales Force Structure (simplified) ───────────────────────────────────
-    st.markdown("**Dedicated rep rules** *(optional)*")
-    st.caption("Assign specific reps to accounts, channels, or store groups. Remaining stores go to mixed geographic reps.")
+    with st.expander('Dedicated rep rules (optional)', expanded=False):
+        st.caption("Assign specific reps to accounts, channels, or store groups. Remaining stores go to mixed geographic reps.")
 
-    if "sf_rules" not in st.session_state:
-        st.session_state["sf_rules"] = []
-    _sf_rules = st.session_state["sf_rules"]
+        if "sf_rules" not in st.session_state:
+            st.session_state["sf_rules"] = []
+        _sf_rules = st.session_state["sf_rules"]
 
-    _portfolio_for_rules = st.session_state.get("portfolio_df")
-    _STANDARD_COLS = {
-        "store_id", "store_name", "address", "city", "lat", "lng",
-        "annual_sales_usd", "lines_per_store", "category",
-        "district", "area", "neighbourhood", "neighborhood", "bairro",
-        "zone", "suburb", "quarter", "region", "state", "governorate",
-        "province", "county", "wilaya", "emirate", "prefecture",
-    }
-    _GENERIC_ACCOUNTS = {
-        "others", "other", "independent", "unknown", "n/a", "na", "none",
-        "general", "misc", "miscellaneous", "unassigned", "blank", "",
-        "general trade", "traditional trade", "open market",
-        "retail", "retailer", "dealer", "distributor", "wholesaler",
-        "generic", "standard", "local", "local shop", "not applicable",
-        "tbd", "to be confirmed", "pending",
-    }
+        _portfolio_for_rules = st.session_state.get("portfolio_df")
+        _STANDARD_COLS = {
+            "store_id", "store_name", "address", "city", "lat", "lng",
+            "annual_sales_usd", "lines_per_store", "category",
+            "district", "area", "neighbourhood", "neighborhood", "bairro",
+            "zone", "suburb", "quarter", "region", "state", "governorate",
+            "province", "county", "wilaya", "emirate", "prefecture",
+        }
+        _GENERIC_ACCOUNTS = {
+            "others", "other", "independent", "unknown", "n/a", "na", "none",
+            "general", "misc", "miscellaneous", "unassigned", "blank", "",
+            "general trade", "traditional trade", "open market",
+            "retail", "retailer", "dealer", "distributor", "wholesaler",
+            "generic", "standard", "local", "local shop", "not applicable",
+            "tbd", "to be confirmed", "pending",
+        }
 
-    # Build smart match phrases: "Account is Lulu", "Channel is Wholesale", etc.
-    _match_phrases = []
-    _match_phrase_map = {}
-    if _portfolio_for_rules is not None:
-        for _col in _portfolio_for_rules.columns:
-            if _col in _STANDARD_COLS:
-                continue
-            _display_col = _col.replace("_", " ").title()
-            for _val in sorted(_portfolio_for_rules[_col].dropna().astype(str).str.strip().unique()):
-                if _val and _val.strip().lower() not in _GENERIC_ACCOUNTS:
-                    _phrase = f"{_display_col} is {_val}"
-                    _match_phrases.append(_phrase)
-                    _match_phrase_map[_phrase] = {"column": _col, "value": _val, "field": _display_col}
-    # Add category options
-    _cats_for_rules = final_categories if 'final_categories' in dir() and final_categories else []
-    for _cat in _cats_for_rules:
-        _phrase = f"Category is {_cat.replace('_',' ').title()}"
-        _match_phrases.append(_phrase)
-        _match_phrase_map[_phrase] = {"column": "category", "value": _cat, "field": "Category"}
-    _match_phrases.append("Store name contains keyword...")
+        # Build smart match phrases: "Account is Lulu", "Channel is Wholesale", etc.
+        _match_phrases = []
+        _match_phrase_map = {}
+        if _portfolio_for_rules is not None:
+            for _col in _portfolio_for_rules.columns:
+                if _col in _STANDARD_COLS:
+                    continue
+                _display_col = _col.replace("_", " ").title()
+                for _val in sorted(_portfolio_for_rules[_col].dropna().astype(str).str.strip().unique()):
+                    if _val and _val.strip().lower() not in _GENERIC_ACCOUNTS:
+                        _phrase = f"{_display_col} is {_val}"
+                        _match_phrases.append(_phrase)
+                        _match_phrase_map[_phrase] = {"column": _col, "value": _val, "field": _display_col}
+        # Add category options
+        _cats_for_rules = final_categories if 'final_categories' in dir() and final_categories else []
+        for _cat in _cats_for_rules:
+            _phrase = f"Category is {_cat.replace('_',' ').title()}"
+            _match_phrases.append(_phrase)
+            _match_phrase_map[_phrase] = {"column": "category", "value": _cat, "field": "Category"}
+        _match_phrases.append("Store name contains keyword...")
 
-    # Collect geography options — region fences from the coverage file first
-    # (clean, coordinate-backed), then any manually-typed scraping scope.
-    _region_fences = sorted((st.session_state.get("region_boundaries") or {}).keys())
-    _configured_cities = sorted(set(
-        [e.get("name","") for e in st.session_state.get("city_entries", []) or []] +
-        [e.get("name","") for e in st.session_state.get("region_entries", []) or []]
-    ))
-    _configured_cities = [c for c in _configured_cities if c and c not in _region_fences]
-    _geo_options = ["All"] + _region_fences + _configured_cities
+        # Collect geography options — region fences from the coverage file first
+        # (clean, coordinate-backed), then any manually-typed scraping scope.
+        _region_fences = sorted((st.session_state.get("region_boundaries") or {}).keys())
+        _configured_cities = sorted(set(
+            [e.get("name","") for e in st.session_state.get("city_entries", []) or []] +
+            [e.get("name","") for e in st.session_state.get("region_entries", []) or []]
+        ))
+        _configured_cities = [c for c in _configured_cities if c and c not in _region_fences]
+        _geo_options = ["All"] + _region_fences + _configured_cities
 
-    # Display existing rules
-    if _sf_rules:
-        for idx, rule in enumerate(_sf_rules):
-            _geo_display = ", ".join(rule.get("geography", ["All"]))
-            _conds = rule.get("match_conditions", [])
-            if _conds:
-                _desc = " OR ".join(f'{c.get("match_field","")}: {c.get("match_value","")}' for c in _conds)
-            else:
-                _desc = f'{rule.get("match_field","")}: {rule.get("match_value","")}'
-            _reps_display = "Auto" if rule.get("dedicated_reps", 1) == 0 else f'{rule.get("dedicated_reps", 1)} rep(s)'
-            st.markdown(
-                f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #1565C0;'
-                f'border-radius:8px;padding:10px 14px;margin:5px 0;font-size:0.88rem">'
-                f'<strong>{rule.get("rule_name","")}</strong> — {_desc} — '
-                f'Geography: {_geo_display} — <strong>{_reps_display}</strong></div>',
-                unsafe_allow_html=True)
-        _del_cols = st.columns(min(len(_sf_rules), 5))
-        for idx, rule in enumerate(_sf_rules):
-            with _del_cols[idx % 5]:
-                if st.button(f"Remove: {rule.get('rule_name','')}", key=f"del_rule_{idx}"):
-                    _sf_rules.pop(idx)
-                    st.session_state["sf_rules"] = _sf_rules
-                    st.rerun()
-
-    # Add new rule
-    with st.expander("+ Add dedicated rep rule", expanded=len(_sf_rules) == 0):
-        _new_rule_name = st.text_input("Rule name", placeholder="e.g., Lulu Exclusive", key="new_rule_name")
-
-        if "rule_conditions_count" not in st.session_state:
-            st.session_state["rule_conditions_count"] = 1
-        _n_cond = st.session_state["rule_conditions_count"]
-
-        _conditions_data = []
-        for i in range(_n_cond):
-            _label = "Match stores where" if i == 0 else f"OR match #{i+1}"
-            _cond_c1, _cond_c2 = st.columns([3, 1])
-            with _cond_c1:
-                _sel_phrase = st.selectbox(_label, _match_phrases if _match_phrases else ["Store name contains keyword..."],
-                    key=f"cond_match_on_{i}")
-            with _cond_c2:
-                if _sel_phrase == "Store name contains keyword...":
-                    _ci_value = st.text_input("Keyword", placeholder="e.g., Lulu", key=f"cond_value_txt_{i}")
-                    _ci_col = "store_name"
-                    _ci_field = "Store name"
+        # Display existing rules
+        if _sf_rules:
+            for idx, rule in enumerate(_sf_rules):
+                _geo_display = ", ".join(rule.get("geography", ["All"]))
+                _conds = rule.get("match_conditions", [])
+                if _conds:
+                    _desc = " OR ".join(f'{c.get("match_field","")}: {c.get("match_value","")}' for c in _conds)
                 else:
-                    _mapped = _match_phrase_map.get(_sel_phrase, {})
-                    _ci_value = _mapped.get("value", "")
-                    _ci_col = _mapped.get("column", "store_name")
-                    _ci_field = _mapped.get("field", "")
-                    st.text_input("Value", value=_ci_value, disabled=True, key=f"cond_value_sel_{i}")
+                    _desc = f'{rule.get("match_field","")}: {rule.get("match_value","")}'
+                _reps_display = "Auto" if rule.get("dedicated_reps", 1) == 0 else f'{rule.get("dedicated_reps", 1)} rep(s)'
+                st.markdown(
+                    f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #1565C0;'
+                    f'border-radius:8px;padding:10px 14px;margin:5px 0;font-size:0.88rem">'
+                    f'<strong>{rule.get("rule_name","")}</strong> — {_desc} — '
+                    f'Geography: {_geo_display} — <strong>{_reps_display}</strong></div>',
+                    unsafe_allow_html=True)
+            _del_cols = st.columns(min(len(_sf_rules), 5))
+            for idx, rule in enumerate(_sf_rules):
+                with _del_cols[idx % 5]:
+                    if st.button(f"Remove: {rule.get('rule_name','')}", key=f"del_rule_{idx}"):
+                        _sf_rules.pop(idx)
+                        st.session_state["sf_rules"] = _sf_rules
+                        st.rerun()
 
-            if _n_cond > 1 and i == _n_cond - 1:
-                if st.button("Remove condition", key=f"cond_remove_{i}"):
-                    st.session_state["rule_conditions_count"] = max(1, _n_cond - 1)
-                    st.rerun()
+        # Add new rule
+        with st.expander("+ Add dedicated rep rule", expanded=len(_sf_rules) == 0):
+            _new_rule_name = st.text_input("Rule name", placeholder="e.g., Lulu Exclusive", key="new_rule_name")
 
-            _conditions_data.append({
-                "match_field": _ci_field,
-                "match_column": _ci_col,
-                "match_value": str(_ci_value).strip(),
-            })
-
-        if st.button("+ Add another condition (OR)", key="btn_add_cond"):
-            st.session_state["rule_conditions_count"] = _n_cond + 1
-            st.rerun()
-
-        _rc1, _rc2, _rc3 = st.columns(3)
-        with _rc1:
-            _new_geography = st.multiselect("Geography", _geo_options, default=["All"], key="new_geography")
-        with _rc2:
-            _new_size_filter = st.multiselect("Size tier filter", ["Large","Medium","Small"],
-                default=["Large","Medium","Small"], key="new_size_filter",
-                help="Filters scraped stores only. Portfolio stores always included.")
-        with _rc3:
-            _rep_options = ["Auto (recommended)"] + [str(i) for i in range(1, 21)]
-            _rep_choice = st.selectbox("Dedicated reps", _rep_options, key="new_dedicated_reps",
-                help="Auto = system calculates based on workload. Or pick a fixed number.")
-            _new_ded_reps = 0 if _rep_choice == "Auto (recommended)" else int(_rep_choice)
-
-        if st.button("Add rule", type="primary", key="btn_add_rule"):
-            _valid_conds = [c for c in _conditions_data if c["match_value"]]
-            if not _new_rule_name.strip():
-                st.error("Please enter a rule name.")
-            elif not _valid_conds:
-                st.error("Please select or enter a match value.")
-            else:
-                _channel_cols = {"channel", "trade_channel", "sub_channel", "trade_type", "segment", "category"}
-                _first_col = _valid_conds[0]["match_column"]
-                _rule_type = "Channel" if _first_col in _channel_cols else "Customer"
-                _new_rule = {
-                    "rule_name":        _new_rule_name.strip(),
-                    "rule_type":        _rule_type,
-                    "match_conditions": _valid_conds,
-                    "match_type":       "Contains",
-                    "geography":        _new_geography if "All" not in _new_geography else ["All"],
-                    "size_filter":      _new_size_filter if _new_size_filter else ["Large","Medium","Small"],
-                    "dedicated_reps":   _new_ded_reps,
-                    "match_field":      _valid_conds[0]["match_field"],
-                    "match_column":     _valid_conds[0]["match_column"],
-                    "match_value":      _valid_conds[0]["match_value"],
-                }
-                _sf_rules.append(_new_rule)
-                _sf_rules.sort(key=lambda r: 0 if r.get("rule_type") == "Channel" else 1)
-                st.session_state["sf_rules"] = _sf_rules
+            if "rule_conditions_count" not in st.session_state:
                 st.session_state["rule_conditions_count"] = 1
-                st.success(f"Rule added: {_new_rule_name}")
+            _n_cond = st.session_state["rule_conditions_count"]
+
+            _conditions_data = []
+            for i in range(_n_cond):
+                _label = "Match stores where" if i == 0 else f"OR match #{i+1}"
+                _cond_c1, _cond_c2 = st.columns([3, 1])
+                with _cond_c1:
+                    _sel_phrase = st.selectbox(_label, _match_phrases if _match_phrases else ["Store name contains keyword..."],
+                        key=f"cond_match_on_{i}")
+                with _cond_c2:
+                    if _sel_phrase == "Store name contains keyword...":
+                        _ci_value = st.text_input("Keyword", placeholder="e.g., Lulu", key=f"cond_value_txt_{i}")
+                        _ci_col = "store_name"
+                        _ci_field = "Store name"
+                    else:
+                        _mapped = _match_phrase_map.get(_sel_phrase, {})
+                        _ci_value = _mapped.get("value", "")
+                        _ci_col = _mapped.get("column", "store_name")
+                        _ci_field = _mapped.get("field", "")
+                        st.text_input("Value", value=_ci_value, disabled=True, key=f"cond_value_sel_{i}")
+
+                if _n_cond > 1 and i == _n_cond - 1:
+                    if st.button("Remove condition", key=f"cond_remove_{i}"):
+                        st.session_state["rule_conditions_count"] = max(1, _n_cond - 1)
+                        st.rerun()
+
+                _conditions_data.append({
+                    "match_field": _ci_field,
+                    "match_column": _ci_col,
+                    "match_value": str(_ci_value).strip(),
+                })
+
+            if st.button("+ Add another condition (OR)", key="btn_add_cond"):
+                st.session_state["rule_conditions_count"] = _n_cond + 1
                 st.rerun()
+
+            _rc1, _rc2, _rc3 = st.columns(3)
+            with _rc1:
+                _new_geography = st.multiselect("Geography", _geo_options, default=["All"], key="new_geography")
+            with _rc2:
+                _new_size_filter = st.multiselect("Size tier filter", ["Large","Medium","Small"],
+                    default=["Large","Medium","Small"], key="new_size_filter",
+                    help="Filters scraped stores only. Portfolio stores always included.")
+            with _rc3:
+                _rep_options = ["Auto (recommended)"] + [str(i) for i in range(1, 21)]
+                _rep_choice = st.selectbox("Dedicated reps", _rep_options, key="new_dedicated_reps",
+                    help="Auto = system calculates based on workload. Or pick a fixed number.")
+                _new_ded_reps = 0 if _rep_choice == "Auto (recommended)" else int(_rep_choice)
+
+            if st.button("Add rule", type="primary", key="btn_add_rule"):
+                _valid_conds = [c for c in _conditions_data if c["match_value"]]
+                if not _new_rule_name.strip():
+                    st.error("Please enter a rule name.")
+                elif not _valid_conds:
+                    st.error("Please select or enter a match value.")
+                else:
+                    _channel_cols = {"channel", "trade_channel", "sub_channel", "trade_type", "segment", "category"}
+                    _first_col = _valid_conds[0]["match_column"]
+                    _rule_type = "Channel" if _first_col in _channel_cols else "Customer"
+                    _new_rule = {
+                        "rule_name":        _new_rule_name.strip(),
+                        "rule_type":        _rule_type,
+                        "match_conditions": _valid_conds,
+                        "match_type":       "Contains",
+                        "geography":        _new_geography if "All" not in _new_geography else ["All"],
+                        "size_filter":      _new_size_filter if _new_size_filter else ["Large","Medium","Small"],
+                        "dedicated_reps":   _new_ded_reps,
+                        "match_field":      _valid_conds[0]["match_field"],
+                        "match_column":     _valid_conds[0]["match_column"],
+                        "match_value":      _valid_conds[0]["match_value"],
+                    }
+                    _sf_rules.append(_new_rule)
+                    _sf_rules.sort(key=lambda r: 0 if r.get("rule_type") == "Channel" else 1)
+                    st.session_state["sf_rules"] = _sf_rules
+                    st.session_state["rule_conditions_count"] = 1
+                    st.success(f"Rule added: {_new_rule_name}")
+                    st.rerun()
 
     # Numeric distribution % (recommended mode only)
     if rep_mode_key == "recommended":
