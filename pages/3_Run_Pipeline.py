@@ -4032,9 +4032,17 @@ if _portfolio_ready:
     else:
         _n_needs_geocode = _n_portfolio
     # Estimate portfolio enrichment cost — Stage 4 will fetch Google data for
-    # rows with valid lat/lng but no rating (capped at 200 by score), and the
-    # session cache means a re-run reuses what was already fetched.
+    # rows with valid lat/lng AND no rating AND not yet attempted, capped at
+    # 200 unless the user opts into a full sweep. The session cache further
+    # reduces re-pay within a session.
     _pe_cache_check = st.session_state.get("portfolio_enrichment_cache", {})
+    def _row_was_attempted(row):
+        _flag = row.get("enrichment_attempted") if hasattr(row, "get") else None
+        if _flag is True or _flag == 1:
+            return True
+        if isinstance(_flag, str) and _flag.strip().lower() in ("true", "1", "yes"):
+            return True
+        return False
     def _row_needs_enrich(row):
         if _row_needs_geocode(row):
             return False
@@ -4045,10 +4053,14 @@ if _portfolio_ready:
             _rt_v = 0.0
         if _rt_v > 0:
             return False
+        if _row_was_attempted(row):
+            return False
         _sid = str(row.get("store_id", "") or "").strip()
         _ck = f"sid:{_sid}" if _sid else f"nc:{str(row.get('store_name','') or '').strip().lower()}|{str(row.get('city','') or '').strip().lower()}"
         return _ck not in _pe_cache_check
-    _n_needs_enrich = min(sum(1 for _r in _pf_rows if _row_needs_enrich(_r)), 200)
+    _candidate_count = sum(1 for _r in _pf_rows if _row_needs_enrich(_r))
+    _enrich_all = bool(st.session_state.get("enrich_all_portfolio", False))
+    _n_needs_enrich = _candidate_count if _enrich_all else min(_candidate_count, 200)
 _geocode_cost   = round(_n_needs_geocode * PRICE_GEOCODE_PER_CALL, 2)
 _enrich_cost    = round(_n_needs_enrich * PRICE_NEARBY_PER_CALL, 2)
 _total_est_cost = round(_geocode_cost + _enrich_cost, 2)
@@ -4089,11 +4101,29 @@ if not dry_run:
     else:
         st.warning("  Live mode will call Google APIs for scraping, geocoding and enrichment.")
 
+# Optional one-time sweep: lift the 200-row cap on Stage 4 portfolio enrichment.
+# After one expensive run, every portfolio row is marked attempted (rating
+# populated OR enrichment_attempted=True) and subsequent runs cost $0.
+_enrich_all_default = bool(st.session_state.get("enrich_all_portfolio", False))
+_enrich_all_chk = st.checkbox(
+    "Enrich ALL portfolio stores in one pass (one-time, removes the 200-row cap)",
+    value=_enrich_all_default,
+    help=(
+        "Stage 4 normally enriches only the top 200 unrated portfolio rows per "
+        "run. Tick this to enrich every unrated row in a single sweep — "
+        "expensive once, then every future run is $0 because nothing is left "
+        "to look up."
+    ),
+)
+st.session_state["enrich_all_portfolio"] = _enrich_all_chk
+
 if st.button("  Run Coverage Agent", type="primary"):
     status = st.empty()
     bar    = st.progress(0)
     weights    = cfg["weights"]
     thresholds = cfg.get("thresholds", {"weekly":80,"fortnightly":60,"monthly":40})
+    # Reset real-cost counters for this run
+    st.session_state["_run_real_costs"] = {}
 
     # ── DRY RUN ───────────────────────────────────────────────────────────────
     if dry_run:
@@ -4393,6 +4423,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             status.info(f"Stage 1/{total_steps} — {len(has_coords)} stores have coordinates · {len(needs_geocode)} need geocoding...")
         if needs_geocode:
             status.info(f"Stage 1/{total_steps} — Geocoding {len(needs_geocode)} stores...")
+        # Track real geocoding API call count for the actual-cost report at end of run.
+        st.session_state["_run_real_costs"] = st.session_state.get("_run_real_costs", {})
+        st.session_state["_run_real_costs"]["geocode_calls"] = len(needs_geocode)
         bar.progress(5)
 
 
@@ -5227,18 +5260,29 @@ if st.button("  Run Coverage Agent", type="primary"):
         # ── Direct Google Places lookup for portfolio stores still missing rating ─
         # These are stores with valid coords not in the scraped universe
         # Use Places Text Search to fetch their Google data directly
-        # Cap direct lookup at 200 stores — prioritise by score desc to get most value
-        # Full lookup of 1000+ stores takes 20+ minutes — not worth it
+        # Skip rows that already have a rating OR that have been attempted on a
+        # previous run (the enrichment_attempted flag survives via the enriched
+        # portfolio CSV download — re-uploading it tells us "we tried these
+        # before, Google had nothing, don't bother again").
+        def _was_attempted(_p):
+            _flag = _p.get("enrichment_attempted")
+            if _flag is True or _flag == 1:
+                return True
+            if isinstance(_flag, str) and _flag.strip().lower() in ("true", "1", "yes"):
+                return True
+            return False
+        _enrich_all_portfolio = bool(st.session_state.get("enrich_all_portfolio", False))
+        _cap = None if _enrich_all_portfolio else 200
         no_rating_port = sorted(
             [p for p in portfolio
              if p.get("lat") and p.get("lng")
              and not (p.get("rating") and float(p.get("rating") or 0) > 0)
+             and not _was_attempted(p)
              and p.get("store_name")],
             key=lambda x: float(x.get("score", 0) or 0), reverse=True
-
-
-
-        )[:200]
+        )
+        if _cap is not None:
+            no_rating_port = no_rating_port[:_cap]
         if no_rating_port and api_key:
             # Session-level cache so re-running the pipeline doesn't re-pay for
             # the same Google lookups. Keyed by store_id (with name+city fallback).
@@ -5328,11 +5372,17 @@ if st.button("  Run Coverage Agent", type="primary"):
                             break
                     # Cache even an empty result (so we don't keep retrying dead lookups)
                     _pe_cache[_enr_key(p)] = _enrich_payload
+                    # Persistent flag — survives the enriched-portfolio CSV download
+                    # so a re-upload skips the row even if Google returned nothing.
+                    p["enrichment_attempted"] = True
                     time.sleep(0.05)
                 except Exception:
                     pass
             if fetched:
                 status.info(f"Stage 4/{total_steps} — Fetched Google data for {fetched} portfolio stores via direct lookup.")
+            # Track real API spend separately from the broken historical formula.
+            st.session_state["_run_real_costs"] = st.session_state.get("_run_real_costs", {})
+            st.session_state["_run_real_costs"]["portfolio_enrich_calls"] = len(_need_fetch)
 
         # ── Fix suspect portfolio stores using scraped universe ───────────────
         # For portfolio stores still flagged as suspect, try name-match against
@@ -6950,10 +7000,33 @@ if st.button("  Run Coverage Agent", type="primary"):
         gap_stores  = sorted([s for s in universe if s.get("coverage_status")=="gap"],key=lambda x:x.get("score",0),reverse=True)
         covered_n   = sum(1 for s in all_stores if s.get("covered"))
         actual_time = fmt_time(time.time()-run_start).replace("~","")
-        actual_cost = (
-            round(len(portfolio)*PRICE_GEOCODE_PER_CALL +
-                  len(universe)/15*PRICE_NEARBY_PER_CALL +
-                  (enriched if enrich_scope != "none" else 0)*PRICE_DETAILS_PER_CALL, 2)
+        # Honest "actual cost" — counts only the API paths that genuinely ran
+        # this run. The previous formula charged for portfolio geocoding even
+        # when every row already had coords AND charged for universe scraping
+        # even when the universe came from cache, so it overstated cost by
+        # ~$10-15 on every cached re-run.
+        _used_universe_cache = (
+            st.session_state.get("universe_cache", {}).get(_scrape_cache_key(cfg)) is not None
+        )
+        _real = st.session_state.get("_run_real_costs", {}) or {}
+        _real_geocode_calls = _real.get(
+            "geocode_calls",
+            sum(1 for s in portfolio if not (s.get("lat") and s.get("lng"))),
+        )
+        _real_portfolio_enrich_calls = _real.get("portfolio_enrich_calls", 0)
+        _real_universe_scrape_cost = (
+            0 if _used_universe_cache
+            else round((len(universe) / 15) * PRICE_NEARBY_PER_CALL, 2)
+        )
+        _real_stage7_details = (
+            enriched if (enrich_scope != "none" and not _used_universe_cache) else 0
+        )
+        actual_cost = round(
+            _real_geocode_calls * PRICE_GEOCODE_PER_CALL
+            + _real_portfolio_enrich_calls * PRICE_NEARBY_PER_CALL
+            + _real_universe_scrape_cost
+            + _real_stage7_details * PRICE_DETAILS_PER_CALL,
+            2,
         )
 
         st.session_state["run_results"] = {

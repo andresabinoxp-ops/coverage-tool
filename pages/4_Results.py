@@ -445,9 +445,13 @@ with col2:
     _pf_records  = [s for s in all_stores if s.get("source") == "portfolio"]
     if _orig_pf_df is not None and _pf_records:
         _orig_cols = list(_orig_pf_df.columns)
-        # Add enrichment columns at the end if they aren't already there
+        # Add enrichment columns at the end if they aren't already there. The
+        # enrichment_attempted flag is the crucial one — it lets a re-upload
+        # skip rows we already tried (even when Google returned nothing) so
+        # repeated runs cost $0 instead of paying for the same dead lookups.
         _enrich_cols = ["lat", "lng", "rating", "review_count", "price_level",
-                        "place_id", "phone", "opening_hours", "website"]
+                        "place_id", "phone", "opening_hours", "website",
+                        "enrichment_attempted"]
         _all_cols = _orig_cols + [c for c in _enrich_cols if c not in _orig_cols]
         # Match each scored portfolio row back to its original row by store_id
         _by_sid = {str(r.get("store_id", "") or ""): r for r in _pf_records}
