@@ -434,6 +434,18 @@ with col2:
     st.download_button("  Gap report CSV",
         "﻿" + _gap_df.reset_index(drop=True).to_csv(index=False),
         f"gap_report_{mkt_safe}.csv", "text/csv")
+
+    # Enriched portfolio — use this file as your portfolio on future runs to
+    # skip Stage 4 enrichment API calls entirely (rating/phone/place_id are
+    # already populated, pipeline detects this and doesn't re-fetch).
+    _portfolio_df = pd.DataFrame([s for s in all_stores if s.get("source") == "portfolio"])
+    if not _portfolio_df.empty:
+        st.download_button(
+            "  Download enriched portfolio CSV (reuse to skip enrichment)",
+            "﻿" + _portfolio_df.reset_index(drop=True).to_csv(index=False),
+            f"enriched_portfolio_{mkt_safe}.csv", "text/csv",
+            help="Save this file. Upload it as your portfolio on future runs to avoid paying again for Google data already fetched.",
+        )
 with col3:
     features = [
         {"type":"Feature",
