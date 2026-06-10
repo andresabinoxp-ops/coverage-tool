@@ -4023,24 +4023,52 @@ def _row_needs_geocode(row):
             return True
     return False
 _n_needs_geocode = 0
+_n_needs_enrich  = 0
 if _portfolio_ready:
     _pf_df = st.session_state["portfolio_df"]
+    _pf_rows = _pf_df.to_dict("records")
     if "lat" in _pf_df.columns and "lng" in _pf_df.columns:
-        _n_needs_geocode = sum(1 for _r in _pf_df.to_dict("records") if _row_needs_geocode(_r))
+        _n_needs_geocode = sum(1 for _r in _pf_rows if _row_needs_geocode(_r))
     else:
         _n_needs_geocode = _n_portfolio
-_geocode_cost    = round(_n_needs_geocode * PRICE_GEOCODE_PER_CALL, 2)
+    # Estimate portfolio enrichment cost — Stage 4 will fetch Google data for
+    # rows with valid lat/lng but no rating (capped at 200 by score), and the
+    # session cache means a re-run reuses what was already fetched.
+    _pe_cache_check = st.session_state.get("portfolio_enrichment_cache", {})
+    def _row_needs_enrich(row):
+        if _row_needs_geocode(row):
+            return False
+        _rt = row.get("rating") if hasattr(row, "get") else None
+        try:
+            _rt_v = float(_rt) if _rt is not None and str(_rt).strip() not in ("", "nan", "None") else 0.0
+        except (TypeError, ValueError):
+            _rt_v = 0.0
+        if _rt_v > 0:
+            return False
+        _sid = str(row.get("store_id", "") or "").strip()
+        _ck = f"sid:{_sid}" if _sid else f"nc:{str(row.get('store_name','') or '').strip().lower()}|{str(row.get('city','') or '').strip().lower()}"
+        return _ck not in _pe_cache_check
+    _n_needs_enrich = min(sum(1 for _r in _pf_rows if _row_needs_enrich(_r)), 200)
+_geocode_cost   = round(_n_needs_geocode * PRICE_GEOCODE_PER_CALL, 2)
+_enrich_cost    = round(_n_needs_enrich * PRICE_NEARBY_PER_CALL, 2)
+_total_est_cost = round(_geocode_cost + _enrich_cost, 2)
 
 if _run_cache_check and _portfolio_ready:
     _cached_n_run = len(_run_cache_check["universe"])
+    _parts = []
     if _n_needs_geocode == 0:
-        _geocode_msg = "no geocoding needed (all portfolio rows already have lat/lng)"
+        _parts.append("no geocoding (all rows have lat/lng)")
     else:
-        _geocode_msg = f"estimated geocoding cost ~**${_geocode_cost}** ({_n_needs_geocode:,} of {_n_portfolio:,} rows missing coords)"
+        _parts.append(f"geocoding ~${_geocode_cost} ({_n_needs_geocode:,} rows)")
+    if _n_needs_enrich == 0:
+        _parts.append("no portfolio enrichment (cached or already rated)")
+    else:
+        _parts.append(f"portfolio enrichment ~${_enrich_cost} ({_n_needs_enrich:,} rows)")
+    _detail = " · ".join(_parts)
     st.success(
         f"  Ready — **{_n_portfolio}** portfolio stores · "
         f"**{_cached_n_run:,}** universe stores cached · "
-        f"{_geocode_msg}"
+        f"estimated total ~**${_total_est_cost}** ({_detail})"
     )
 elif not _run_cache_check:
     st.warning("  Universe not scraped yet — go to Step 2 to scrape first. The pipeline will scrape on run if you proceed.")
@@ -4054,12 +4082,12 @@ dry_run = st.checkbox(
 if not dry_run:
     _cached_check = st.session_state.get("universe_cache", {}).get(_scrape_cache_key(cfg))
     if _cached_check:
-        if _n_needs_geocode == 0:
-            st.info("  Live mode — universe cached and all portfolio rows already have lat/lng, so no API calls will be made.")
+        if _total_est_cost == 0:
+            st.info("  Live mode — universe cached, all portfolio rows have lat/lng + ratings (or cached enrichment). No API calls will be made.")
         else:
-            st.info(f"  Live mode — universe cached, only {_n_needs_geocode:,} portfolio rows need geocoding (~${_geocode_cost}).")
+            st.info(f"  Live mode — universe cached. Estimated API spend this run: ~**${_total_est_cost}** ({_n_needs_geocode:,} geocode + {_n_needs_enrich:,} portfolio enrichment).")
     else:
-        st.warning("  Live mode will call Google APIs for scraping and geocoding.")
+        st.warning("  Live mode will call Google APIs for scraping, geocoding and enrichment.")
 
 if st.button("  Run Coverage Agent", type="primary"):
     status = st.empty()
@@ -5212,11 +5240,41 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         )[:200]
         if no_rating_port and api_key:
-            status.info(f"Stage 4/{total_steps} — Fetching Google data for {len(no_rating_port)} priority portfolio stores (top 200 by score)...")
+            # Session-level cache so re-running the pipeline doesn't re-pay for
+            # the same Google lookups. Keyed by store_id (with name+city fallback).
+            if "portfolio_enrichment_cache" not in st.session_state:
+                st.session_state["portfolio_enrichment_cache"] = {}
+            _pe_cache = st.session_state["portfolio_enrichment_cache"]
+            def _enr_key(_p):
+                _sid = str(_p.get("store_id", "") or "").strip()
+                if _sid:
+                    return f"sid:{_sid}"
+                return f"nc:{str(_p.get('store_name','') or '').strip().lower()}|{str(_p.get('city','') or '').strip().lower()}"
+
+            _from_cache = 0
+            _need_fetch = []
+            for _p in no_rating_port:
+                _ckey = _enr_key(_p)
+                _cached = _pe_cache.get(_ckey)
+                if _cached is not None:
+                    for _k, _v in (_cached or {}).items():
+                        if _k == "place_id" and _v and _v not in used_place_ids:
+                            _p["place_id"] = _v
+                            used_place_ids[_v] = _p.get("store_id","")
+                        elif _k != "place_id":
+                            _p[_k] = _v
+                    _from_cache += 1
+                else:
+                    _need_fetch.append(_p)
+
+            if _from_cache:
+                status.info(f"Stage 4/{total_steps} — Reused enrichment for {_from_cache} portfolio stores from session cache (no API spend).")
+            if _need_fetch:
+                status.info(f"Stage 4/{total_steps} — Fetching Google data for {len(_need_fetch)} priority portfolio stores (top 200 by score)...")
             mkt_lat = (cfg["lat_min"] + cfg["lat_max"]) / 2
             mkt_lng = (cfg["lng_min"] + cfg["lng_max"]) / 2
             fetched = 0
-            for p in no_rating_port:
+            for p in _need_fetch:
                 try:
                     _s = lambda v: str(v).strip() if v and str(v) not in ("nan","None","") else ""
                     name   = _s(p.get("store_name",""))
@@ -5232,6 +5290,7 @@ if st.button("  Run Coverage Agent", type="primary"):
                         timeout=8
                     )
                     data = r.json()
+                    _enrich_payload = {}
                     if data.get("status") == "OK" and data.get("results"):
                         for res in data["results"]:
                             loc = res.get("geometry",{}).get("location",{})
@@ -5253,18 +5312,22 @@ if st.button("  Run Coverage Agent", type="primary"):
                             pid = res.get("place_id","")
                             if res.get("rating"):
                                 p["rating"]       = float(res["rating"])
+                                _enrich_payload["rating"] = float(res["rating"])
                             if res.get("user_ratings_total"):
                                 p["review_count"] = int(res["user_ratings_total"])
+                                _enrich_payload["review_count"] = int(res["user_ratings_total"])
                             if res.get("price_level"):
                                 p["price_level"]  = int(res["price_level"])
-
-
+                                _enrich_payload["price_level"] = int(res["price_level"])
 
                             if pid and pid not in used_place_ids:
                                 p["place_id"]     = pid
                                 used_place_ids[pid] = p.get("store_id","")
+                                _enrich_payload["place_id"] = pid
                             fetched += 1
                             break
+                    # Cache even an empty result (so we don't keep retrying dead lookups)
+                    _pe_cache[_enr_key(p)] = _enrich_payload
                     time.sleep(0.05)
                 except Exception:
                     pass
