@@ -289,6 +289,99 @@ if "city_entries" not in st.session_state or st.session_state["city_entries"] is
     st.session_state["city_entries"] = []     # list of {name, bbox}
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SAVE / LOAD FULL CONFIGURATION (JSON)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Pure data persistence — no logic touched. Lets the user export every
+# setting on the Configure page (country, regions, cities, scrape mode,
+# selected cities, region filter, scrape categories, direct-accounts list,
+# rep rules, visit playbook entries, route plan month/year, etc.) into a
+# single JSON file, then re-import on a future session to restore everything
+# in one click. Streamlit normally wipes session state on restart, so this
+# is the cure for "I have to redo all the setup every time."
+import json as _cfg_json
+
+def _collect_config_snapshot():
+    """Read every relevant Configure setting from session_state into a dict."""
+    snap = {}
+    for k in [
+        "country_name", "country_bbox",
+        "region_entries", "city_entries",
+        "scrape_mode", "selected_cities", "region_filter",
+        "region_city_list_cache",
+        "direct_accounts", "sf_rules", "region_boundaries",
+        "admin_benchmarks", "admin_scoring_weights", "admin_scoring_weights_gap",
+        "enrich_all_portfolio", "market_config",
+    ]:
+        if k in st.session_state:
+            snap[k] = st.session_state[k]
+    # Visit playbook widget values (per category: lv_*, ld_*, mv_*, md_*, sv_*, sd_*)
+    pb = {}
+    for k, v in st.session_state.items():
+        if isinstance(k, str) and any(k.startswith(p) for p in ("lv_", "ld_", "mv_", "md_", "sv_", "sd_")):
+            pb[k] = v
+    snap["_visit_playbook_widgets"] = pb
+    # Route plan month/year and a few simple widgets
+    for k in ["route_month_sel", "route_year_sel"]:
+        if k in st.session_state:
+            snap[k] = st.session_state[k]
+    return snap
+
+def _apply_config_snapshot(snap):
+    """Write a saved snapshot back into session_state. Widget keys are
+    written BEFORE the widgets render on next rerun so Streamlit picks
+    them up as defaults."""
+    if not isinstance(snap, dict):
+        return 0
+    n = 0
+    pb = snap.pop("_visit_playbook_widgets", {}) or {}
+    for k, v in snap.items():
+        st.session_state[k] = v
+        n += 1
+    for k, v in pb.items():
+        st.session_state[k] = v
+        n += 1
+    return n
+
+st.markdown("**Save / load configuration**")
+st.caption(
+    "Save your current setup (country, regions, cities, scrape mode, categories, "
+    "rep rules, direct-accounts list, visit playbook, route plan, etc.) to a JSON "
+    "file. Upload it next session to restore everything in one click — no manual "
+    "re-clicking required."
+)
+_save_col1, _save_col2, _save_col3 = st.columns([2, 2, 3])
+with _save_col1:
+    _cfg_snap = _collect_config_snapshot()
+    _cfg_json_str = _cfg_json.dumps(_cfg_snap, indent=2, default=str)
+    _save_name = (st.session_state.get("country_name") or "config").replace(" ", "_")
+    st.download_button(
+        "  Save configuration (JSON)",
+        _cfg_json_str,
+        file_name=f"coverage_config_{_save_name}.json",
+        mime="application/json",
+        help="Downloads every Configure setting into a single file.",
+    )
+with _save_col2:
+    _cfg_upload = st.file_uploader(
+        "Load configuration (JSON)",
+        type=["json"],
+        key="cfg_upload",
+        label_visibility="collapsed",
+    )
+    if _cfg_upload is not None:
+        try:
+            _loaded = _cfg_json.load(_cfg_upload)
+            _n = _apply_config_snapshot(_loaded)
+            st.success(f"Restored **{_n}** settings from the configuration file. Reloading...")
+            st.rerun()
+        except Exception as _e:
+            st.error(f"Could not read configuration file: {_e}")
+with _save_col3:
+    st.caption("Tip: save once after your first setup, then load it on every future session.")
+
+st.markdown("---")
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # THREE TABS: Market Area / My Team / Visit Playbook
 # ═══════════════════════════════════════════════════════════════════════════════
 tab_market, tab_team, tab_playbook = st.tabs(["Market Area", "My Team", "Visit Playbook"])
@@ -1170,6 +1263,91 @@ with tab_playbook:
 
     # Visit benchmarks
     st.markdown("**Visit frequency & duration per category**")
+
+    # ── Bulk import / export of the visit playbook via CSV ──────────────────
+    # Saves users from clicking through 80 number_input widgets every session.
+    # Pure data flow: reads the CSV rows, writes lv_/ld_/mv_/md_/sv_/sd_ keys
+    # into session_state before the widgets render below — same path the
+    # manual inputs use. No logic change.
+    with st.expander("Bulk import/export the visit playbook (CSV)"):
+        st.caption(
+            "Download a template, fill in visits/month and duration per category "
+            "in Excel, upload back here. Faster than clicking through every "
+            "number field for 20 categories. Columns: category, large_visits, "
+            "large_duration, medium_visits, medium_duration, small_visits, small_duration."
+        )
+        # Build a template populated with whatever the user currently has so
+        # they can edit instead of starting blank.
+        _scrape_cats_t = final_categories if 'final_categories' in dir() and final_categories else []
+        _portfolio_cats_t = []
+        _pf_t = st.session_state.get("portfolio_df")
+        if _pf_t is not None and "category" in _pf_t.columns:
+            _pf_cats_t = _pf_t["category"].dropna().astype(str).str.strip().str.lower().unique().tolist()
+            _portfolio_cats_t = [c for c in _pf_cats_t if c and c not in _scrape_cats_t]
+        _cats_template = sorted(set(_scrape_cats_t + _portfolio_cats_t))
+        if _cats_template:
+            _tmpl_rows = []
+            for _c in _cats_template:
+                _tmpl_rows.append({
+                    "category":         _c,
+                    "large_visits":     st.session_state.get(f"lv_{_c}",  admin_defaults.get("large_visits", 4)),
+                    "large_duration":   st.session_state.get(f"ld_{_c}",  admin_defaults.get("large_duration", 40)),
+                    "medium_visits":    st.session_state.get(f"mv_{_c}",  admin_defaults.get("medium_visits", 2)),
+                    "medium_duration":  st.session_state.get(f"md_{_c}",  admin_defaults.get("medium_duration", 25)),
+                    "small_visits":     st.session_state.get(f"sv_{_c}",  admin_defaults.get("small_visits", 1)),
+                    "small_duration":   st.session_state.get(f"sd_{_c}",  admin_defaults.get("small_duration", 15)),
+                })
+            _tmpl_df = pd.DataFrame(_tmpl_rows)
+            st.download_button(
+                "  Download visit-playbook template (CSV)",
+                "﻿" + _tmpl_df.to_csv(index=False),
+                file_name="visit_playbook_template.csv",
+                mime="text/csv",
+                key="pb_template_dl",
+            )
+        else:
+            st.info("Define at least one scrape category or upload a portfolio first, then a template will appear here.")
+
+        _pb_upload = st.file_uploader(
+            "Upload visit-playbook CSV",
+            type=["csv"],
+            key="pb_csv_upload",
+            label_visibility="collapsed",
+        )
+        if _pb_upload is not None:
+            try:
+                _pb_df = pd.read_csv(_pb_upload)
+                _pb_df.columns = [str(c).strip().lower().replace(" ", "_") for c in _pb_df.columns]
+                if "category" not in _pb_df.columns:
+                    st.error("CSV must have a 'category' column.")
+                else:
+                    _applied = 0
+                    for _r in _pb_df.to_dict("records"):
+                        _cat = str(_r.get("category", "") or "").strip().lower()
+                        if not _cat:
+                            continue
+                        _mapping = {
+                            "lv": "large_visits",   "ld": "large_duration",
+                            "mv": "medium_visits",  "md": "medium_duration",
+                            "sv": "small_visits",   "sd": "small_duration",
+                        }
+                        for _prefix, _col in _mapping.items():
+                            if _col in _pb_df.columns:
+                                _v = _r.get(_col)
+                                if _v is None: continue
+                                try:
+                                    _vv = float(_v) if _prefix in ("lv","mv","sv") else int(float(_v))
+                                except (TypeError, ValueError):
+                                    continue
+                                st.session_state[f"{_prefix}_{_cat}"] = _vv
+                                _applied += 1
+                    if _applied:
+                        st.success(f"Applied **{_applied}** playbook values. Refreshing...")
+                        st.rerun()
+                    else:
+                        st.warning("No values applied — check your CSV columns and category names.")
+            except Exception as _e:
+                st.error(f"Could not read CSV: {_e}")
 
     admin_defaults = st.session_state.get("admin_benchmarks", {
         "large_pct": 20, "medium_pct": 60, "small_pct": 20,
