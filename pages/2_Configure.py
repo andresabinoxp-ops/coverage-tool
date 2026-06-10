@@ -393,10 +393,16 @@ with st.expander("  Save / load configuration", expanded=False):
         )
         st.caption("Tip: save after first setup, load on future sessions.")
     with _save_col2:
+        # Use a rotating key so the uploader is "fresh" after each successful
+        # apply — otherwise Streamlit keeps the file on every rerun, and the
+        # apply block fires again, silently overwriting any edits the user
+        # makes (so e.g. switching from Recommended to Fixed rep gets undone
+        # on the next rerun).
+        _upload_nonce = st.session_state.get("_cfg_upload_nonce", 0)
         _cfg_upload = st.file_uploader(
             "Load configuration (JSON)",
             type=["json"],
-            key="cfg_upload",
+            key=f"cfg_upload_{_upload_nonce}",
         )
         if _cfg_upload is not None:
             try:
@@ -421,6 +427,9 @@ with st.expander("  Save / load configuration", expanded=False):
                     "direct_accounts":  len(_loaded.get("direct_accounts") or []),
                 }
                 st.session_state["_config_just_loaded"] = _just_loaded_payload
+                # Rotate the nonce so the uploader is gone on rerun and the
+                # apply block doesn't fire again on subsequent edits.
+                st.session_state["_cfg_upload_nonce"] = _upload_nonce + 1
                 st.rerun()
             except Exception as _e:
                 st.error(f"Could not read configuration file: {_e}")
