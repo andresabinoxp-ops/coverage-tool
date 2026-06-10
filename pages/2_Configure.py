@@ -352,6 +352,27 @@ def _apply_config_snapshot(snap):
     for k, v in pb.items():
         st.session_state[k] = v
         n += 1
+    # Categories special case: the Configure page has TWO multiselects for
+    # scrape categories — cats_tab1 (when no portfolio is loaded) and
+    # extra_cats_tab1 (when a portfolio is loaded and Google categories are
+    # auto-detected). The user might have saved while using extra_cats_tab1,
+    # but on restore (without portfolio) the else-branch multiselect shows
+    # cats_tab1 — making the saved picks look invisible.
+    # Merge the union of every source we know into cats_tab1 so the visible
+    # widget always shows the full category set.
+    _cat_union = []
+    _seen_cats = set()
+    for _src in (
+        snap.get("cats_tab1") or [],
+        snap.get("extra_cats_tab1") or [],
+        ((snap.get("market_config") or {}).get("categories") or []),
+    ):
+        for _c in _src:
+            if _c and _c not in _seen_cats:
+                _cat_union.append(_c)
+                _seen_cats.add(_c)
+    if _cat_union:
+        st.session_state["cats_tab1"] = _cat_union
     return n
 
 # Persistent banner that survives the rerun triggered by a successful load
