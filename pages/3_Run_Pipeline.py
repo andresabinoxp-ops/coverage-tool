@@ -4060,7 +4060,11 @@ if _portfolio_ready:
         return _ck not in _pe_cache_check
     _candidate_count = sum(1 for _r in _pf_rows if _row_needs_enrich(_r))
     _enrich_all = bool(st.session_state.get("enrich_all_portfolio", False))
-    _n_needs_enrich = _candidate_count if _enrich_all else min(_candidate_count, 200)
+    _skip_enrich = bool(st.session_state.get("skip_portfolio_enrichment", False))
+    if _skip_enrich:
+        _n_needs_enrich = 0
+    else:
+        _n_needs_enrich = _candidate_count if _enrich_all else min(_candidate_count, 200)
 _geocode_cost   = round(_n_needs_geocode * PRICE_GEOCODE_PER_CALL, 2)
 _enrich_cost    = round(_n_needs_enrich * PRICE_NEARBY_PER_CALL, 2)
 _total_est_cost = round(_geocode_cost + _enrich_cost, 2)
@@ -4116,6 +4120,24 @@ _enrich_all_chk = st.checkbox(
     ),
 )
 st.session_state["enrich_all_portfolio"] = _enrich_all_chk
+
+# Skip Stage 4 portfolio enrichment entirely (geocode-only mode).
+# Useful when the user just wants lat/lng populated and doesn't care about
+# Google rating / reviews / phone / place_id — saves the per-run ~$6.40 the
+# cap-200 path costs.
+_skip_enrich_default = bool(st.session_state.get("skip_portfolio_enrichment", False))
+_skip_enrich_chk = st.checkbox(
+    "Skip portfolio enrichment (geocode only — no rating/phone/place_id fetch)",
+    value=_skip_enrich_default,
+    help=(
+        "Bypasses Stage 4 entirely. Pipeline will still geocode rows that are "
+        "missing lat/lng (cheap: $0.005/row), but won't call Google's Text "
+        "Search to fetch rating/reviews/phone/place_id. Useful when you just "
+        "need coordinates populated. Overrides the Enrich-ALL checkbox if both "
+        "are ticked."
+    ),
+)
+st.session_state["skip_portfolio_enrichment"] = _skip_enrich_chk
 
 if st.button("  Run Coverage Agent", type="primary"):
     status = st.empty()
@@ -5271,18 +5293,23 @@ if st.button("  Run Coverage Agent", type="primary"):
             if isinstance(_flag, str) and _flag.strip().lower() in ("true", "1", "yes"):
                 return True
             return False
+        _skip_portfolio_enrich = bool(st.session_state.get("skip_portfolio_enrichment", False))
         _enrich_all_portfolio = bool(st.session_state.get("enrich_all_portfolio", False))
-        _cap = None if _enrich_all_portfolio else 200
-        no_rating_port = sorted(
-            [p for p in portfolio
-             if p.get("lat") and p.get("lng")
-             and not (p.get("rating") and float(p.get("rating") or 0) > 0)
-             and not _was_attempted(p)
-             and p.get("store_name")],
-            key=lambda x: float(x.get("score", 0) or 0), reverse=True
-        )
-        if _cap is not None:
-            no_rating_port = no_rating_port[:_cap]
+        if _skip_portfolio_enrich:
+            status.info(f"Stage 4/{total_steps} — Portfolio enrichment skipped (geocode-only mode).")
+            no_rating_port = []
+        else:
+            _cap = None if _enrich_all_portfolio else 200
+            no_rating_port = sorted(
+                [p for p in portfolio
+                 if p.get("lat") and p.get("lng")
+                 and not (p.get("rating") and float(p.get("rating") or 0) > 0)
+                 and not _was_attempted(p)
+                 and p.get("store_name")],
+                key=lambda x: float(x.get("score", 0) or 0), reverse=True
+            )
+            if _cap is not None:
+                no_rating_port = no_rating_port[:_cap]
         if no_rating_port and api_key:
             # Session-level cache so re-running the pipeline doesn't re-pay for
             # the same Google lookups. Keyed by store_id (with name+city fallback).
