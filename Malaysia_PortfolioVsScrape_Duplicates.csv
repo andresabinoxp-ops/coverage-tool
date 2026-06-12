@@ -1,0 +1,462 @@
+﻿portfolio_store_id,portfolio_name,portfolio_city,scraped_store_id,scraped_name,scraped_city,scraped_tier,scraped_type,match_method,distance_m
+700_A131,ASHIQ IMAN ENTERPRISE,47810 PETALING JAYA,ChIJOyoMeQBPzDER03E97ge_8us,CF Value Mart (KD4),Petaling Jaya,Tier 1,Conv - Indie mart,coords≤50m,3.3
+700_S1263,SUPER SEVEN CASH & CARRY S/B (SUBANG 2),SUNGAI BULOH SEKSYEN 3,ChIJ9f8_tEpOzDERmfBx5m4TJao,Super Seven Supermarket Subang,Shah Alam,Tier 1,Super - Independent local,coords≤50m,22.6
+AB04,KEDAI BAN SAN,,ChIJbbb9-OZDzDERfepPDzZfaMM,Kedai Ban San,Rawang,Tier 1,Conv - Generic kedai,place_id,275.7
+B258,PASARAYA JTR JAYA,RASA,ChIJFaFNuLptzDERQDZcc5KqVUE,Pasaraya JTR Jaya Mini Market,Rasa,Tier 1,Conv - Mini-mart,place_id,13.5
+BA01,PASAR MINI AMS  -  TMN SRI MURNI,BATU CAVES,ChIJBVa2D_5GzDER8Xkt0r1nTiQ,AMS MART,Batu Caves,Tier 1,Super - Indie retail,coords≤50m,20.4
+BK12,KIM LEONG SHOP,KULALA LUMPUR,ChIJ8YktTW04zDER6Elzy7pTImM,Kim Leong shop,Kuala Lumpur,Unclear,Super - Other / unclear,place_id,19.9
+BS01,PASAR MINI SAMY SELVI,BATU CAVES,ChIJtS2-X0NHzDERWeB-pZiUnfA,PBS Pinggiran Sdn. Bhd.,Batu Caves,Unclear,Super - Other / unclear,coords≤50m,31.5
+CT3211005771,TAKZIM MEGAH SDN.BHD,BANDAR SRI DAMASARA (SD1-SD5),ChIJJ1jqsFNFzDERsHdlqwncRqs,CAYEEN enterprise,Kuala Lumpur,Tier 2,Conv - Indie retail,coords≤50m,10.0
+CT3211005823,PERNIAGAAN UBAT SOON ONG SDN BHD,"PANDAN PERDANA,",ChIJXazIDwA3zDER9cWWooXrnnE,Pasaraya 9 Grocer Pandan Perdana,Kuala Lumpur,Tier 1,Conv - Sundry/grocer,coords≤50m,15.8
+CT3211005880,SYARIKAT PERNIAGAAN POH KHONG,AMPANG,ChIJfR0vtPA2zDER5eCzRFZj5tY,Pasar Mini Adan Jaya,Ampang,Tier 1,Super - Independent local,coords≤50m,10.0
+CT3211005881,TC UNITRADE SDN BHD,KUALA LUMPUR,ChIJTdr-kxw2zDERx9yKJtdCK7c,Wmart,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,12.7
+CT3211005882,JAMIL STORE,KUALA LUMPUR,ChIJSVFEyXw1zDERQEnbsWu0_m0,Checken Meat Shop,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,44.7
+CT3211005884,PASAR MINI A.M.S,KAMPUNG PANDAN,ChIJ-y0_2FQ2zDERiTVtjXOhC5w,Pasar Mini AMS,Kuala Lumpur,Tier 1,Super - Independent local,place_id,14.0
+CT3211005887,PASARAYA MENG FATT,AMPANG,ChIJBUwgyIU2zDERkAmdQV97y0I,Pasar Raya Song Fook,Cheras,Unclear,Super - Other / unclear,coords≤50m,35.3
+CT3211005934,CRESCENT STAR IMPEX SDN BHD,,ChIJ-YWDwBNIzDERkE8C9PzOMvk,Crescent star Impex Sdn Bhd,Kuala Lumpur,Tier 1,Super - Indie retail,place_id,57.9
+CT3211005955,PASAR MINI TAMAN PUTRA,,ChIJN4Xco5o2zDER7hsCA1DEbfg,Pasar Mini Taman Putra,Ampang,Tier 1,Super - Independent local,place_id,11.7
+CT3211005973,NRZR WARTEL ENTERPRISE,,ChIJ41TtuGI2zDERHkbyKlL0_w8,KK SUPER MART Pandan Indah (PI33),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,16.9
+CT3211006044,SYARIKAT PERNIAGAAN SARAYA,AMPANG,ChIJRSCwc4M2zDER-nl8yWe_jbY,Weng Soon Mini Market,Ampang,Tier 1,Conv - Mini-mart,coords≤50m,47.6
+CT3211006087,HINOKA REEN MAJU EMPIRE,AMPANG,ChIJr9wXmok2zDER6NDxSAB28b4,Pasar Mini Wan Setia,Kuala Lumpur,Tier 1,Super - Independent local,coords≤50m,0.4
+CT3211006111,PASARAYA SERENDAH JAYA,serendah,ChIJWyOCG0xpzDERzOMgAC3F_DY,Pasaraya Serendah Jaya,Serendah,Unclear,Super - Other / unclear,place_id,17.9
+CT3211006116,WAI SOON MINI MARKET,AMPANG,ChIJfaNuqsk2zDERKhqOd5c9Exo,Wai Soon Mini Market,Ampang,Tier 1,Conv - Mini-mart,coords≤50m,0.9
+CT3211006171,NSK TRADE CITY (KD) SDN BHD,"PETALING JAYA,",ChIJ__-vthhPzDERrFA575PWIy8,NSK Trade City Kota Damansara,Petaling Jaya,Tier 2,Super - NSK,coords≤50m,42.6
+CT3211006197,PASAR MINI IZHARI,AMPANG,ChIJT1j2kZI2zDERY7VudWeYDZM,Weng Heng Minimarket,Ampang Jaya,Tier 1,Super - Independent local,coords≤50m,46.8
+CT3211006294,AL RASVI STORE,KUALA LUMPUR,ChIJ18FI73w1zDERNoxxrj_Dm-E,KK SUPER MART Pekan Sungai Besi (PSB),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,46.4
+CT3211006443,KEDAI RUNCIT KOONG YIN WAN,,ChIJJyY1f25GzDERMPxa1LyTp5g,Pasar Raya Cemerlang,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,8.1
+CT3211006612,ST ROSYAM MART SDN BHD,"SETIAWANGSA,",ChIJM0mvfYQ3zDERDYaEOTfEME0,ST Rosyam Mart - Setiawangsa,Kuala Lumpur,Tier 1,Super - Indie retail,place_id,19.4
+CT3211006626,KEDAI UBAT & RUNCIT FADASON,,ChIJ1et_A0lGzDER3wC39s9t_kE,"KK SUPER MART Kepong, Taman Fadason (KFD)",Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,44.6
+CT3211007277,STS SEMX ENTERPRISE *9-1,SELANGOR,ChIJUwZ6xjBPzDERNbervLjVKxY,KK Super Mart Damansara Perdana (DPN),Petaling Jaya,Tier 1,Conv - KK Mart,coords≤50m,27.1
+CT3211007381,STAR GROCER SDN BHD (PARAMOUNT),"PETALING JAYA,",ChIJC5lepphLzDERsr3Iji1uI00,Star Grocer Taman Paramount,Petaling Jaya,Tier 1,Super - Sundry/grocer,coords≤50m,19.4
+CT3211007389,KEDAI UBAT TONG SENG,PETALING JAYA,ChIJnwp2ACVJzDEReJeLR1YnSGg,Urban Marketplace Seventeen Mall,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,28.4
+CT3211007482,SUPER SEVEN TRADE CENTER (KLTS) S/B - JLN GOMBAK,JALAN GOMBAK SETAPAK,ChIJG0Bn19JHzDERYcCy3pfWWnc,Super Seven KLTS (Block D),Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,42.5
+CT3211007525,PERNIAGAAN HAMID DAN JAMIL,KUALA LUMPUR,ChIJ18FI73w1zDERNoxxrj_Dm-E,KK SUPER MART Pekan Sungai Besi (PSB),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,34.2
+CT3211007549,PASAR MINI PUSPARIA,,ChIJL5tX7ad2zDERbOg-o1f3MuY,Pasar Mini Pusparia,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Tier 1,Hyper - Other regional chain,place_id,61.4
+CT3211007568,BILABILA RETAIL SDN BHD,"BANGSAR SOUTH,",ChIJN5IVlO1IzDER-pdCicWshUA,CAFé by 7-Eleven Kiara Walk Kiara Designer Suite (1101),Kuala Lumpur,Tier 1,Hyper - Other regional chain,coords≤50m,7.5
+CT3211007743,KWONG ONN THONG,SELANGOR,ChIJS8qfXDtDzDERIlOKneH70X8,99 Speedmart 1921 Rawang 2,Rawang,Tier 1,Conv - 99 Speedmart,coords≤50m,41.7
+CT3211007789,ZEE SUPER MART SDN BHD(AMPANG),,ChIJ2Tw3vQY3zDERBFC3zjsanjA,Double 7 Mini Market,Ampang,Tier 1,Conv - Mini-mart,coords≤50m,39.2
+CT3211007809,VINTAGE MINI MARKET,KUALA LUMPUR,ChIJQ4sY4ThJzDERMOmtDQ54MpE,Vintage Mart Bistari Condominium,Kuala Lumpur,Tier 1,Conv - Indie mart,coords≤50m,19.0
+CT3211007843,BLUE FOREST GROCER,RAWANG,ChIJ8xaXxthDzDERIUqB00nFedA,Blue Forest Grocer,Rawang,Tier 1,Conv - Sundry/grocer,place_id,8.9
+CT3211008003,PASAR MINI AA BASHER,KUALA LUMPUR,ChIJ09BnymE3zDERpgDKaDkRVzc,Pasar Mini AA Basheer,Kuala Lumpur,Tier 1,Conv - Mini-mart,coords≤50m,41.5
+CT3211008041,ANDY GROCERY STORE,KUALA LUMPUR,ChIJbzOyflpLzDER6dwC-Esl3ck,KK Super Mart Desa Jaya (TDJ),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,40.7
+CT3211008056,ARC RETAIL SDN BHD,MONT KIARA,ChIJKe1buW5JzDERTNZI1-JYnPA,BilaBila Mart - Kiara Ville,Kuala Lumpur,Tier 1,Conv - BilaBila Mart,coords≤50m,4.9
+CT3211008057,NSK GROCER (KL) SDN BHD- PARAGON MALL,AMPANG,ChIJ0yjAtfE3zDERmaBkbNqS-yk,NSK Grocer Paragon Point,Ampang,Tier 2,Super - NSK,coords≤50m,21.3
+CT3211008069,MTC DISTRIBUTION AND LOGISTIC,BATU CAVES,ChIJMfjudaBHzDERvFoh45MN37w,Indigo Durian Station 榴莲站,Batu Caves,Unclear,Super - Other / unclear,coords≤50m,43.5
+CT3211008091,THE STORE S/B - KL (SRI PETALING),"WILAYAH PERSEKUTUAN,",ChIJofK_sIpLzDER4fQ98gcweiI,Jiale Mart,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,48.2
+CT3211008107,CERR MART SDN BHD,KAMPUNG BHARU,ChIJ86T8drxJzDERKQZOc4aG_0k,Pasaraya BinWalid by CERR Mart Sdn Bhd,Kuala Lumpur,Tier 1,Super - Indie retail,place_id,60.2
+CT3211008136,ARA FRESHMART,"BANDAR SERI COALFIELDS,",ChIJra7CP71bzDER3miNpWGxxfY,"KK Super Mart Sungai Buloh, Bandar Seri Coalfields ( SBSC )",Sungai Buloh,Tier 1,Conv - KK Mart,coords≤50m,10.5
+CT3211008165,K PLUS FOOD MARKET,"NO.1, PERSIARAN JALIL 1, BANDAR BUKIT JALIL",ChIJJSRWD5BPzDERnA9zTePDXbE,K Plus Food Market,Petaling Jaya,Unclear,Super - Other / unclear,place_id,113.4
+CT3211008168,NSK GROCER (KL) SDN BHD- 3 DAMANSARA,"PETALING JAYA,",ChIJv829LR5JzDER70yE4_M-XIQ,NSK Grocer 3 Damansara,Petaling Jaya,Tier 2,Super - NSK,place_id,55.6
+CT3211008221,AJUAA ENTERPRISE,TAMAN BATU MUDA,ChIJ34rM1h1HzDERfnvLq3kd2KM,Sijan Mini Shoper,Batu Caves,Unclear,Super - Other / unclear,coords≤50m,20.6
+CT3211008230,GETGO VALUE MART,"JALAN MAS 1, KINRARA MAS,",ChIJC6PSaQRLzDERosddUSxGL3w,GetGoValueMart Kinrara Mas,Bukit Jalil,Tier 1,Conv - Indie mart,coords≤50m,15.5
+CT3211008247,STM SMART ENTERPRISE -1,BANDAR DAMANSARA PERDANA,ChIJFVe_ibRIzDERBgdp5XO9IeY,STM SMART ENTERPRISE,Petaling Jaya,Tier 1,Super - Indie retail,place_id,174.6
+CT3211008257,KEDAI RUNCIT MULIA SEJATI,"KELANA JAYA,",ChIJL3i5sQ9MzDER8jr0AtoU4fc,Syarikat Rahim Home Delivery & Gas,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,6.1
+CT3211008265,KEDAI RUNCIT MUARA INDAH,"DAMANSARA DAMAI,",ChIJ3RjRXlpFzDERrgmj9sNGAAs,Kedai Runcit Muara Indah,Petaling Jaya,Tier 1,Conv - Kedai runcit,coords≤50m,12.3
+CT3211008267,PASAR MINI MY ALADDIN (M) SDN BHD,"KOTA DAMANSARA ,",ChIJt75qsAJPzDERbQ5ahc1lRCo,Pasar Mini My Aladdin (M) Sdn.Bhd.,Petaling Jaya,Tier 1,Super - Independent local,place_id,5.0
+CT3211008338,REZEKI MULYA BIN ANUAR,"TAMAN SUBANG PERDANA,",ChIJtej_iDROzDERWhSjiI96qQY,Pasar Segar Bintang,Shah Alam,Unclear,Super - Other / unclear,coords≤50m,17.3
+CT3211008344,RAMJI USHA ENTERPRISE,"BANDAR BARU AMPANG,",ChIJTSR_T-M2zDERy2qNVdJvmGQ,GRD CASH & CARRY,Ampang,Unclear,Super - Other / unclear,coords≤50m,24.6
+CT3211008354,MOTHER GROCERY,RASA SELANGOR.,ChIJr7CVdQBtzDERtHe83Rzy874,Little Gift House Enterprise,Rasa,Tier 2,Conv - Indie retail,coords≤50m,21.5
+CT3211008358,KEDAI SERBANEKA BALQIS,"TAMAN PANDAN MEWAH,",ChIJT1j2kZI2zDERY7VudWeYDZM,Weng Heng Minimarket,Ampang Jaya,Tier 1,Super - Independent local,coords≤50m,36.1
+CT3211008362,NS AZIMA ENTERPRISE,"BANDAR BARU SELAYANG,FASA 2B,",ChIJwUTlhjJHzDER-f9Q3GVHvyY,99 Speedmart 1658 Bandar Baru Selayang 2,Batu Caves,Tier 1,Super - 99 Speedmart,coords≤50m,34.8
+CT3211008374,PASAR SEGAR PINGGIRAN DUA,"BATU CAVES,",ChIJBQsLXUNHzDERErCw2u6Sec4,Pasar Segar Pinggiran,Batu Caves,Unclear,Super - Other / unclear,place_id,29.6
+CT3211008379,JIYAA FRESH N MINIMART,TAMAN SUNWAY BATU CAVES,ChIJdetcrVNHzDERfzxN3BlASQg,"KK Super Mart Batu Caves, Taman Sunway (BTS)",Batu Caves,Tier 1,Conv - KK Mart,coords≤50m,24.3
+CT3211008385,NZ GROCERIES SDN BHD,"JALAN SENTUL PERDANA ,",ChIJgX_AYuxHzDEROnbI3glQQIk,Pasar Mini Al-Taslima,Kuala Lumpur,Tier 1,Super - Independent local,coords≤50m,27.2
+CT3211008398,SALBELA ENGINEERING SDN BHD,"KOTA DAMANSARA ,",ChIJVVsVfAtPzDERHK1r6HHcchQ,Pasaraya Suria,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,27.9
+CT3211008402,NIHAL MINI MART,"BUKIT JALIL,",ChIJy6dGL75KzDER683FpTwPOy0,Al NIHAL FRESH MART,Kuala Lumpur,Tier 1,Conv - Indie mart,place_id,76.1
+CT3211008476,JAVED TOHEDI ENTERPRISE,"JALAN PAHANG,",ChIJu6x9Qe9JzDERr9UkzZpEeZw,Gujrati Mini Mart,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,10.8
+CT3211008511,PERNIAGAAN SENANTIASA BERKAT,TAMAN MEGAH,ChIJoSgU-FT8nGoRZ5fdl0ykSUE,Village Grocer (Megah Rise Mall),Petaling Jaya,Drop (direct-served),Super - Premium chain,coords≤50m,8.4
+CT3211008516,NSK GROCER (KL) SDN BHD - AMCORP MALL,"PETALING JAYA,",ChIJnf4HcgBLzDERWCujoUuY62M,NSK Grocer Amcorp Mall,Petaling Jaya,Tier 2,Super - NSK,place_id,20.6
+CT3211008519,GAMUDA FRESH MART,BANDAR GAMUDA GARDEN,ChIJJRt4rtVDzDERIjDGTQD97Qk,99 Speedmart 3140 Gaia Boulevard,Rawang,Tier 1,Conv - 99 Speedmart,coords≤50m,13.8
+CT3211008526,MF MARKET ENTERPRISE,"SHAH ALAM,",ChIJi7v5KgBPzDERAyG0DCCVZY0,MF market enterprise,Shah Alam,Tier 2,Conv - Indie retail,coords≤50m,9.5
+CT3211008550,DINE MART,"BRICKFIELDS,",ChIJMYUrBsJJzDERByZ6-XmpnMc,Mollah Pasar Segar,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,26.1
+CT3211008722,SHIBA GLOBAL CENTRAL ENTERPRISE,"BRICKFIELDS,",ChIJyeHbZlNJzDERvXr7m0iXJus,Eco-Plus • NU Sentral,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,37.3
+CT3211008918,PASARAYA BSK SDN BHD,"JALAN 7A/3,BANDAR TASIK PUTERI,",ChIJn-PWZb1dzDERLuMqnM6IDMc,BSK FRESHMART RAWANG,Rawang,Tier 1,Super - Indie retail,coords≤50m,33.1
+CT3211008998,LAI HENG TRADING,"JALAN PUDU ULU,",ChIJl7l_IwQ3zDERqBxMDpA9fJ8,Lai Heng Mart,Kuala Lumpur,Tier 1,Super - Indie retail,place_id,9.2
+CT3211009085,STS SEMX ENTERPRISE *A-G-K10,"PETALING JAYA,",ChIJFVe_ibRIzDERBgdp5XO9IeY,STM SMART ENTERPRISE,Petaling Jaya,Tier 1,Super - Indie retail,coords≤50m,20.0
+CT3211009111,PASARAYA RS BESTARI,SHAH ALAM,ChIJneuOjbdPzDER5bdyoUYVfXg,KK Super Mart,Shah Alam,Tier 1,Conv - KK Mart,coords≤50m,26.5
+CT3211009113,PASARAYA TSK SEGAR,SHAH ALAM,ChIJtej_iDROzDERWhSjiI96qQY,Pasar Segar Bintang,Shah Alam,Unclear,Super - Other / unclear,coords≤50m,49.4
+CT3211009121,PASARAYA  AL SULAIMAN,"DESA TASIK,",ChIJp2pXC_Y1zDERcT-VvgDxjeU,Al Sulaiman Desa Tasik,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,31.2
+CT3211009157,NSK GROCER (KL) SDN BHD- SHAMELIN MALL,"TAMAN SAMELIN PERKASA,",ChIJoaFdw203zDERPzOMSLCZHg4,NSK Grocer 1Shamelin,Kuala Lumpur,Tier 2,Super - NSK,coords≤50m,33.7
+CT3211009171,PAYUNG MART SDN. BHD.,"TAMAN SAUJANA PERMAI, SEKSYEN U17,",ChIJrTslSgBbzDER9Zt0pRAKPyw,Payung Mart Sdn Bhd,Shah Alam,Tier 1,Super - Indie retail,coords≤50m,31.3
+CT3211009172,PASAR MINI MP KAY KAY TRADING,"TAMAN BUKIT SUBANG , ",ChIJuwoo7y1RzDERZvKuzAZJ_-0,KK Super Mart (SU16),Shah Alam,Tier 1,Conv - KK Mart,coords≤50m,29.9
+CT3211009230,BEN MART (TAMAN MUDA) SDN BHD,"TAMAN MUDA,",ChIJBUwgyIU2zDERkAmdQV97y0I,Pasar Raya Song Fook,Cheras,Unclear,Super - Other / unclear,coords≤50m,26.0
+DA08,PASARAYA SURIA S/B - D'SARA,47810 PETALING JAYA,ChIJVVsVfAtPzDERHK1r6HHcchQ,Pasaraya Suria,Petaling Jaya,Unclear,Super - Other / unclear,place_id,8.4
+DB07,KEDAI BAN FOE SDN BHD,SELANGOR,ChIJU-PM_6tFzDERFnVJ4m4IUP8,Kedai Ban Foe Sdn Bhd,Sungai Buloh,Tier 1,Super - Indie retail,place_id,34.9
+EJ02,SYARIKAT JAYA DIRI,54000 KUALA LUMPUR,ChIJ2RLGtL43zDERY35918gJOqA,Syarikat Jaya Diri,Kuala Lumpur,Unclear,Super - Other / unclear,place_id,4.3
+FS31,PASARAYA SOON HUAT SDN BHD -18-19,,ChIJLfIHtlNCzDERclooKqo-N8M,Pasaraya Soon Huat Sdn Bhd,Rawang,Tier 1,Super - Indie retail,place_id,40.5
+FS43,PASARAYA SOON HUAT SDN BHD -17-26,48000 RAWANG   SELANGOR DARUL EHSAN,ChIJS6sDnq1DzDERss7vNNn7Pig,Pasaraya Soon Huat Sdn. Bhd.,Rawang,Unclear,Super - Other / unclear,coords≤50m,6.0
+GH20,HIJAS SUPER MARKET,"DESA COALFIELDS,",ChIJ0WGXGv1azDERQXZjsNgQAVk,PASARAYA HIJAS SUPER BAZAAR,Sungai Buloh,Unclear,Super - Other / unclear,coords≤50m,34.3
+GK34,LK SHOP,SELANGOR,ChIJ3RjRXlpFzDERrgmj9sNGAAs,Kedai Runcit Muara Indah,Petaling Jaya,Tier 1,Conv - Kedai runcit,coords≤50m,18.0
+GL19,PASAR MINI LAILA ENTERPRISE,SUNGAI BULOH,ChIJReop8xhbzDERHwjMc46E47A,My NSA Grocer,Sungai Buloh,Tier 1,Super - Sundry/grocer,coords≤50m,28.8
+GM10,KEDAI RUNCIT MURAH REZEKI (1),TAMAN BUNGA RAYA,ChIJC4eAyipvzDER7_UPARn3Iy4,"KK Super Mart Rawang, Apartment Dahlia ( RAD )",Rawang,Tier 1,Conv - KK Mart,coords≤50m,35.0
+GM57,MY DAILY ENTERPRISE -D'SARA DAMAI,SELANGOR,ChIJAZVpbwBFzDERmw7oEIeT9Ec,CF Value Mart (Damansara Damai),Petaling Jaya,Tier 1,Conv - Indie mart,coords≤50m,30.4
+GS06,AVELON HEALTHCARE SDN BHD,KEPONG,ChIJAAAAAAAAAAARhZW34Yye75s,KK Super Mart Metro Prima Kepong (MPK),Kepong,Tier 1,Conv - KK Mart,coords≤50m,13.8
+GS71,KEDAI RUNCIT SALVIA,,ChIJRdYDKQBPzDERxJlJjuiUFgM,Kedai Runcit Salvia,Petaling Jaya,Tier 1,Conv - Kedai runcit,coords≤50m,26.6
+GT02,P/R TUN TEJA,48000 RAWANG SELANGOR,ChIJh7NBXwBDzDEREB1ytwMjFwk,Pasar Mini Berkat Rezeki,Rawang,Tier 1,Conv - Mini-mart,coords≤50m,23.7
+GT04,PASARAYA TASIK,BANDAR TASIK PUTERI,ChIJo1ieY2RczDERcVbZwI1i-n8,"7-Eleven Bandar Tasik Puteri, Rawang 0511",Rawang,Tier 1,Hyper - Other regional chain,coords≤50m,27.0
+GT09,SOON SANG HERBAL SHOP,KOTA DAMANSARA,ChIJdwby9gJPzDERvs5dvgs0eNo,Pasar Mini Xinyuan 鑫源中国超市(PJ),Petaling Jaya,Tier 1,Super - Independent local,coords≤50m,47.2
+GY01,KEDAI UBAT YU YI,SELANGOR,ChIJNWmuzlBszDERUzHTBKoX_N4,7-Eleven,Batang Kali,Tier 1,Hyper - Other regional chain,coords≤50m,7.3
+H191,HALIQ'S MILLS & SUNDRIES,SELANGOR DARUL EHSAN.,ChIJDVSECnI5zDER1GEARLJDtI0,99 Speedmart 3137 Taman Melawati 3,Kuala Lumpur,Tier 1,Conv - 99 Speedmart,coords≤50m,10.8
+IN12,MY NSA SDN. BHD.,"SEKSYEN  U17,",ChIJReop8xhbzDERHwjMc46E47A,My NSA Grocer,Sungai Buloh,Tier 1,Super - Sundry/grocer,coords≤50m,14.6
+IW24,KEDAI UBAT DAN BARANG-BARANG RUNCIT WEI POH,RAWANG  45000 SELANGOR,ChIJoUtTpMtCzDERv9MGAYQk0B8,Kedai Ubat Dan Barang-Barang Runcit Wei Poh,Rawang,Tier 1,Conv - Generic kedai,coords≤50m,18.4
+JA31,BISMI BEST MART,BANDAR BARU SELAYANG,ChIJQTrLV3NHzDERnQuccn3mOdk,Bismi Best Mart,Batu Caves,Tier 1,Conv - Indie mart,coords≤50m,28.6
+JB02,VAN SEN FOH  -BAN SANG WOH,,ChIJr7CVdQBtzDERtHe83Rzy874,Little Gift House Enterprise,Rasa,Tier 2,Conv - Indie retail,coords≤50m,42.2
+JH14,PASARAYA & UBAT HON MENG,68100 SELANGOR,ChIJIST4uPtGzDEROgJ2GIyyRms,Pasaraya Dan Ubat Hon Meng 汉明参茸药行商店,Batu Caves,Unclear,Super - Other / unclear,place_id,14.1
+JJ12,P/R J H KOTA DAMANSARA,,ChIJSzTQ6wZPzDERO7rAb-kRhOU,Pasaraya JH Kota Damansara,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,27.7
+JK07,KWONG ONN,44000 SELANGOR,ChIJUWTwXW5zzDERfDltmXVrkLM,Kwong Onn Kuala Kubu Bharu,Kuala Kubu Baru,Unclear,Super - Other / unclear,coords≤50m,17.4
+JK41,PASAR MINI KUMERAS (1),BATU CAVES,ChIJ_UfALjFHzDERNU1Yh8y2VCY,Pasar Mini Kumeras,Batu Caves,Tier 1,Super - Independent local,place_id,14.3
+JL13,PASAR MINI JAYA TIMUR,40000 SHAH ALAM SELANGOR,ChIJf1VOBc1PzDER7zZXYLzP2CY,Pasar Mini Jaya Timur,Shah Alam,Tier 1,Conv - Mini-mart,coords≤50m,20.3
+JS03,PASARAYA SRI RAWANG SDN BHD,48000 RAWANG SEL,ChIJGV4W7PlCzDERlwZ5T7TvSzM,Supermarkets Sri Rawang Sdn Bhd,Rawang,Tier 1,Super - Independent local,place_id,6.9
+JT09,TUNG YUAN,,ChIJr7CVdQBtzDERtHe83Rzy874,Little Gift House Enterprise,Rasa,Tier 2,Conv - Indie retail,coords≤50m,42.2
+JU04,PASAR MINI USWAH,47810 PJ  SELANGOR,ChIJG_FWTHNPzDEROnG4k6wV9to,Pasar Mini Uswah,Petaling Jaya,Tier 1,Conv - Mini-mart,coords≤50m,24.8
+JY04,PASARAYA Y.S.T - ULU YAM BARU,44300 BATANG KALI SELANGOR,ChIJo01hhO9tzDERQGWM52qfOh8,99 Speedmart 1441 Hulu Yam Baru,Baru,Tier 1,Conv - 99 Speedmart,coords≤50m,27.9
+KB56,BAJARIA ENTERPRISE,53300 ULU KLANG  SELANGOR,ChIJ5SYwqws5zDERmzLNTMc5eG8,99 Speedmart 2626 Taman Permata,Ampang,Tier 1,Conv - 99 Speedmart,coords≤50m,21.3
+KC40,KEDAI BARANGAN BERANEKA CHAI CHIN,48000 RAWANG,ChIJ-_qOC15DzDERxFkxz9zVCKk,99 Speedmart 1427 Taman Tun Teja,Rawang,Tier 1,Super - 99 Speedmart,coords≤50m,35.1
+KI16,INDAH REZEKI ENTERPRISE,53100 KUALA LUMPUR,ChIJN7o5RL85zDERokznvdyG3t0,KEDAI RUNCIT ANAS,Kuala Lumpur,Tier 1,Super - Sundry/grocer,coords≤50m,5.7
+KK03,PASAR MINI SELVARAJ,SELANGOR,ChIJx5WU8xxHzDER3aE5mcncHBE,Pasar Mini Selvaraj,Batu Caves,Tier 1,Conv - Mini-mart,coords≤50m,12.3
+KK54,PASARAYA KUMARES,"BATU CAVES,",ChIJ8eNf9PpGzDERqULt7yBN378,33 Rice Mart - Selayang,Batu Caves,Tier 1,Super - Indie retail,coords≤50m,31.8
+KM90,PASAR MINI S.ABDULLAH,48000 RAWANG SELANGOR,ChIJd9eB0cdDzDERG4_R3xSVdhc,"KK Super Mart Rawang, Taman Tun Teja (RTT)",Rawang,Tier 1,Conv - KK Mart,coords≤50m,3.7
+KS147,PERNIAGAAN S. M. AHMAD,,ChIJLQB6-CNIzDER6Q8K0ZfzDn4,"Pemborong Makanan Ringan Dan Gula-gula,Perniagaan SM AHMAD",Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,29.8
+KZ17,ZEE SUPER MART SDN BHD,68100 SRI GOMBAK,ChIJXT_HVIJHzDER3zNYrJlV3s8,Zee Mart Gombak,Batu Caves,Tier 1,Super - Indie retail,coords≤50m,10.5
+LB12,PASARAYA BEST (HQ),DESA COALFIELDS,ChIJXZMUlgJbzDERx-Ylo9P8sSc,Pasaraya Best (HQ),Sungai Buloh,Unclear,Super - Other / unclear,place_id,87.7
+LF08,FEMI MART,KOTA D'SARA SG. BULOH,ChIJt75qsAJPzDERbQ5ahc1lRCo,Pasar Mini My Aladdin (M) Sdn.Bhd.,Petaling Jaya,Tier 1,Super - Independent local,coords≤50m,24.4
+LS26,PASARAYA BEST (BRANCH 1),47000 SELANGOR,ChIJ_4vr7YZazDERIsQEJerWBP8,Pasaraya Best (Saujana Utama),Sungai Buloh,Unclear,Super - Other / unclear,coords≤50m,7.3
+MA251,PASARAYA BISMI 786,SEK 3 BDR UTAMA,ChIJVQEuyFBszDER9kog5T8q3cY,BATANG KALI STORE,Batang Kali,Tier 1,Hyper - Other regional chain,coords≤50m,19.1
+MA71,PASAR MINI AL SELAMAT,43000 KAJANG SELANGOR,ChIJ8_1AUOjLzTERv-kaFijwjfI,"KK Super Mart Kajang, Taman Saujana Impian (KSJ)",Kajang,Tier 1,Conv - KK Mart,coords≤50m,24.2
+MC51,CT GEDUNG ENTERPRISE - 1A,"TAMAN KERAMAT PERMAI,",ChIJvfnrLTk3zDER45jQAppADAk,KEDAI RUNCIT AGAM JAYA,Kuala Lumpur,Tier 1,Conv - Kedai runcit,coords≤50m,40.6
+MD47,KEDAI RUNCIT KOTA DAMANSARA,47810 PETALING JAYA  SELANGOR.,ChIJUZhdtypPzDER5XtTYOhGbzo,KK Super Mart (KDC),Petaling Jaya,Tier 1,Conv - KK Mart,coords≤50m,6.2
+MK290,KR TA BENA SDN BHD (KUANG),48050 RAWANG,ChIJG_HkK9pEzDERrK9ay9zzpjs,NuKiRa Catan Enterprise,Rawang,Tier 1,Super - Indie retail,coords≤50m,4.7
+ML36,LUONG JATENG TRADING NO 9-11,47000 SUNGAI BULOH,ChIJQd9GNstFzDERZob-OhFpMd0,99 Speedmart 3624 Saujana Utama 2,Sungai Buloh,Tier 1,Conv - 99 Speedmart,coords≤50m,31.6
+MM11,PASAR KECIL MELAWATI,53100 SELANGOR D.E,ChIJDVSECnI5zDER1GEARLJDtI0,99 Speedmart 3137 Taman Melawati 3,Kuala Lumpur,Tier 1,Conv - 99 Speedmart,coords≤50m,40.0
+MR01,RIYAS MINI MARKET,KUALA LUMPUR,ChIJdaqZBoo5zDERykUWtD46UH0,RIYAS MINI MARKET,Kuala Lumpur,Tier 1,Conv - Mini-mart,coords≤50m,21.7
+MR31,KEDAI RUNCIT NURAINI,"WANGSA MAJU,",ChIJPZyaqTA4zDERlIVqOsUuoiY,Kedai Runcit Nuraini,Kuala Lumpur,Tier 1,Super - Sundry/grocer,place_id,32.9
+P475,PASAR MINI BAHRI,PETALING JAYA  SELANGOR,ChIJD_8szcJPzDERFIKoP87xS64,99 Speedmart 1134 Kota Damansara,Petaling Jaya,Tier 1,Conv - 99 Speedmart,coords≤50m,32.7
+P990,PASAR SEGAR ENG JOO,,ChIJd9eB0cdDzDERG4_R3xSVdhc,"KK Super Mart Rawang, Taman Tun Teja (RTT)",Rawang,Tier 1,Conv - KK Mart,coords≤50m,27.0
+S688,SOON CHEONG MARINE PRODUCTS (SG.BULOH),47000 SUNGAI BULOH.,ChIJNYXOHAdFzDERZ8Bq3wkomoM,PASARAYA SOON CHEONG (SC MARINE),Sungai Buloh,Unclear,Super - Other / unclear,coords≤50m,26.3
+SB01,BALADA ENTERPRISE SDN BHD,,ChIJha073XA4zDERRAQM-pzVcjc,Pasar Mini Balada (FAMA AgroBazaar Rakyat Gombak Setia),Kuala Lumpur,Tier 1,Conv - Mini-mart,coords≤50m,22.4
+TST700_K173,KEDAI RUNCIT AGAM JAYA,HULU KELANG 54200,ChIJvfnrLTk3zDER45jQAppADAk,KEDAI RUNCIT AGAM JAYA,Kuala Lumpur,Tier 1,Conv - Kedai runcit,coords≤50m,10.8
+TST700_P299,AVELON HEALTHCARE SDN BHD,Kepong,ChIJR1Ty9QxJzDER4SDGb-E_4hI,99 Speedmart 1605 Taman Sri Bintang,Kuala Lumpur,Tier 1,Conv - 99 Speedmart,coords≤50m,21.1
+TSTA50007,KUTHOOS WHOLESALE SDN. BHD.,,ChIJMXOYbYJJzDER-ed-rVrdmmg,Akshaya Global Sdn Bhd (Agrobazzar),Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,43.0
+TSTA58005,PASAR MINI & K/U ARCHEW,OFF JLN KUCHAI LAMA KL,ChIJUW4BZmxKzDERJklXRfSJjew,KK Super Mart Kuchai Lama (KC),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,7.5
+TSTB47067,BAO JIAN CHINESE MEDICINES & FOODS S/B,KOTA DAMANSARA PETALING JAYA SEL,ChIJVciSC-BOzDERwXArT73rwew,99 Speedmart 1061 Dataran Sunway,Petaling Jaya,Tier 1,Conv - 99 Speedmart,coords≤50m,34.8
+TSTB52010,BUKIT INDAH SUPERMARKET PK SDN BHD,KUALA LUMPUR,ChIJk9-8HzJGzDER4KtkHh7JGws,Bukit Indah Supermarket PK Sdn Bhd,Kuala Lumpur,Tier 1,Super - Independent local,place_id,9.8
+TSTB52025,BANON TONG MEDICAL HALL,KUALA LUMPUR,ChIJPd_nzm9FzDERghfn1LtgVeI,99 Speedmart 1026 Wangsa Permai,Kepong,Tier 1,Conv - 99 Speedmart,coords≤50m,48.9
+TSTB68050,BIG SUPERMART SDN BHD,BATU CAVES SELANGOR,ChIJ6QGZWGJHzDERYmYZYRfvvkI,Big Mart (Big Supermart Sdn Bhd),Batu Caves,Tier 1,Super - Independent local,coords≤50m,17.7
+TSTC50001,CHEE SENG MEDICINE SHOP,,ChIJUZbLpCRIzDERLjEaZo0tfwA,Kedai Ubat Chee Seng Medicine Shop,Kuala Lumpur,Tier 1,Super - Generic kedai,place_id,17.3
+TSTC68053,KEDAI UBAT DAN PASAR MINI CHEE ONN *,SELANGOR,ChIJRZpGt1RHzDER5r01fURr2Qg,Segi Fresh Sri Gombak,Selangor,Unclear,Super - Other / unclear,coords≤50m,34.2
+TSTF52002,PERNIAGAAN KEDAI RUNCIT DAN UBAT FOOK SUNG,SELAYANG KUALA LUMPUR,ChIJp0oAdPdGzDERnlIL2CW8pAA,7-Eleven 0337 Taman Intan Baiduri,Kuala Lumpur,Tier 1,Hyper - Other regional chain,coords≤50m,14.2
+TSTG47001,GAN MINI MARKET SDN BHD,PETALING JAYA,ChIJj21yojdJzDERFFR1U2tXWls,Gan Mini Market,Petaling Jaya,Tier 1,Super - Independent local,place_id,36.5
+TSTH68007,KEDAI UBAT DAN RUNCIT HUAKSON,SELANGOR,ChIJoYRlyuY3zDERvkfB3_gtQKQ,"KK Super Mart Ampang, Hulu Kelang (AHK)",Ampang,Tier 1,Conv - KK Mart,coords≤50m,49.4
+TSTI50010,ISETAN OF JAPAN SDN BHD,KUALA LUMPUR MALAYSIA,ChIJH5xmLdE3zDERJbZLVw_y0Aw,Isetan,Kuala Lumpur,Drop (direct-served),Super - Premium chain,coords≤50m,34.6
+TSTJ52002,KEDAI UBAT JIN CHEONG,KL.(TEL:0122095129),ChIJAAAAAAAAAAARiLqmJPM8bbE,KK SUPER MART Jinjang Selatan (JJS),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,46.5
+TSTJ52010,KEDAI UBAT JIAN SENG,KUALA LUMPUR,ChIJtTUtouZFzDERHzTNSeHsF1Q,KK SUPER MART Kepong Industrial Park (KIP),Kepong,Tier 1,Conv - KK Mart,coords≤50m,24.7
+TSTK50022,KUTUB TRADING SDN BHD,,ChIJMXOYbYJJzDER-ed-rVrdmmg,Akshaya Global Sdn Bhd (Agrobazzar),Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,47.9
+TSTK54002,PASARAYA KK,SELANGOR.,ChIJk6g5g3k3zDERb-XfVhX6cnI,Pasaraya KK,Kuala Lumpur,Unclear,Super - Other / unclear,place_id,10.2
+TSTK68059,PASAR RAYA KAMKA,AMPANG SELANGOR,ChIJoYRlyuY3zDERvkfB3_gtQKQ,"KK Super Mart Ampang, Hulu Kelang (AHK)",Ampang,Tier 1,Conv - KK Mart,coords≤50m,21.6
+TSTL46002,KEDAI UBAT LIAN FATT,,ChIJnwp2ACVJzDEReJeLR1YnSGg,Urban Marketplace Seventeen Mall,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,34.0
+TSTM50074,MK HARTAMAS,KUALA LUMPUR,ChIJmTouOABJzDERb4rLHz4c6Yk,RisSMart 24 Plaza Damas,Kuala Lumpur,Tier 1,Conv - Indie mart,coords≤50m,29.4
+TSTN53015,PASAR MINI NZ(NZ COMMERCIAL SDN BHD),SELANGOR DARUL EHSAN,ChIJk1IwnYU4zDERFDYKq37reJs,NZ Mini Market,Kuala Lumpur,Tier 1,Super - Independent local,coords≤50m,12.4
+TSTN68004,NG CHOONG YEAM SDN BHD,KL.,ChIJIRVfeME3zDERiin1LarJ-aE,KK Super Mart Ampang Jaya ( AJY ),Ampang,Tier 1,Conv - KK Mart,coords≤50m,13.6
+TSTP46003,PENG SOON,PETALING JAYA KUALA LUMPUR,ChIJnwp2ACVJzDEReJeLR1YnSGg,Urban Marketplace Seventeen Mall,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,47.6
+TSTR47003,SYARIKAT RAHIM *,PETALING JAYA SELANGOR,ChIJL3i5sQ9MzDER8jr0AtoU4fc,Syarikat Rahim Home Delivery & Gas,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,26.3
+TSTS47006,SIN YOON SENG,PETALING JAYA,ChIJj21yojdJzDERFFR1U2tXWls,Gan Mini Market,Petaling Jaya,Tier 1,Super - Independent local,coords≤50m,28.2
+TSTS47021,SING HO HENG MEDICAL SDN BHD,SELANGOR DARUL EHSAN,ChIJoSgU-FT8nGoRZ5fdl0ykSUE,Village Grocer (Megah Rise Mall),Petaling Jaya,Drop (direct-served),Super - Premium chain,coords≤50m,4.4
+TSTS50017,SOGO (K.L.) DEPARTMENT STORE SDN BHD,KUALA LUMPUR,ChIJbUbW7y1IzDERi6WYVG8fI5c,SOGO Kuala Lumpur,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,21.6
+TSTS50039,MEULUR SEJAHTERA,KUALA LUMPUR,ChIJkaICJSRIzDEREi7Mzbx0Btc,Kedai Widyawati,Kuala Lumpur,Tier 1,Super - Generic kedai,coords≤50m,20.1
+TSTS54003,PASARMINI ALSULAIMAN,ULU KLANG K.L,ChIJvZq3W8w5zDERLNVIzQVK82g,Al sulaiman lembah keramat,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,5.0
+TSTS56018,PASAR RAYA SONG FOOK SDN BHD,AMPANG,ChIJBUwgyIU2zDERkAmdQV97y0I,Pasar Raya Song Fook,Cheras,Unclear,Super - Other / unclear,place_id,11.4
+TSTS68027,SENG MENG HENG,AMPANG SELANGOR,ChIJy_Y_d3M3zDERU7RgG1u0inw,99 Speedmart 1699 Taman Ampang,Ampang,Tier 1,Conv - 99 Speedmart,coords≤50m,49.3
+TSTS68171,PASAR MINI NOORUL AALIYA,SELANGOR,ChIJIRVfeME3zDERiin1LarJ-aE,KK Super Mart Ampang Jaya ( AJY ),Ampang,Tier 1,Conv - KK Mart,coords≤50m,21.1
+TSTT46008,KEDAI UBAT TUCK SENG SDN BHD,SELANGOR,ChIJk9pRrLtLzDERnutzlSNKP9k,Buy The Way Mini Mart,Petaling Jaya,Tier 1,Super - Indie retail,coords≤50m,4.2
+TSTT47007,KEDAI UBAT DAN RUNCIT TAI KONG,SELANGOR D.E.,ChIJpVttXaROzDER5UkNy5JS90c,Win Hao Trading 永好贸易有限公司,Petaling Jaya,Tier 1,Super - Indie retail,coords≤50m,20.9
+TSTT52007,TECKSING TRADING SDN BHD,SELANGOR,ChIJJyY1f25GzDERMPxa1LyTp5g,Pasar Raya Cemerlang,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,7.8
+TSTT55004,KEDAI UBAT DAN RUNCIT TUCK CHEONG LOONG,KUALA LUMPUR,ChIJU_8KCWA2zDERyJR-oO64gYQ,Extoh Enterprise,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,20.7
+TSTW47007,WING SANG HUP KEE MEDICAL HALL,,ChIJ1coiM6FOzDER9uLGPKztSsM,Hong Yang Oriental Food • Cempaka,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,22.8
+TSTW50016,WAN LEE HENG CASH & CARRY SDN BHD -RAJA LAUT,,ChIJyaiWQyNIzDERZpkMjEMoxH0,Wan Lee Heng Cash & Carry Sdn Bhd,Kuala Lumpur,Tier 1,Super - Indie retail,place_id,51.7
+TSTW52041,JUTARIA CASH & CARRY SDN BHD,KUALA LUMPUR,ChIJGd1CYGtGzDERo4FhcHmrqzI,Jutaria Cash & Carry Sdn Bhd,Kuala Lumpur,Tier 1,Super - Indie retail,place_id,14.7
+TSTW55020,KEDAI UBAT DAN RUNCIT YOONG KEIN,CHERAS KUALA LUMPUR,ChIJhSbAmGg3zDERufXlX4Hiapw,Eco-Shop Pandan Jaya,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,13.3
+TSTY52017,KEDAI UBAT & RUNCIT YOON JIAN,KUALA LUMPUR,ChIJoVYRoRZFzDERRzwrQvAyyZY,KK Super Mart Wangsa Permai (WPM),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,43.2
+TSTY68009,YU VIN DISTRIBUTOR SDN BHD,SELANGOR DARUL EHSAN,ChIJBeF5IHpHzDERC9eaneb2iH0,YuVin Distributor Sdn Bhd,Batu Caves,Tier 1,Super - Indie retail,place_id,14.3
+300K_220,KIM CHIN GUAN ENTERPRISE,"42940 PULAU KETAM,",ChIJpbvtefUBzTERkI82QZugEZI,Kim Chin Guan Enterprise,Pulau Ketam,Tier 2,Conv - Indie retail,coords≤50m,4.2
+300N_319,NSK GROCER (KL) SDN. BHD.,"43300 SERI KEMBANGAN, ",ChIJq_MkWgDLzTER1s_LJSX8dnk,NSK Grocer Amerin Mall,Seri Kembangan,Tier 2,Super - NSK,coords≤50m,37.2
+CH3211006974,NSK TRADE CITY (BMC) SDN. BHD.,"CHERAS 1, BANDAR MAHKOTA CHERAS,",ChIJPbYhPkY1zDERSbeVvmHdys0,NSK Trade City BMC Mall,Cheras,Tier 2,Super - NSK,coords≤50m,7.0
+CHC300A_016,A & P MINI MARKET,,ChIJF8XTBayyzTERsv48qY-6zhA,A & P Mini Market,Selangor,Tier 1,Conv - Mini-mart,coords≤50m,21.6
+CHC300A_025,A & C GROCERY ENTERPRISE,PERSIARAN BESTARI  CYBER 11,ChIJa-QOapC3zTER0RrDoAPDV94,Eco Fresh Mart Solstice,Cyberjaya,Tier 1,Conv - Indie mart,coords≤50m,37.4
+CHC300A_047,ANG HUAT MINI MARKET,42700 BANTING,ChIJM3xUegCjzTER7YgsX3Q4rCI,Ang Huat Mini Market,Banting,Tier 1,Conv - Mini-mart,coords≤50m,9.0
+CHC300A_098,PASARAYA ANK SDN. BHD.(JALAN TAP  MERU),42200 KAPAR,ChIJcTnb6d5WzDERpEwrOSeuhWk,Pasaraya ANK (HQ)Jalan Kopi,Kapar,Unclear,Super - Other / unclear,coords≤50m,6.7
+CHC300A_428,ASYIRA JAYA KIOSK (SHELL),,ChIJg_LY-pdVzDER5_z0slV9LQI,Select,Klang,Tier 2,Conv - Petronas Mesra,coords≤50m,4.4
+CHC300A_692,PASARAYA FRESH GROCER,CHERAS,ChIJb9sdXAA3zDER2o1w9qr7BRo,Pasaraya Fresh Grocer,Cheras,Tier 1,Super - Sundry/grocer,place_id,60.6
+CHC300A_761,PASAR MINI AL AJAAS,"43200 KAJANG,",ChIJweopi6I0zDER6y4CEVY0yf4,PASAR MINI AL AJAAS,Kajang,Tier 1,Conv - Mini-mart,coords≤50m,12.7
+CHC300A_765,PASAR SEGAR ARIFFIN ARAFAT,"47100 PUCHONG,",ChIJ1_ED8Fq1zTERaqSb0CopZfo,"KK Super Mart Puchong, Saujana Puchong (PSN)",Puchong,Tier 1,Conv - KK Mart,coords≤50m,31.6
+CHC300A_773,ANZAR CEMERLANG ENTERPRISE,"42000 PELABUHAN KLANG,",ChIJvVRm6furzTERwJhUW18jgpQ,Faruddin maju enterprise,Pelabuhan Klang,Tier 2,Conv - Indie retail,coords≤50m,47.1
+CHC300A_805,AZAH AZIZ SUPERMART,"SEPANG,",ChIJjfsaJQC5zTERjmqiH03tPMM,PASAR MINI KLIA,Sepang,Tier 1,Conv - Mini-mart,coords≤50m,12.9
+CHC300B_020,PASAR RAYA BADURUN,,ChIJfb8T66VUzDERHc4thc_K1Jw,Badurun Traders,Klang,Unclear,Super - Other / unclear,coords≤50m,5.5
+CHC300B_040,BAN LEONG KEDAI BARANG BARANG RUNCIT,,ChIJ89JuSZPzzDERzqoqhyOQeIk,Rahmaniyah minimarket,Kuala Selangor,Tier 1,Super - Independent local,coords≤50m,16.3
+CHC300B_046,BAN ON HOE,,ChIJnRodX2b2zDERR2jgX5Y-Rmk,7-Eleven JLN BESAR JERAM SEL,Jeram,Tier 1,Hyper - Other regional chain,coords≤50m,27.0
+CHC300B_069,PERNIAGAAN BB KIM WAH SDN. BHD.,45600 KUALA SELANGOR,ChIJbbBPyulgzDERBOPmTP0F9qQ,Seng Mini Market PLT,Bestari Jaya,Tier 1,Conv - Mini-mart,coords≤50m,48.8
+CHC300B_075,BIG SUPERMART SDN.BHD. (FRESH-BALAKONG),"BALAKONG,",ChIJRd1mYuzLzTEREe1fxQLTkYI,Pasaraya Romlah HB Resources,Seri Kembangan,Unclear,Super - Other / unclear,coords≤50m,8.2
+CHC300B_111,BIG SUPERMART SDN.BHD,TAMAN SUNGAI KAPAR INDAH,ChIJdSAI5bVVzDERUAhvGXwEXPU,Big Supermart Kapar,Kapar,Tier 1,Super - Independent local,place_id,32.0
+CHC300B_112,BNS MINI MARKET,KUALA SELANGOR,ChIJL5wUvINZzDERH5iyfIq8Tts,BNS Mini Market,Puncak Alam,Tier 1,Conv - Mini-mart,coords≤50m,18.8
+CHC300B_115,KEDAI RUNCIT BALASUNDRAM,,ChIJrW59Hk2tzTERlA3DgE_Tqhk,Mamo Santan Kelapa,Klang,Unclear,Super - Other / unclear,coords≤50m,41.3
+CHC300B_151,KEDAI RUNCIT BASEERA,"42000 PELABUHAN KLANG,",ChIJ_xV1XsWqzTERD3T_YHvPuQ4,99 Speedmart 1139 Sultan Suleiman 2,Bandar Sultan Suleiman 42200 Pelabuhan Klang Serlangor,Tier 1,Hyper - Other regional chain,coords≤50m,28.6
+CHC300B_182,BM MOHAMAD TRADING,"KAJANG,",ChIJXfaOETu3zTER4V2kmDLNtxA,BM Xpress fresh mart,Kajang,Tier 1,Super - Indie retail,coords≤50m,20.0
+CHC300B_191,BILLION SHOPPING CENTRE (PORT KLANG) SDN. BHD.,,ChIJ31qZ2gWrzTERE6gGy6vwgzY,Billion Shopping Centre • Port Klang,Pelabuhan Klang,Tier 2,Super - Billion,coords≤50m,14.2
+CHC300B_216,PASAR RAYA BISMI,KLANG  SELANGOR DARUL EHSAN.,ChIJfc3q60lRzDER-J9hEHWg8LE,Pasar Raya Bismi,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Unclear,Super - Other / unclear,place_id,26.8
+CHC300B_237,BIG SUPERMART SDN. BHD.(SUBANG U5),U5/AM  SEKSYEN U5  40150 SHAH ALAM,ChIJcwShHt1PzDERX0DHjqx0Go8,Big wholesale supermarket,Shah Alam,Tier 1,Super - Independent local,coords≤50m,0.6
+CHC300B_238,BIG SUPERMART SDN. BHD.(SERI SERDANG),SELANGOR DARUL EHSAN.,ChIJ-5bd-ZvKzTER3njN15ba1LQ,Pasaraya BIG,Seri Kembangan,Unclear,Super - Other / unclear,coords≤50m,8.0
+CHC300B_322,PASARAYA BSK SDN. BHD. (KUALA SELANGOR),"KUALA SELANGOR,",ChIJa7m_XFb1zDERgq3aPoEZPl4,BSK FRESHMART KUALA SELANGOR,Kuala Selangor,Tier 1,Super - Indie retail,coords≤50m,29.0
+CHC300B_353,BEST FRESH MART SDN. BHD.,"PEKAN KAPAR,",ChIJvTzYlzJXzDER8v3NFRY9Xo4,Best fresh mart kapar,Klang,Tier 1,Super - Indie retail,place_id,12.2
+CHC300B_367,BILLION SHOPPING CENTRE (B.B. BANGI) SDN. BHD.,"BANDAR BARU BANGI,",ChIJVzzjNNLLzTERVNiLvBhIA2c,Billion Shopping Centre (B.B.Bangi),Bandar Baru Bangi,Tier 2,Super - Billion,coords≤50m,33.2
+CHC300C_042,PASAR MINI TAMAN PADUKA,,ChIJfQ2RsIf1zDERReR3eyQ2EGo,PASAR MINI TAMAN PADUKA,Kuala Selangor,Tier 1,Conv - Mini-mart,coords≤50m,2.4
+CHC300C_067,ASLINA ENTERPRISE,"40000 SHAH ALAM,",ChIJJau-VQBTzDERRwd6edpuZ9E,INA FRESH MART,Shah Alam,Tier 1,Super - Indie retail,coords≤50m,18.2
+CHC300C_106,CT ABLE TRADING SDN BHD,,ChIJn36nO-NTzDERSOS_8I2RCVQ,Waajibaa Trading,Klang,Tier 2,Conv - Indie retail,coords≤50m,18.5
+CHC300C_177,CONBINI RESOURCES SDN BHD,SUBANG JAYA,ChIJc94H5ZJMzDERyHUJYVsJik4,Ramla Mini Mart,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Tier 1,Conv - Mini-mart,coords≤50m,48.1
+CHC300C_203,CLC WHOLESALER GROUP SDN. BHD.,SEMENYIH,ChIJHeiljcnPzTERqXZ1jk1gYoA,CLC Hypermarket,Semenyih,Unclear,Super - Other / unclear,coords≤50m,43.1
+CHC300C_225,CHECKERS HYPERMARKET SDN. BHD.(SHAH ALAM),,ChIJHxYl9WJNzDERd_hqE1pbeoI,Checkers Hypermarket Sdn Bhd (Headquarters),Shah Alam,Tier 1,Super - Indie retail,coords≤50m,6.9
+CHC300C_254,CS GROCER SDN. BHD. (PLAZA 18),"SHAH ALAM,",ChIJKU1nPa9SzDERiW8TjAJtbF0,Super Ninty Superstores Sdn. Bhd.,Selangor,Unclear,Super - Other / unclear,coords≤50m,29.4
+CHC300C_261,CS GROCER SDN. BHD.,"PUCHONG,",ChIJQX_vTQCzzTERw4H1mW12ibc,Pasar Segar PP MAJU JAYA,Puchong,Unclear,Super - Other / unclear,coords≤50m,36.8
+CHC300C_262,CHECKERS HYPERMARKET SDN. BHD.,KAJANG,ChIJd2mNGwDLzTERCbEUM1Foygg,Checkers Hypermarket • Kajang • Saujana Impian,Kajang,Unclear,Super - Other / unclear,coords≤50m,35.6
+CHC300D_138,PASARAYA DARUSSALAM SDN. BHD.,PUTRAJAYA,ChIJl8G7xim3zTERav5mW3M_UFk,Pasaraya Hammad,Putrajaya,Unclear,Super - Other / unclear,coords≤50m,29.5
+CHC300D_138B,PASARAYA DARUSSALAM SDN. BHD. (PRESINT 4),"PUTRAJAYA,",ChIJP-fHbMW3zTERQir0Ub2TIJE,PASARAYA DARUSSALAM XL,Putrajaya,Unclear,Super - Other / unclear,coords≤50m,17.4
+CHC300D_148,PASARAYA DPP MAJU,,ChIJiyXfWCfIzTERjJMhaMGXvJM,Pasaraya Dpp Maju,Kajang,Unclear,Super - Other / unclear,place_id,4.4
+CHC300E_006,ECONMART SUPERMARKET (SUNGAI BERTIH) S/B,,ChIJa9MXeFdTzDEREmDw_xjQeSg,Econmart Supermarket Sdn Bhd. Sungai Bertih,Klang,Tier 1,Super - Independent local,coords≤50m,13.9
+CHC300E_011,CHOP ENG HONG,,ChIJu5i51ImvzTERUnxQ1Bnyr_k,Chop Lian Hup,Jenjarom,Unclear,Super - Other / unclear,coords≤50m,3.5
+CHC300E_032,ENG TA TRADING,,ChIJFfqhBT5XzDERWRsOWf7pPv8,Eng Ta Trading,Kapar,Tier 1,Super - Indie retail,place_id,29.8
+CHC300E_081,ENG LEE TRADING,"PULAU KETAM,",ChIJpbvtefUBzTERkI82QZugEZI,Kim Chin Guan Enterprise,Pulau Ketam,Tier 2,Conv - Indie retail,coords≤50m,9.6
+CHC300E_088,88 GROCER SDN. BHD.,42500 TELOK PANGLIMA GARANG,ChIJ64vJvhqxzTERBH5rWQNvGNI,PEMBORONG GEMILANG MAJU,Telok Panglima Garang,Unclear,Super - Other / unclear,coords≤50m,37.9
+CHC300E_262,88 BIGFRESH PLT,PUCHONG,ChIJgax5d0S1zTERMgrKtnbLeF0,99 Speedmart 1111 Tmn Saujana Puchong 1,Puchong,Tier 1,Conv - 99 Speedmart,coords≤50m,38.0
+CHC300F_003,IZDIHAR HASIF ENTERPRISE,SELANGOR DARUL EHSAN.,ChIJcWnOX-pUzDERLMwU5MLzsFU,Kedai Santan & Runcit,Klang,Tier 1,Conv - Generic kedai,coords≤50m,4.5
+CHC300F_019,FAFAZA ENTERPRISE,42700 BANTING,ChIJ87kNsnCjzTEReLBEaOD8I1s,Kedai Santan Kanchong Darat,Banting,Tier 1,Hyper - Other regional chain,coords≤50m,42.0
+CHC300F_097,FORTY NINE QUICK MART,,ChIJAz--NYZUzDERhCkG60ztrX4,Forty Nine Quick Mart,Selangor,Tier 1,Super - Indie retail,place_id,1.3
+CHC300F_100,PASARAYA KT,45600 BESTARI JAYA,ChIJk2_NohpfzDERmwXS_nRMOtA,Asia Mart Ijok,Kuala Selangor,Tier 1,Super - Indie retail,coords≤50m,47.4
+CHC300F_153,NOORLIZAWATI MAJU ENTERPRISE,"41400 KLANG,",ChIJpan7X0NTzDERsx1z7L_Hu-A,Aziss Warisan Enterprise,Klang,Tier 2,Conv - Indie retail,coords≤50m,26.8
+CHC300F_159,FARMERS GREEN HOUSE SDN. BHD.,"AMPANG,",ChIJ5bqFeyC7yDERVsmG8vAbmsk,"Farmers Green House, Bandar Kinrara",Puchong,Unclear,Super - Other / unclear,coords≤50m,18.1
+CHC300F_180,FRESCA MARKETING SDN. BHD.,"PERSIARAN SEPANG, CYBER 11,",ChIJERtmJQC3zTERRk6oM-ylnKU,Fresca Mart Cyberjaya,Cyberjaya,Tier 1,Super - Indie retail,coords≤50m,20.3
+CHC300G_012,GQ SERVICES & RESOURCES,,ChIJY3jenOe5zTER8q3v9IeBdQs,99 Speedmart 2150 Taman Seri Delima,Dengkil,Tier 1,Super - 99 Speedmart,coords≤50m,46.6
+CHC300G_020,G.U.S. (TELOK) SDN BHD,TELOK PANGLIMA GARANG,ChIJQ8hJRgSvzTERulQEBtAQXAU,Pasaraya Grand Union (Telok),Telok Panglima Garang,Unclear,Super - Other / unclear,coords≤50m,44.9
+CHC300G_103,GROCER ROSWEL RESOURCES SDN. BHD.,,ChIJe3GvVf22zTERXvk8AcLFtN8,Roswel Mart Neo Cyber SepangCyberjayaSelangor Negeri SembilanGrocery/Vegetable/Mineral water,Cyberjaya,Tier 1,Super - Sundry/grocer,coords≤50m,4.9
+CHC300G_182,GRAB & GO D MART,"43900 SEPANG,",ChIJp_2bp9RLzDERgSTVjP1pqhI,"KK SUPER MART Seksyen 14, Petaling Jaya (S142)",Petaling Jaya,Tier 1,Conv - KK Mart,coords≤50m,41.3
+CHC300H_028,SUNSEEN TRADING,SELANGOR DARUL EHSAN.,ChIJLYcn7A5LzDERWqjUfcCknZk,Pasaraya & Kedai Ubat Ban On Tong Sdn Bhd,Puchong,Tier 1,Super - Indie retail,coords≤50m,6.4
+CHC300H_043,HUP JOO,,ChIJiYpmo0tXzDER95eEu5ySlnY,Poh shen marketing,Kapar,Unclear,Super - Other / unclear,coords≤50m,42.0
+CHC300H_067,KEDAI HENG HUAT CHAN,,ChIJAAAAAAAAAAARwKiNcIIwBgo,KK Super Mart Taman Berkeley (BKL),Klang,Tier 1,Conv - KK Mart,coords≤50m,12.8
+CHC300H_118,KEDAI UBAT DAN RUNCIT HARMONI,,ChIJZ8S3AKyyzTERzXiLAOq5D6w,Pasar Mini Lakshmi,Shah Alam,Tier 1,Super - Independent local,coords≤50m,16.5
+CHC300H_204,KEDAI HONG HUAT,KUALA LUMPUR.,ChIJa0gU8881zDERru83Y17zLjg,KK SUPER MART Yulek (YLK),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,47.6
+CHC300H_305,HAVVA MINI MART,KAJANG,ChIJt4UmB9vLzTERBQbdGdchQZ8,"KK SUPER MART Reko, Kajang ( RKJ2)",Kajang,Tier 1,Conv - KK Mart,coords≤50m,26.5
+CHC300H_333,HASIL LAUT SEONG KEE (KOTA KEMUNING),"SHAH ALAM,",ChIJJ-pR2v-zzTERpXabCWUNNJs,You & Me Trading,Shah Alam,Tier 1,Super - Indie retail,coords≤50m,34.2
+CHC300H_338,KEDAI RUNCIT HAIKAL JAYA,"41200 KLANG,",ChIJiSIVV5yszTERBpTTR9gI804,Kedai Runcit Haikal Jaya,Klang,Tier 1,Super - Sundry/grocer,place_id,153.5
+CHC300H_340,HOCK MEI TRADING SDN. BHD.,"46000 PETALING JAYA,",ChIJQ_XLWr3JzTEREAv6yj7oIlY,PASARAYA HM (Taman Medan PJ Branch),Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,5.0
+CHC300H_350,PASARAYA HAMEEDS (M) SDN. BHD.,"SEPANG,",ChIJla2Dp3y5zTEROCrwTPUrMDI,PASAR RAYA AHMAD,Sepang,Unclear,Super - Other / unclear,coords≤50m,15.5
+CHC300H_366,PASARAYA HAJI,"SHAH ALAM,",ChIJnbNZGW5RzDERqOZXJqhAvzY,"Pasar Mini Smart, Setia Taipan",Shah Alam,Tier 1,Super - Independent local,coords≤50m,5.7
+CHC300I_040,IMANS BEST MART,BANDAR PUNCAK ALAM  K. SELANGOR,ChIJ84l5u0RZzDERSOTg00CsM7o,Imans Best Mart,Puncak Alam,Tier 1,Super - Indie retail,place_id,11.1
+CHC300I_163,KEDAI UBAT DAN PASARAYA IJOK WEI POH,IJOK,ChIJefAv4H9fzDER08dAASv6AxM,Kedai Ubat Dan Pasaraya Ijok Wei Poh,Bukit Rotan,Tier 1,Conv - Generic kedai,coords≤50m,7.1
+CHC300I_164,PASAR SEGAR IKHWAN,57000 KUALA LUMPUR.,ChIJcaPNYng1zDERUL41wkx-Loc,PASAR SEGAR BSB,Kuala Lumpur,Unclear,Super - Other / unclear,place_id,352.1
+CHC300I_170,ISTYLEZ EXCLUSIVE TRADING,"KLANG,",ChIJ6Qp3s_dVzDERRtwq9FhDQiA,"KK Super Mart Klang, Bandar Bukit Raja (2) ( KRJ2)",Klang,Tier 1,Conv - KK Mart,coords≤50m,25.5
+CHC300J_033,PASAR MINI IBU,,ChIJj1jdlSRfzDERJl0TiAZKoVQ,Pasar Mini Ibu,Jeram,Tier 1,Super - Independent local,place_id,9.4
+CHC300J_045,JAZCO SPEEDMART (TAMAN BAIDURI),42700 BANTING,ChIJ_WTOwT-lzTERuO8J1OvbyqM,"KK Super Mart Banting, Taman Baiduri ( BBD)",Banting,Tier 1,Conv - KK Mart,coords≤50m,9.4
+CHC300K_010,KEDAI UBAT LUEN FAT,,ChIJX7hNU4pRzDERzpiu3BGAEVI,99 Speedmart 1007 Pekan Meru 1,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,42.0
+CHC300K_019,PASARAYA JAYMUDA BB,,ChIJVVFXN-lgzDERmh4-D0nWLps,Pasaraya Seng Siang,Batang Berjuntai,Unclear,Super - Other / unclear,coords≤50m,22.9
+CHC300K_020,ARISE PHARMACY SDN. BHD.,TAMAN PUCHONG PRIMA,ChIJ1QMbLH-zzTER91TEHl-sek0,KK Super Mart Pusat Perdagangan Puchong Prima ( PPM ),Puchong,Tier 1,Conv - KK Mart,coords≤50m,22.5
+CHC300K_023,SYARIKAT KANG KHOW SDN. BHD.,,ChIJOTDTSwarzTERTP-Qf3hGXgU,Syarikat Kang Khow Sdn. Bhd.,Pelabuhan Klang,Unclear,Super - Other / unclear,place_id,3.3
+CHC300K_033,MGM SUPER MARKET SDN. BHD.,45000 KUALA SELANGOR,ChIJ67zvYJb0zDER3Dx9hluf7Us,Pasar Mini Ramli,Kuala Selangor,Tier 1,Conv - Mini-mart,coords≤50m,13.0
+CHC300K_040,PASAR MINI KIEN FATT,45620 BATANG BERJUNTAI,ChIJW4J0OmFezDERuSp7I-2bqlQ,Pasar Mini Kien Fatt,Bukit Rotan,Tier 1,Conv - Mini-mart,coords≤50m,16.2
+CHC300K_066,KEDAI KEAN FATT,,ChIJZaqNO5RSzDERePJLDlJjdzQ,"KK Super Mart Shah Alam, Seksyen 16 (SA16)",Shah Alam,Tier 1,Conv - KK Mart,coords≤50m,13.2
+CHC300K_093,KONG FAAT TRADING,,ChIJqSvzbMdWzDERIeU0r7_ear0,KK Super Mart Jalan Meru Setia • JMS,Klang,Tier 1,Conv - KK Mart,coords≤50m,7.5
+CHC300K_163,KIM CHUAN SENG ENTERPRISE,"42940 PULAU KETAM,",ChIJpbvtefUBzTERkI82QZugEZI,Kim Chin Guan Enterprise,Pulau Ketam,Tier 2,Conv - Indie retail,coords≤50m,20.9
+CHC300K_183,KR SINNIAH & SON STORE,,ChIJw8KLGwarzTERXciNTxgpkDs,S. M. Jamal Store,Pelabuhan Klang,Unclear,Super - Other / unclear,coords≤50m,27.5
+CHC300K_192,OCEANIC SUPER MART (2),"41050 KLANG,",ChIJ-cop81lRzDERIac4wJbg1MU,Oceanic Super Mart,Klang,Tier 1,Super - Independent local,place_id,47.9
+CHC300K_210,SMT MINI MART,KLANG,ChIJd6wH0xlVzDERX1OYrgDdHqs,ECONSAVE Mart Taman Sementa Utama 1,Klang,Tier 1,Conv - Indie mart,coords≤50m,32.8
+CHC300K_433,KLC MARKETING & SALES (M) SDN. BHD.,"KAJANG,",ChIJVXZf4dXNzTERDNYcT5nWdOU,Pembekal Talapia Merah Halalan Toyibban,Kajang,Unclear,Super - Other / unclear,coords≤50m,20.3
+CHC300K_440,KIB MINI MART,"PUCHONG,",ChIJAfVxes-3zTER6JLcp6anc1k,KIB mart,Puchong,Tier 1,Super - Indie retail,place_id,3.8
+CHC300K_442H,MEMI ZOOO ZOOO GROCER @ CHERAS LEN SENG,"CHERAS,",ChIJY0c9Jgc1zDER7MVQe2wnRsY,Memi ZoooZooo Grocer,Kuala Lumpur,Tier 1,Super - Sundry/grocer,coords≤50m,9.5
+CHC300K_442L,MEMI ZOOO ZOOO @ BLOOMSVALE,58200 KUALA LUMPUR.,ChIJh18mDNtLzDERvPyqBI78fu8,CHECK POINT RESOURCES SDN BHD,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,49.9
+CHC300K_458,KAY 9 ENTERPRISE,"43300 SERI KEMBANGAN,",ChIJtQPw1tDLzTEROV_0CuL-23Q,99 Speedmart 1183 Taman Taming Jaya,Balakong,Tier 1,Conv - 99 Speedmart,coords≤50m,28.1
+CHC300K_461,KEDAI RUNCIT KANA TASYUKUR,SELANGOR.,ChIJe8_9BxszzDERdq26oUTlkmg,99 Speedmart 1409 Taman Perkasa,Taman Perkasa,Tier 1,Conv - 99 Speedmart,coords≤50m,36.3
+CHC300L_018,SYARIKAT LIM YOU THO DAN ANAK2,SELANGOR DARUL EHSAN.,ChIJVVFXN-lgzDERmh4-D0nWLps,Pasaraya Seng Siang,Batang Berjuntai,Unclear,Super - Other / unclear,coords≤50m,23.9
+CHC300L_038,LAKSHMI MINI MARKET,,ChIJZ8S3AKyyzTERzXiLAOq5D6w,Pasar Mini Lakshmi,Shah Alam,Tier 1,Super - Independent local,place_id,5.7
+CHC300L_043,CHOP LIAN HUP,"42600 KUALA LANGAT,",ChIJu5i51ImvzTERUnxQ1Bnyr_k,Chop Lian Hup,Jenjarom,Unclear,Super - Other / unclear,place_id,7.4
+CHC300L_072,SKI MINI MARKET,"KLANG,",ChIJR90r4nFVzDERV1Gq18X-bBY,Kedai Serbaneka Maju 23,Taman Sungai Kapar Indah,Tier 1,Super - Generic kedai,coords≤50m,48.1
+CHC300L_105,L. G MINI MARKET,KLANG,ChIJJ0RoF5StzTERfQqL9_n5Hpo,99 Speedmart 1016 - Bandar Sentosa,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,32.4
+CHC300L_147,KEDAI UBAT LEN MIN,,ChIJwd7yePUBzTERmNno7XB8Cz4,Kedai Ubat Len Min,Klang,Tier 1,Conv - Generic kedai,coords≤50m,0.0
+CHC300L_158,LIVINGHEALTH TAIPAN SDN. BHD.,SEMENYIH,ChIJ3c_sw1rOzTERC2ktibNx2p0,99 Speedmart 2036 Setia Ecohill,Semenyih,Tier 1,Conv - 99 Speedmart,coords≤50m,15.5
+CHC300L_217,LOOK YEN ENTERPRISE,"47130 PUCHONG,",ChIJ8-E70MKzzTERzCZs3xdicGk,Mart 都捞 Multiway,Puchong,Tier 1,Super - Indie retail,coords≤50m,32.0
+CHC300M_041,PASAR MINI MERDU INDAH,"KLANG,",ChIJ0flST5yszTERQ3qgoCYz9EA,Pasar Mini Merdu Indah Dua,Selangor,Tier 1,Super - Independent local,place_id,7.8
+CHC300M_048,KEDAI RUNCIT M.R.,41200 KLANG,ChIJCzdD4viszTERRmJK5k-8YQI,Kedai Runcit KS,Klang,Tier 1,Super - Sundry/grocer,place_id,200.8
+CHC300M_070,PUSAT PERNIAGAAN MATAHARI SDN. BHD.,,ChIJyeXN50ZLzDER1sZe66_tWP0,Eco-Shop • Taman Maju Jaya,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,49.0
+CHC300M_077,METRIK DIY ENTERPRISE,,ChIJZaqNO5RSzDERePJLDlJjdzQ,"KK Super Mart Shah Alam, Seksyen 16 (SA16)",Shah Alam,Tier 1,Conv - KK Mart,coords≤50m,41.5
+CHC300M_123,MERU SUPPLY SDN. BHD.,,ChIJAz--NYZUzDERhCkG60ztrX4,Forty Nine Quick Mart,Selangor,Tier 1,Super - Indie retail,coords≤50m,38.3
+CHC300M_204,J01 KEDAI RAKYAT MAIWP,62200 PUTRAJAYA.,ChIJFR5Jr5O3zTER7x5duWa1owU,Maiwp Mart P5,Putrajaya,Tier 1,Conv - Indie mart,coords≤50m,11.6
+CHC300M_256,PUSAT BORONG MATAHARI SDN. BHD. -PANDAN INDAH,,ChIJ87q-Wlk2zDERQBBnsP-seEw,Pasaraya Borong Matahari Pandan Indah,Ampang,Unclear,Super - Other / unclear,coords≤50m,5.0
+CHC300M_259D,MR TOMATO FRESH MARKET (M) SDN. BHD.-ANDALAS,KLANG,ChIJ4SgCQJiszTER9jyherM49F0,Kedai Runcit Bakdi,Klang,Tier 1,Super - Sundry/grocer,coords≤50m,25.7
+CHC300M_259E,MR TOMATO FRESH MARKET (M) SDN. BHD.-BKT TINGGI  2,"BANDAR BUKIT TINGGI 2,",ChIJsY6u5aurzTERNFV4zpxGRbU,KK Super Mart Bukit Tinggi (2) (BTG 2),Klang,Tier 1,Conv - KK Mart,coords≤50m,49.9
+CHC300M_259F,MR TOMATO FRESH MARKET (M) SDN. BHD.-BOTANIC (BTC),"KLANG,",ChIJLWVMGpirzTERTPr2OvgBFj4,Mr Tomato Fresh Market Botanic,Pelabuhan Klang,Unclear,Super - Other / unclear,coords≤50m,47.4
+CHC300M_450,MANJAKU BABY CENTRE (PRIMA SAUJANA) SDN. BHD.,KAJANG,ChIJSYauS1zNzTERQzicdlHRXAM,PROJECT GARAGE MOTOSPORT,Kajang,Unclear,Super - Other / unclear,coords≤50m,31.2
+CHC300M_485,MAHATHIR FRESH MART,"PUCHONG,",ChIJgax5d0S1zTERMgrKtnbLeF0,99 Speedmart 1111 Tmn Saujana Puchong 1,Puchong,Tier 1,Conv - 99 Speedmart,coords≤50m,19.4
+CHC300M_505,MEGAMART WHOLESALE SDN. BHD.,"PUCHONG,",ChIJ7UNVj0azzTERu8oGvY5R4ww,99 Speedmart 1930 Taman Denai Puchong,Puchong,Tier 1,Super - 99 Speedmart,coords≤50m,10.1
+CHC300M_537,MANJAKU RETAIL SDN. BHD.(TELOK PANGLIMA),"BANDAR TROPICANA AMAN,",ChIJe82CAqexzTERqDtx7dV4OaU,Eco-Shop Tropicana Aman,Telok Panglima Garang,Unclear,Super - Other / unclear,coords≤50m,37.1
+CHC300M_545,MERU MART,"KAPAR,",ChIJfc3q60lRzDER-J9hEHWg8LE,Pasar Raya Bismi,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Unclear,Super - Other / unclear,coords≤50m,44.2
+CHC300M_547,PASAR RAYA MATAHARI - U5 SUBANG BESTARI,"SUBANG MURNI, SKEYSEN U5,",ChIJ_SckIABPzDERveRG-RSTqso,Pasaraya Borong Matahari Subang Bestari U5,Shah Alam,Unclear,Super - Other / unclear,place_id,46.4
+CHC300M_552,PASAR MINI CARELIN,"43500 SEMENYIH,",ChIJD1l1F1HPzTERLagIKuqFO_M,Pasar Mini Carelin,Semenyih,Tier 1,Super - Independent local,place_id,47.1
+CHC300M_567,MJ TIAN SDN. BHD.,"43200 CHERAS,",ChIJCf38KzDLzTER2XllQgj_-5c,KK SUPER MART Cheras Jaya (CJY),Cheras,Tier 1,Conv - KK Mart,coords≤50m,19.9
+CHC300M_617,PUSAT BORONG MATAHARI (SRI MANJA) SDN. BHD.,"PETALING JAYA,",ChIJ8aDO9gtLzDERoToE5luXIGY,Pasaraya Borong Matahari Sri Manja,Petaling Jaya,Unclear,Super - Other / unclear,coords≤50m,30.8
+CHC300N_002,PASAR RAYA NAM TECK,SELANGOR DARUL EHSAN.,ChIJ3af5g3FTzDERebBlLoFj81o,Pasar Raya Nam Teck,Klang,Unclear,Super - Other / unclear,place_id,15.0
+CHC300N_009,KEDAI RUNCIT DUA TIGA TIGA SATU,,ChIJqcQ9JiakzTERk1G3wDaNipc,Pasar Mini Dua Tiga Tiga Satu,Banting,Tier 1,Conv - Mini-mart,coords≤50m,48.4
+CHC300N_015,SIMUK MINI MARKET,,ChIJG8JDWqSvzTERATWXc-3F0UI,SIMUK MINI MARKET,Telok Panglima Garang,Tier 1,Conv - Mini-mart,coords≤50m,17.8
+CHC300N_025,KEDAI RUNCIT NFS,,ChIJH8kmbsRSzDERQ9GGOYRThRc,Kedai Runcit NFS,Shah Alam,Tier 1,Super - Sundry/grocer,place_id,364.0
+CHC300N_104,PASAR MINI NTK,"KAJANG,",ChIJhRzzyXvMzTERm6NYh1ke2M8,Pasar Mini NTK,Kajang,Tier 1,Super - Independent local,place_id,32.7
+CHC300N_105,NTT MINI MARKET,58200 KUALA LUMPUR.,ChIJuQ6yjwVLzDERP5l79I4u9r0,NTT Mini Market,Puchong,Tier 1,Super - Independent local,place_id,6.0
+CHC300N_115,NZ NEWS & CONVENIENCE,63000 CYBERJAYA,ChIJj-eNZ-e2zTERqvvmc6yNZmk,NZ Mart,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Tier 1,Conv - Indie mart,coords≤50m,3.2
+CHC300N_247,NEIGHBOR FRESH MART,BATU 7 JALAN KAPAR,ChIJ3Wewnw1VzDER1QOBLxveCJI,Neighbor Fresh Mart,Klang,Tier 1,Super - Indie retail,place_id,91.2
+CHC300N_279,NERACA GEMILANG SDN. BHD.,"KAMPUNG SUNGAI PINANG,",ChIJYZ_0VY5UzDERPvXtO7rcJxY,Neraca Gemilang,Klang,Unclear,Super - Other / unclear,place_id,289.5
+CHC300O_031,OLD HOMEMART SDN. BHD.,42700 BANTING,ChIJn126yNqxzTERPWZDRBQus7k,HOMEMART MINI MARKET SRI CHEEDING,Banting,Tier 1,Super - Independent local,coords≤50m,17.2
+CHC300P_031,POH YAP MINI MARKET,41400 KLANG,ChIJR7vtvYFUzDERaC8ykfdnazA,Poh Yap Mini Market,Klang,Tier 1,Super - Independent local,place_id,1.2
+CHC300P_041,KEDAI UBAT PERTAMA,,ChIJOTDTSwarzTERTP-Qf3hGXgU,Syarikat Kang Khow Sdn. Bhd.,Pelabuhan Klang,Unclear,Super - Other / unclear,coords≤50m,38.1
+CHC300P_074,DOUBLE KNK MARKETING,63000 CYBERJAYA,ChIJOcllrgK3zTER8xeXriRQZ_8,7 Eleven,Dengkil,Tier 1,Hyper - Other regional chain,coords≤50m,35.3
+CHC300P_109,MINI MARKET PAK TEH,,ChIJFesQZ3tTzDERmXBEVKAQ1tQ,Al Sulaiman Pasarmini -Shahalam,Shah Alam,Unclear,Super - Other / unclear,coords≤50m,9.8
+CHC300P_129,PASAR MINI ASIQ,,ChIJH4O4j3dSzDERVFqEOmctp4k,Pasar Mini Prihatin,Selangor,Tier 1,Super - Independent local,place_id,169.0
+CHC300P_181,PARK LANE TRADING,"PUCHONG,",ChIJ88K6pZy3zTERsRGh4LAOpVc,99 Speedmart 1116 Taman Putra Perdana,Puchong,Tier 1,Conv - 99 Speedmart,coords≤50m,16.9
+CHC300P_223A,PK UMMAH SDN. BHD. RIZKY MART (RM01),"KAJANG,",ChIJZzlQp9vJzTERw8kkSItBM2c,Rizky Mart,Kajang,Tier 1,Conv - Indie mart,coords≤50m,4.8
+CHC300Q_020,QCP GROCER (KLANG) SDN. BHD.,"42000 PELABUHAN KLANG,",ChIJ8bNsIwCrzTERwidxCKAFJ4U,QCP GROCER (KLANG) SDN. BHD. (PANDAMARAN),Pelabuhan Klang,Tier 1,Super - Sundry/grocer,place_id,29.6
+CHC300R_013,PASAR MINI RAMLI,45000 KUALA SELANGOR,ChIJ67zvYJb0zDER3Dx9hluf7Us,Pasar Mini Ramli,Kuala Selangor,Tier 1,Conv - Mini-mart,coords≤50m,3.4
+CHC300R_019,RINGLET MINI MARKET,,ChIJH8kmbsRSzDERaRkKnltkhJk,Ringlet Mini Market,Selangor,Tier 1,Super - Independent local,place_id,35.1
+CHC300R_039,RAHMANIYAH MINI MARKET,SELANGOR DARUL EHSAN.,ChIJ89JuSZPzzDERzqoqhyOQeIk,Rahmaniyah minimarket,Kuala Selangor,Tier 1,Super - Independent local,coords≤50m,4.0
+CHC300R_062,DIYA AL DIN ENTERPRISE,SELANGOR DARUL EHSAN.,ChIJfU5_i2lNzDER1dRZx2LmVpo,Diyal Al Din Enterprise,Shah Alam,Tier 1,Super - Indie retail,place_id,7.5
+CHC300R_182,PASAR RAYA SMART,BANDAR BARU BANGI,ChIJu6-nZD_JzTERF7iQNBwwZSQ,Pasaraya SMart,Bandar Baru Bangi,Tier 1,Conv - Indie mart,coords≤50m,44.8
+CHC300S_002,SYARIKAT SUI HOH CHAN,KAPAR 41400 KLANG,ChIJbZdVi2hWzDERg_EBhvpBxLM,Asia Mart KAPAR,Klang,Tier 1,Super - Indie retail,coords≤50m,42.9
+CHC300S_028,PASAR MINI SIN LIAN HUAT,41200 KLANG,ChIJF6GOoJeszTERyqTeSqB4cIY,Pasar Mini Sin Lian Huat,Klang,Tier 1,Super - Independent local,place_id,64.2
+CHC300S_036,KEDAI UBAT DAN RUNCIT SHUN TAT,,ChIJFT62gW5VzDERpqPfN_X5zNM,99 Speedmart 2808 Klang Utama 3,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,33.3
+CHC300S_040,SRI MEENAS ENTERPRISE,41050 KLANG,ChIJ3UTrZwBXzDERvswoS3Zs3QY,Pasar Mini Sri Meenas • Sri Meenas Enterprise,Kapar,Tier 1,Conv - Mini-mart,coords≤50m,28.6
+CHC300S_042,SARAVANAS,SELANGOR DARUL EHSAN.,ChIJe1_iaP2LzDERKRFHcBkZElU,B7 RAJALINGAM RESOURCE,Batang Berjuntai,Unclear,Super - Other / unclear,coords≤50m,21.9
+CHC300S_059,PASAR MINI SIJANGKANG,"TELOK PANGLIMA GARANG,",ChIJ-wtEqKKuzTERegh6SnAx1Mo,Pasar Sabtu Sijangkang,Telok Panglima Garang,Unclear,Super - Other / unclear,place_id,947.5
+CHC300S_067,SYARIKAT SENG ONN,,ChIJhf3duEJTzDERqveK7SflSxo,Bh Petromart,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Tier 1,Conv - Indie mart,coords≤50m,23.2
+CHC300S_138,SIN SWEE HING,SELANGOR DARUL EHSAN.,ChIJVVFXN-lgzDERmh4-D0nWLps,Pasaraya Seng Siang,Batang Berjuntai,Unclear,Super - Other / unclear,coords≤50m,23.9
+CHC300S_141,CHOP SIONG HUAT,SELANGOR DARUL EHSAN.,ChIJVVFXN-lgzDERmh4-D0nWLps,Pasaraya Seng Siang,Batang Berjuntai,Unclear,Super - Other / unclear,coords≤50m,23.4
+CHC300S_150,SIANG ANN SUPERMARKET,SELANGOR DARUL EHSAN.,ChIJp_AA_kOrzTERl_kFsr54bxI,Siang Ann Supermarket,Pelabuhan Klang,Tier 1,Super - Independent local,place_id,5.6
+CHC300S_210,SIN BAN ANN,,ChIJ89JuSZPzzDERzqoqhyOQeIk,Rahmaniyah minimarket,Kuala Selangor,Tier 1,Super - Independent local,coords≤50m,18.0
+CHC300S_216,PASAR MINI SRI EHSAN,,ChIJ6d2ZrNmyzTERhbYgGuJ6Re8,Pasar Mini Sri Ehsan,Shah Alam,Tier 1,Super - Independent local,place_id,7.0
+CHC300S_261,PASAR MINI H.K.S,,ChIJZamzn7dVzDERE40Rjn79I6I,99 Speedmart 1228 Taman Sementa Utama,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,42.9
+CHC300S_265,S.N.S.ALI DAN ANAK-ANAK (SEK20 SHAH ALAM),,ChIJuzAZDUNNzDERFXGmtpSH3gs,Pasaraya Borong SNS Ali,Shah Alam,Unclear,Super - Other / unclear,coords≤50m,6.9
+CHC300S_279,PASAR RAYA SENG SIANG,SELANGOR DARUL EHSAN.,ChIJVVFXN-lgzDERmh4-D0nWLps,Pasaraya Seng Siang,Batang Berjuntai,Unclear,Super - Other / unclear,coords≤50m,23.4
+CHC300S_302,SOLEH MINI MART,"PUCHONG,",ChIJ1QmZ6LO2zTERS06xiJi8NAs,SOLEH MINI MART,Puchong,Tier 1,Super - Indie retail,place_id,3.4
+CHC300S_450C,SETIA PRICE (M) SDN. BHD.(RAJA NONG),"41200 KLANG, ",ChIJtV8K_eSszTERaorY-xKrIvM,Pel Enterprise,Klang,Tier 2,Conv - Indie retail,coords≤50m,46.6
+CHC300S_522,STAR GROCER SDN. BHD.,CYBERJAYA SELANGOR.,ChIJCa1aCmC3zTER75a_2pejsTE,Star Grocer Cybersquare - Cyberjaya,Cyberjaya,Tier 1,Super - Sundry/grocer,coords≤50m,3.4
+CHC300S_546,PUSAT BORONG MATAHARI (KTP) SDN. BHD.,,ChIJfREkRUZVzDER_assS71Bs7A,QCP GROCER (KLANG) SDN. BHD. (TELUK PULAI),Klang,Tier 1,Super - Sundry/grocer,coords≤50m,45.6
+CHC300S_615,KEDAI UBAT SINLUEN FAT,,ChIJX7hNU4pRzDERzpiu3BGAEVI,99 Speedmart 1007 Pekan Meru 1,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,23.4
+CHC300S_643,PASAR MINI SUBAHAN,,ChIJl3suB0IHzTERHoAFm7yN_zk,Kedai Runcit Subahan,Pulau Indah,Tier 1,Conv - Kedai runcit,coords≤50m,27.5
+CHC300S_648,SENG MINI MARKET PLT,45600 BATANG BERJUNTAI,ChIJbbBPyulgzDERBOPmTP0F9qQ,Seng Mini Market PLT,Bestari Jaya,Tier 1,Conv - Mini-mart,coords≤50m,20.4
+CHC300S_816,SUPER SEVEN TRADE CENTER (PUCHONG) SND. BHD.,"47130 PUCHONG,",ChIJwez8LACzzTERPB3T2hUU87g,SUPER SEVEN PUCHONG,Puchong,Unclear,Super - Other / unclear,coords≤50m,17.1
+CHC300S_891,PASARAYA BORONG SUPER 7 - PUNCAK ALAM,"BANDAR HILLPARK, PUNCAK ALAM,",ChIJjZGcIW9bzDERsUVnwocnR3I,Super Seven Puncak Alam,Puncak Alam,Unclear,Super - Other / unclear,coords≤50m,6.3
+CHC300S_931,ST ROSYAM MART SDN. BHD.,"43500 SEMENYIH,",ChIJ6TeRawDPzTERW1w686lWxAo,ST Rosyam Mart (Semenyih),Semenyih,Tier 1,Super - Indie retail,place_id,133.0
+CHC300T_091,TH SUPER MART (2),63000 CYBERJAYA,ChIJOcllrgK3zTER8xeXriRQZ_8,7 Eleven,Dengkil,Tier 1,Hyper - Other regional chain,coords≤50m,35.1
+CHC300T_103B,TF VALUE-MART (USJ 19),SUBANG JAYA,ChIJTR_b6pSzzTERiRWakXjiQnU,TF Value-Mart Subang USJ,Subang Jaya,Tier 1,Super - TF Value,coords≤50m,49.1
+CHC300T_120,TWO U CONVENIENCE SHOP,"TAMAN DESA PALMA,",ChIJnaLOxBTHzTERscQX7z1jP5g,MF Hussain Mart,Nilai,Tier 1,Conv - Indie mart,coords≤50m,13.5
+CHC300T_129,PASARAYA HAMMAD,,ChIJl8G7xim3zTERav5mW3M_UFk,Pasaraya Hammad,Putrajaya,Unclear,Super - Other / unclear,place_id,22.0
+CHC300T_274,TH SUPER MART,SELANGOR DARUL EHSAN.,ChIJj-eNZ-e2zTERqvvmc6yNZmk,NZ Mart,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Tier 1,Conv - Indie mart,coords≤50m,21.5
+CHC300T_308,TANISHA ENTERPRISE,"47100 PUCHONG,",ChIJuRoUKwCzzTERPRCENugw6qg,Kedai Runcit Hani Madu,Puchong,Tier 1,Conv - Kedai runcit,coords≤50m,34.0
+CHC300T_359,KEDAI RUNCIT TIGA SERANGKAI,"42000 PELABUHAN KLANG,",ChIJvVRm6furzTERwJhUW18jgpQ,Faruddin maju enterprise,Pelabuhan Klang,Tier 2,Conv - Indie retail,coords≤50m,32.0
+CHC300U_023,UR JOY MART MINIMARKET,,ChIJJZbnMvKtzTERAQvHW29MNJM,"KK Super Mart Klang, Taman Raja Nong ( KRN )",Klang,Tier 1,Conv - KK Mart,coords≤50m,24.4
+CHC300V_028,VIOMAX SDN. BHD.,KLANG,ChIJeVjN41ytzTERTAshKsFVidc,ECONSAVE Mart Taman Seri Indah,Klang,Tier 1,Conv - Indie mart,coords≤50m,25.2
+CHC300W_002,KEDAI UBAT & P/M WENG HONG ONN SDN.BHD,40400 SHAH ALAM,ChIJZ8S3AKyyzTERzXiLAOq5D6w,Pasar Mini Lakshmi,Shah Alam,Tier 1,Super - Independent local,coords≤50m,15.1
+CHC300W_008,PASARAYA WAH FONG SDN.BHD.,JALAN PUCHONG PUCHONG,ChIJi19aZg9LzDERnBAzIiPMP1A,Pasar Raya Wah Fong,Puchong,Unclear,Super - Other / unclear,coords≤50m,7.5
+CHC300W_148,PASARAYA WAI HONG SDN. BHD.,"43300 SERI KEMBANGAN,",ChIJiVnC40a1zTER2SsotVxKli4,Daily Fresh Food Market 日日来新鲜肉类食品,Seri Kembangan,Unclear,Super - Other / unclear,coords≤50m,23.1
+CHC300X_003,ST NOOI TRADING,,ChIJf4N6C_GtzTERp7Zx0Wg9Xts,PVR mini market,Klang,Tier 1,Conv - Mini-mart,coords≤50m,2.2
+CHC300Y_015,YIN ONN TON,SELANGOR DARUL EHSAN.,ChIJpbvtefUBzTERkI82QZugEZI,Kim Chin Guan Enterprise,Pulau Ketam,Tier 2,Conv - Indie retail,coords≤50m,27.3
+CHC300Y_024,KEDAI UBAT YUN ONN,,ChIJEz3pK6xTzDERzmNtUyrDH1A,"Farmers Green House, Taman Eng Ann",Klang,Unclear,Super - Other / unclear,coords≤50m,32.1
+CHC300Y_147,YK SEMENTA TRADING,"KLANG,",ChIJF8hvG4JVzDER6pYy6Yf_irc,PASAR MINI HIJAU DUA JAYA,Klang,Tier 1,Super - Independent local,coords≤50m,10.4
+CHC300Y_152,YAOYA GROCER SDN. BHD.,"PUCHONG,",ChIJR_lN77u1zTERnAQkMe0mnyE,MALMART SAUJANA PUCHONG,Puchong,Tier 1,Super - Indie retail,coords≤50m,12.8
+CHC300Z_004,KEDAI RUNCIT ZURINAH (MERU),,ChIJFRlCiFlRzDERTFx30MQyV5I,Kedai Runcit Zurinah,Klang,Tier 1,Super - Sundry/grocer,place_id,931.4
+CHC300Z_005,KEDAI RUNCIT ZURINAH (3),40170 SHAH ALAM,ChIJjwD-RsFTzDERuiWSS-ZYBps,99 Speedmart 1413 Setia Alam 2,Shah Alam,Tier 1,Conv - 99 Speedmart,coords≤50m,26.1
+CHC300Z_009,PASARAYA ZAHIR,45000 KUALA SELANGOR,ChIJBTcJfgD1zDERZOkbGZjFG_U,DSS ACE ENTERPRISE,Kuala Selangor,Tier 2,Conv - Indie retail,coords≤50m,27.1
+CHCCT3211005912,CHOP HOE GUAN,43100 KAJANG SELANGOR,ChIJqSD2uF4wzDERXOeumb7Tpfg,syarikat perniagaan soon huat（Kedai Runcit Panjang）,Pekan Batu 18,Tier 1,Conv - Kedai runcit,coords≤50m,5.6
+CHCCT3211005913,SYKT PERNIAGAAN SOON HUAT,43100 KAJANG  SELANGOR,ChIJqSD2uF4wzDERXOeumb7Tpfg,syarikat perniagaan soon huat（Kedai Runcit Panjang）,Pekan Batu 18,Tier 1,Conv - Kedai runcit,coords≤50m,33.1
+CHCCT3211005979,ZAI ENTERPRISE,SELANGOR DARUL EHSAN,ChIJFx9OCwAxzDERPDrZWLbHS0Y,Kedai runcit97,Hulu Langat,Tier 1,Super - Sundry/grocer,coords≤50m,9.6
+CHCCT3211006064,JUMMA MINI MART,43200 CHERAS  SELANGOR,ChIJR5tBO1o0zDER50Y4XrNSQWg,E One Mart,Cheras,Tier 1,Super - Indie retail,coords≤50m,49.4
+CHCCT3211006110,PASARAYA CHOP LEE KWAN (DP) SDN. BHD.,56000 CHERAS  KUALA LUMPUR,ChIJb8CFTDs1zDERjzf6OuDr2zQ,Pasar Mini Rezeki,Kuala Lumpur,Tier 1,Super - Independent local,coords≤50m,11.0
+CHCCT3211006258,MAHA MINI MARKET,53300 KUALA LUMPUR,ChIJLdK3zhI3zDERKQOX2CmeQ1M,99 Speedmart 1673 Pandan Perdana 3,Kuala Lumpur,Tier 1,Conv - 99 Speedmart,coords≤50m,23.2
+CHCCT3211006297,WENG SOON MINI MART,56100 KUALA LUMPUR,ChIJRSCwc4M2zDER-nl8yWe_jbY,Weng Soon Mini Market,Ampang,Tier 1,Conv - Mini-mart,coords≤50m,2.7
+CHCLN11,GEDUNG PEMBORONG - S7(CJ),"43200 CHERAS,",ChIJx-5NDzDLzTERytAi0dBWPh8,NSK Trade City Kajang,Kajang,Tier 2,Super - NSK,coords≤50m,21.6
+CHCLT10,PASARAYA BORONG NSK,"SHAH ALAM,",ChIJq18TOLeyzTERd5sOx-0-0nE,"NSK Supermarket Taman Sri Muda,Shah Alam",Shah Alam,Tier 2,Super - NSK,coords≤50m,46.8
+CHCMN52,NSK TRADING SDN BHD - KLANG,"KLANG, BANDAR DIRAJA,",ChIJU-yFvuKszTERej02ypQGenU,NSK - Jalan Sungai Jati,Klang,Tier 2,Super - NSK,coords≤50m,45.2
+CHCTSTA56032,PASARAYA AJ DAMAI,CHERAS KUALA LUMPUR,ChIJLTw4rK01zDERYhpZd-E_Tnk,"KK Super Mart Cheras, Bandar Damai Cheras ( CDC )",Cheras,Tier 1,Conv - KK Mart,coords≤50m,10.3
+CHCTSTB56004,KEDAI BAN CHEONG *,KUALA LUMPUR,ChIJa0gU8881zDERru83Y17zLjg,KK SUPER MART Yulek (YLK),Kuala Lumpur,Tier 1,Conv - KK Mart,coords≤50m,43.2
+CHCTSTF56008,KEDAI UBAT&RUNCIT FOOK SENG ENTERPRISE,KUALA LUMPUR,ChIJL1xXKgA3zDERZ9A1SjVTv1I,Kedai Ubat & Runcit Young Sheng Sdn Bhd,Ampang Jaya,Tier 2,Conv - Indie retail,coords≤50m,22.4
+CHCTSTS56018,PASAR RAYA SONG FOOK SDN BHD,KUALA LUMPUR,ChIJBUwgyIU2zDERkAmdQV97y0I,Pasar Raya Song Fook,Cheras,Unclear,Super - Other / unclear,coords≤50m,18.2
+CHCTSTV59002,TFP RETAIL SDN. BHD.,KLANG,ChIJ1fxRut9OzDEROA6iJj37zF8,TFP Retail Sdn. Bhd.,Petaling Jaya,Unclear,Super - Other / unclear,place_id,36.4
+CHCW042,WAN LEE HENG CASH & CARRY SDN. BHD.,KUALA LUMPUR.,ChIJyaiWQyNIzDERZpkMjEMoxH0,Wan Lee Heng Cash & Carry Sdn Bhd,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,20.3
+CT0000001218,JAZCO SPEEDMART (KANCHONG DARAT),BANTING,ChIJ8T4SQ3qjzTERN_tOZafrbHY,Jazco Supermarket Kanchong Darat,Banting,Tier 1,Super - Independent local,coords≤50m,19.2
+CT0000001287,KEDAI RUNCIT ZURINAH,,ChIJjefhc2VRzDER9_d0gWx_7bg,Eco-Shop Setia Taipan,Shah Alam,Unclear,Super - Other / unclear,coords≤50m,16.7
+CT3211004891,PULAU KETAM MINI MARKET,,ChIJpbvtefUBzTERkI82QZugEZI,Kim Chin Guan Enterprise,Pulau Ketam,Tier 2,Conv - Indie retail,coords≤50m,1.7
+CT3211004974,PASAR MINI NAINA MOHAMED,"KLANG,",ChIJfb8T66VUzDERHc4thc_K1Jw,Badurun Traders,Klang,Unclear,Super - Other / unclear,coords≤50m,5.8
+CT3211004977,HUMAINI MAJU SDN. BHD.,,ChIJFbUM6_62zTERnxD_8a_Na6Y,Good Day,"Kuala Lumpur, Petaling Jaya, Shah Alam, Klang, Subang Jaya, Cheras, Ampang, Cyberjaya, Putrajaya, Kajang, 68100 Selayang, Damansara",Unclear,Super - Other / unclear,coords≤50m,20.8
+CT3211005256,NZ GROCER SDN. BHD.,PERSIARAN HARMONI  CYBER 3  CYBERJAYA,ChIJ8cuJohu3zTER3TR9krreLDw,"KK Super Mart Cyberjaya, Cambridge Tower ( CCT )",Cyberjaya,Tier 1,Conv - KK Mart,coords≤50m,21.3
+CT3211005357,R RAHMAN TRADING SDN. BHD.,,ChIJBdOFF3RLzDER7e6UJzeFrds,KK Super Mart Taman Kinrara (3) (KRR3),Puchong,Tier 1,Conv - KK Mart,coords≤50m,45.1
+CT3211005362,PASAR MINI NANA,,ChIJBdOFF3RLzDER7e6UJzeFrds,KK Super Mart Taman Kinrara (3) (KRR3),Puchong,Tier 1,Conv - KK Mart,coords≤50m,45.0
+CT3211005382,LSF TRADING SDN. BHD.,,ChIJSVFEyXw1zDERQEnbsWu0_m0,Checken Meat Shop,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,37.0
+CT3211005390,ALIDA ENTERPRISE,,ChIJTbd2VEhLzDERbaUi8Go_Q-8,Muskaan Sabah Enterprise,Puchong,Tier 1,Super - Indie retail,coords≤50m,13.1
+CT3211005453,PASAR MINI NEESA,47000 PUCHONG,ChIJAfVxes-3zTER6JLcp6anc1k,KIB mart,Puchong,Tier 1,Super - Indie retail,coords≤50m,11.4
+CT3211005489,V.S.VARUSAI IBRAHIM & CO.,,ChIJgwPW0H3OzTER4_K0w_do3_s,Pasar Mini Sri Rama,Semenyih,Tier 1,Super - Independent local,coords≤50m,19.8
+CT3211005550,CHEN FENG MEDICINE ENTERPRISE,43200 CHERAS,ChIJl1b3Lf80zDERTl1_QuqIkRs,99 Speedmart 1674 Taman Cheras Mas,Cheras,Tier 1,Conv - 99 Speedmart,coords≤50m,48.1
+CT3211005553,RDM JAYA ENTERPRISE,PUCHONG,ChIJKQC2f2qzzTERHw5v64cUf6M,Kk supermart g superstore (PCP),Puchong,Tier 1,Conv - KK Mart,coords≤50m,25.1
+CT3211005599,KEDAI UBAT & PASAR MINI FU XIANG,CHERAS,ChIJXSOkLyE1zDERWDK8W-qvrw8,TRD STORE 添润多超市,编码:,Unclear,Super - Other / unclear,coords≤50m,34.3
+CT3211005634,KEDAI RUNCIT AKAS,58000 KUALA LUMPUR.,ChIJW7zU--5LzDERim1j2MD6eYI,SP MINI MART,Kuala Lumpur,Tier 1,Super - Indie retail,coords≤50m,20.6
+CT3211005642,PASAR RAYA YOU YI SDN. BHD.,47600 SUBANG JAYA,ChIJsWk-GbpNzDER49rlt-WwDd4,Pasar Mini Brothers Mart,Petaling Jaya,Tier 1,Super - Independent local,coords≤50m,21.5
+CT3211005665,PASAR SEGAR MUBARAK,43300 SERI KEMBANGAN  SELANGOR D. E.,ChIJ25KkZqhKzDER3y2gmtpFB08,Pasaraya Shop-in,Seri Kembangan,Unclear,Super - Other / unclear,coords≤50m,19.0
+CT3211005688,PASAR RAYA C T MART SDN BHD,JALAN PUCHONG,ChIJ5QyN05C1zTERoWCiUEbyEcI,99 Speedmart 1157 Bandar Puchong Utama 1,Puchong,Tier 1,Conv - 99 Speedmart,coords≤50m,47.0
+CT3211005697,G.U.S. (M) SDN. BHD.,,ChIJOy0GBF-1zTER-aMWx5TLhOU,Grand Union Supermarket Seri Kembangan,Seri Kembangan,Tier 1,Super - Independent local,coords≤50m,0.5
+CT3211005698,KEDAI UBAT & RUNCIT JIN CHEONG,43300 SERDANG,ChIJfyzHu1q1zTEROICgRqVZa9U,99 Speedmart 1281 Taman Bukit Serdang 1,Seri Kembangan,Tier 1,Conv - 99 Speedmart,coords≤50m,46.7
+CT3211005699,KEDAI UBAT DAN RUNCIT KAR HUAT,43300 SERI KEMBANGAN,ChIJaykZz1u1zTERSwIoUrChXR4,Kedai Ubat Weng Soon Hong,Seri Kembangan,Tier 1,Conv - Generic kedai,coords≤50m,13.1
+CT3211005701,KEDAI UBAT & RUNCIT WENG SOON HONG S/B,43300 SERI KEMBANGAN,ChIJaykZz1u1zTERSwIoUrChXR4,Kedai Ubat Weng Soon Hong,Seri Kembangan,Tier 1,Conv - Generic kedai,coords≤50m,5.0
+CT3211005723,SUPER EIGHT MINI MARKET,43300 SERI KEMBANGAN,ChIJxYgIih_LzTERLfe70AFC8r4,Super 8 Mini Market,Seri Kembangan,Tier 1,Super - Independent local,coords≤50m,33.1
+CT3211005727,PASAR MINI ANGKASA JAYA,,ChIJDRWJ9NlMzDERG6IU3mCYMoo,Pasar Mini Angkasa Jaya,Subang Jaya,Tier 1,Super - Independent local,place_id,0.2
+CT3211005731,PASAR MINI AMAN MAJU,58200 KUALA LUMPUR.,ChIJ-ycihIVLzDERdWmzf2vxMlM,Tuulyn Market - Parklane OUG (Old Klang Road),Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,43.6
+CT3211005735,PASARAYA & KEDAI UBAT BAN ON TONG S/B,BATU 7 1/2  JALAN PUCHONG,ChIJLYcn7A5LzDERWqjUfcCknZk,Pasaraya & Kedai Ubat Ban On Tong Sdn Bhd,Puchong,Tier 1,Super - Indie retail,place_id,12.9
+CT3211005769,R & B SUPERMART,,ChIJs29-MXVNzDEReBy4TEhgqc0,RR Basket subang jaya,Subang Jaya,Unclear,Super - Other / unclear,coords≤50m,19.0
+CT3211005772,PASAR MINI LEIN FONG,47100 PUCHONG,ChIJYQG67F1LzDER2UBMyq_iGIo,Pasar Mini Lein Fong,Puchong,Tier 1,Super - Independent local,place_id,12.5
+CT3211005818,PASAR MINI MURNI JAYA,43000 KAJANG,ChIJob6ZiT3NzTERFa6w25kDmic,"Econsave Taman Indah, Sungai Jelok - Pasar Ekonomi Mart",Kajang,Tier 1,Conv - Indie mart,coords≤50m,18.2
+CT3211005832,NEWJAYA SUPERMARKET SDN. BHD.,BALAKONG,ChIJtQPw1tDLzTEROV_0CuL-23Q,99 Speedmart 1183 Taman Taming Jaya,Balakong,Tier 1,Conv - 99 Speedmart,coords≤50m,47.1
+CT3211005840,PASAR MINI SGF,56000 CHERAS,ChIJjS-4gqU1zDER2JsdGFzDIqo,KK Super Mart Taman Bukit Angsana (TBA2),Cheras,Tier 1,Conv - KK Mart,coords≤50m,26.8
+CT3211005862,BHAS ENTERPRISE,SUBANG JAYA,ChIJG99wQ9BNzDERJ5YMlFvmxM4,Selangor Open,Subang Jaya,Unclear,Super - Other / unclear,coords≤50m,3.4
+CT3211005867,CS BROTHERS SDN. BHD. TUN PERAK,,ChIJezJH8Pw0zDERxO9RA14H3WU,Pasaraya CS Cheras (Tun Perak),Cheras,Unclear,Super - Other / unclear,coords≤50m,9.2
+CT3211005905,PASARAYA PUCHONG HERBS & FOOD SDN. BHD.,47100 PUCHONG,ChIJg25temCzzTERAVyTBC2xeHg,Pasaraya Puchong Herbs & Food Supermarket,Puchong,Tier 1,Super - Independent local,place_id,27.2
+CT3211005947,PASAR MINI DAN UBAT BAO JIAN SL,JALAN CHERAS,ChIJ58stw6g0zDER3bUiYhNhcro,99 Speedmart 1079 Sungai Long 1,Kajang,Tier 1,Conv - 99 Speedmart,coords≤50m,4.9
+CT3211005949,PASARAYA CH (SG. LONG ) SDN. BHD.,KAJANG,ChIJt0Wmtag0zDEReJKI1QpYnGI,Pasaraya Ch (Sg Long) Herbs Grocer Wine Liquor,Kajang,Tier 1,Super - Sundry/grocer,coords≤50m,31.2
+CT3211005950,CHUAN HENG TRADING COMPANY,,ChIJg4igjoHLzTERgoTXpZ_7iDE,Chuan Heng Trading Co.,Kajang,Tier 1,Super - Indie retail,place_id,49.0
+CT3211005964,KEDAI UBAT DAN PASARMINI HING ONN SDN. BHD.,JALAN CHERAS,ChIJ58stw6g0zDER3bUiYhNhcro,99 Speedmart 1079 Sungai Long 1,Kajang,Tier 1,Conv - 99 Speedmart,coords≤50m,43.4
+CT3211005966,PASARAYA SERI BANGI,SELANGOR DARUL EHSAN.,ChIJx8anOCzLzTERjLjU_n-vdaA,AEON MaxValu Prime Evo Bangi,Bandar Baru Bangi,Drop (direct-served),Super - National chain,coords≤50m,21.6
+CT3211005995,CHECKERS HYPERMARKET SDN. BHD.(SERI SENTOSA),OFF JALAN KLANG LAMA,ChIJ-bAVDwdLzDERNkPOMQahN7g,Checkers Sri Sentosa,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,38.8
+CT3211006004,PASARAYA AKAU SDN BHD,PUCHONG BATU 14  MAJU JAYA,ChIJmRLCN3mzzTERNUzUYx1RVs8,Pasaraya Akau Sdn. Bhd.,Puchong,Unclear,Super - Other / unclear,coords≤50m,25.1
+CT3211006041,HOCK MEI TRADING SDN. BHD.,,ChIJm9hWIADJzTERS_6ZHfncmwc,HOCK MEI TRADING SDN.BHD (BANGI),Bandar Baru Bangi,Tier 1,Super - Indie retail,coords≤50m,33.6
+CT3211006042,PASARAYA YAN SENG SDN. BHD.,CHERAS,ChIJZW40jaI0zDERlC-whGazRPw,Yan Seng Supermarket,Cheras,Tier 1,Super - Independent local,coords≤50m,29.4
+CT3211006053,CS BROTHERS SDN. BHD. KAJANG,TMAN SAUJANA PERMAI,ChIJm8oTWL3MzTERSp4-M5ZDjdM,Pasaraya CS Kajang (Saujana Permai),Kajang,Unclear,Super - Other / unclear,coords≤50m,45.9
+CT3211006076,PASARAYA BAN SOON SDN. BHD.,"BANDAR SERI PUTRA KAJANG,",ChIJ11Ek37HIzTERtfeVOqaWbpg,Pasaraya Ban Soon Sdn. Bhd.,Kajang,Unclear,Super - Other / unclear,place_id,16.2
+CT3211006077,PASARAYA BORONG PINTAR SDN. BHD.,,ChIJmblz3WI1zDER7RLuvL4hIJE,Saaka Nilai Sg Besi (SNSB),Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,4.3
+CT3211006106,PASAR RAYA FM,,ChIJHwNc91ZTzDERzRIDXDoc3MU,99 Speedmart 1740 Taman Melawis,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,45.7
+CT3211006125,VISPPER SDN. BHD.,PUCHONG,ChIJtX5nt36zzTERPFAMzjSQNYg,Huat Soon Fresh Mart,Puchong,Tier 1,Super - Indie retail,coords≤50m,36.4
+CT3211006129,JAMIL BIN ABDULLAH,KUALA LUMPUR.,ChIJSVFEyXw1zDERQEnbsWu0_m0,Checken Meat Shop,Kuala Lumpur,Unclear,Super - Other / unclear,coords≤50m,39.7
+CT3211006168,XIN HWA GIAP CASH & CARRY,KAJANG,ChIJ3axe9YbMzTERjETisKUzvSA,Hwa Giap Cash and Carry,Kajang,Unclear,Super - Other / unclear,place_id,24.9
+CT3211006178,G MART ONE SDN. BHD.,BANDAR BARU BANGI,ChIJBRWW6G_JzTERiMy3DuQJzPU,Gmart,Bandar Baru Bangi,Tier 1,Conv - Indie mart,coords≤50m,13.1
+CT3211006221,TH RETAIL ENTERPRISE,PUCHONG,ChIJQX_vTQCzzTERw4H1mW12ibc,Pasar Segar PP MAJU JAYA,Puchong,Unclear,Super - Other / unclear,coords≤50m,24.7
+CT3211006268,SS BEST MART,TAMAN BUKIT MEWAH,ChIJofW4BW7NzTER8QJQ4ABUSsc,99 Speedmart 3031 Taman Bukit Mewah 3,Semenyih,Tier 1,Conv - 99 Speedmart,coords≤50m,27.9
+CT3211006422,PASARAYA SARA JAYA SDN. BHD.,CYBERJAYA,ChIJe3GvVf22zTERXvk8AcLFtN8,Roswel Mart Neo Cyber SepangCyberjayaSelangor Negeri SembilanGrocery/Vegetable/Mineral water,Cyberjaya,Tier 1,Super - Sundry/grocer,coords≤50m,33.5
+CT3211006478,MAHAJEYAZ ENTERPRISE,PUCHONG,ChIJYQG67F1LzDER2UBMyq_iGIo,Pasar Mini Lein Fong,Puchong,Tier 1,Super - Independent local,coords≤50m,24.8
+CT3211006479,PASARAYA RS BESTARI,SHAH ALAM,ChIJneuOjbdPzDER5bdyoUYVfXg,KK Super Mart,Shah Alam,Tier 1,Conv - KK Mart,coords≤50m,37.5
+CT3211006499,SM SPEED MART,SEMENYIH  SELANG,ChIJ_RV8GwDPzTERX1FSBTjBzi8,KAB THIVYA ENTERPRISE,Semenyih,Tier 1,Super - Indie retail,coords≤50m,26.6
+CT3211006507,E KA MINI MARKET,SELANGOR DARUL EHSAN.,ChIJW2mdF1i1zTERRy9OXGvXdYw,Eka Mini Market,Seri Kembangan,Tier 1,Super - Independent local,coords≤50m,6.0
+CT3211006512,CS GROCER SDN. BHD.,,ChIJf_0NZEyxzTERQw8tylFyoOc,Pasaraya CS Grocer Taman Putra Perdana,Puchong,Tier 1,Super - Sundry/grocer,coords≤50m,27.5
+CT3211006648,KANG KHOW IMPORT & EXPORT SDN. BHD.,,ChIJOTDTSwarzTERTP-Qf3hGXgU,Syarikat Kang Khow Sdn. Bhd.,Pelabuhan Klang,Unclear,Super - Other / unclear,coords≤50m,7.4
+CT3211006668,DC UNIT TRADING,TELOK PANGLIMA GARANG,ChIJRcQ751WvzTERM9u2LNtmf-I,Shaddin Enterprise,Selangor,Tier 1,Super - Indie retail,coords≤50m,30.2
+CT3211006711,OK HEALTH GROUP (MALAYSIA) SDN. BHD.,PUCHONG,ChIJuQ6yjwVLzDERP5l79I4u9r0,NTT Mini Market,Puchong,Tier 1,Super - Independent local,coords≤50m,49.0
+CT3211006717,PASAR SEGAR TELOK AIYAPPAN RENAS,TELOK PANGLIMA GARANG,ChIJc9MzQCWvzTERGQ0w4b6rlVc,KK Super Mart Telok Panglima Garang (TPG),Telok Panglima Garang,Tier 1,Conv - KK Mart,coords≤50m,46.3
+CT3211006814,MANJAKU RETAIL SDN. BHD.,,ChIJ1b92W4LLzTERl3kGjLOu0Rg,99 Speedmart 1966 Bandar Kajang 2,Kajang,Tier 1,Conv - 99 Speedmart,coords≤50m,49.8
+CT3211006968,PASARAYA WAH FONG THK SDN. BHD.,,ChIJweopi6I0zDER6y4CEVY0yf4,PASAR MINI AL AJAAS,Kajang,Tier 1,Conv - Mini-mart,coords≤50m,18.4
+CT3211007021,OLD HOMEMART SDN. BHD. (TMN JAYA UTAMA),,ChIJk591MgGvzTERdG2-UQc8Ntc,99 Speedmart 1742 Taman Jaya Utama,Telok Panglima Garang,Tier 1,Conv - 99 Speedmart,coords≤50m,30.1
+CT3211007022,OLD HOMEMART SDN. BHD. (BDR SAUJANA PUTRA),,ChIJK-TUtHaxzTERnWa5exG3t10,HOMEMART MINI MARKET,Jenjarom,Tier 1,Super - Independent local,coords≤50m,9.3
+CT3211007213,DOUBLE FOUR CONVENIENCE SHOP SDN. BHD.,,ChIJDYFjomrLzTERc6yYQS8TJNM,99 Speedmart 2987 Taman Sri Serdang,Seri Kembangan,Tier 1,Conv - 99 Speedmart,coords≤50m,47.5
+CT3211007254,ALKAISER TRADING SDN. BHD.,CYBERJAYA,ChIJTV5l2eS3zTERWUOpSv02igs,Khair Zaman Grocery kenwingston (بقاله عربيه ) arabic grocery,Cyberjaya,Tier 1,Super - Sundry/grocer,coords≤50m,32.8
+CT3211007257,ZAMZAMI MINI MARKET,TAMAN KINRARA SEKSYEN 3,ChIJBdOFF3RLzDER7e6UJzeFrds,KK Super Mart Taman Kinrara (3) (KRR3),Puchong,Tier 1,Conv - KK Mart,coords≤50m,44.4
+CT3211007258,KEDAI RUNCIT ABOYA,PUSAT PERNIAGAAN KINRARA 3,ChIJBdOFF3RLzDER7e6UJzeFrds,KK Super Mart Taman Kinrara (3) (KRR3),Puchong,Tier 1,Conv - KK Mart,coords≤50m,22.1
+CT3211008390,MH WORLD,,ChIJ0cc9vv9LzDERpcmuq2rQ2SE,TMG Mart Razak City KL,Sungai Besi,Tier 1,Super - Tunas Manja,coords≤50m,22.3
+CT3211008391,KAB THIVYA ENTERPRISE,"SEMENYIH,",ChIJ_RV8GwDPzTERX1FSBTjBzi8,KAB THIVYA ENTERPRISE,Semenyih,Tier 1,Super - Indie retail,place_id,15.9
+CT3211008395,LZ TRADING ENTERPRISE,"42000 PELABUHAN KLANG,",ChIJ_xV1XsWqzTERD3T_YHvPuQ4,99 Speedmart 1139 Sultan Suleiman 2,Bandar Sultan Suleiman 42200 Pelabuhan Klang Serlangor,Tier 1,Hyper - Other regional chain,coords≤50m,35.2
+CT3211008477,KEDAI UBAT DAN RUNCIT WAN FOH,KLANG,ChIJHwNc91ZTzDERzRIDXDoc3MU,99 Speedmart 1740 Taman Melawis,Klang,Tier 1,Conv - 99 Speedmart,coords≤50m,5.6
+CT3211008543,KEDAI RUNCTI NUFAZ,"45000 KUALA SELANGOR,",ChIJBTcJfgD1zDERZOkbGZjFG_U,DSS ACE ENTERPRISE,Kuala Selangor,Tier 2,Conv - Indie retail,coords≤50m,20.4
+CT3211008545,TS FUTURE ENTERPRISE,"42000 PELABUHAN KLANG,",ChIJvVRm6furzTERwJhUW18jgpQ,Faruddin maju enterprise,Pelabuhan Klang,Tier 2,Conv - Indie retail,coords≤50m,23.7
