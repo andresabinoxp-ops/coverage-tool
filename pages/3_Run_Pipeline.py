@@ -4127,14 +4127,14 @@ st.session_state["enrich_all_portfolio"] = _enrich_all_chk
 # cap-200 path costs.
 _skip_enrich_default = bool(st.session_state.get("skip_portfolio_enrichment", False))
 _skip_enrich_chk = st.checkbox(
-    "Skip portfolio enrichment (geocode only — no rating/phone/place_id fetch)",
+    "Geocode-only mode (stop after Stage 1 — no scrape, no scoring, no routing)",
     value=_skip_enrich_default,
     help=(
-        "Bypasses Stage 4 entirely. Pipeline will still geocode rows that are "
-        "missing lat/lng (cheap: $0.005/row), but won't call Google's Text "
-        "Search to fetch rating/reviews/phone/place_id. Useful when you just "
-        "need coordinates populated. Overrides the Enrich-ALL checkbox if both "
-        "are ticked."
+        "Pure geocoding run: populates lat/lng for portfolio rows that need it "
+        "and stops. Skips the universe scrape, scoring, matching, rep planning, "
+        "everything. Total cost = $0.005 × rows missing coords. Output is a "
+        "downloadable CSV with your portfolio + lat/lng filled in. Use this "
+        "when you just want coordinates and nothing else."
     ),
 )
 st.session_state["skip_portfolio_enrichment"] = _skip_enrich_chk
@@ -4626,6 +4626,33 @@ if st.button("  Run Coverage Agent", type="primary"):
                 st.session_state["_geocode_suspect_stores"].append(s)
 
         bar.progress(15)
+
+        # ── Geocode-only short-circuit ──────────────────────────────────────
+        # When the user ticked "Skip portfolio enrichment" they want a pure
+        # geocoding run — populate lat/lng for the portfolio and stop. No
+        # universe scrape, no scoring, no matching, no routing. Save the
+        # geocoded portfolio to session_state so the Results / Run page can
+        # offer it as a download.
+        if bool(st.session_state.get("skip_portfolio_enrichment", False)):
+            import pandas as _pd_geo
+            _geocoded_df = _pd_geo.DataFrame(portfolio)
+            st.session_state["geocoded_portfolio_df"] = _geocoded_df
+            _ok = sum(1 for s in portfolio if s.get("lat") and s.get("lng"))
+            _failed = sum(1 for s in portfolio if not (s.get("lat") and s.get("lng")))
+            status.success(
+                f"  Geocode-only run complete — {_ok:,} stores have coordinates, "
+                f"{_failed:,} could not be geocoded. Download below."
+            )
+            bar.progress(100)
+            _safe_name = (cfg.get("market_name","portfolio") or "portfolio").replace(" ","_").replace("/","_")
+            st.download_button(
+                "  Download geocoded portfolio CSV",
+                "﻿" + _geocoded_df.to_csv(index=False),
+                file_name=f"geocoded_portfolio_{_safe_name}.csv",
+                mime="text/csv",
+                key="dl_geocoded_only",
+            )
+            st.stop()  # exit the pipeline cleanly
 
         # Stage 2: Universe — use cache if available, scrape if not
         _run_cache_key  = _scrape_cache_key(cfg)
