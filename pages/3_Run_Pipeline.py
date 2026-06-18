@@ -5135,6 +5135,13 @@ if st.button("  Run Coverage Agent", type="primary"):
 
         # Fixed matching thresholds — size-aware, no user config needed
         NAME_SIM_THRESH = 0.75   # 75% bigram similarity required for fuzzy match
+        # Looser threshold for the chain-name-with-geocode-noise layer
+        # added below: when the names line up almost perfectly (≥0.85) we
+        # accept much larger geographic gaps because that pattern usually
+        # means the portfolio recorded the registration/office address
+        # while Google's pin sits on the storefront.
+        CHAIN_NAME_SIM_THRESH = 0.85
+        CHAIN_NAME_MAX_DIST   = 500   # metres for the chain-noise match
 
         # Size-aware radius — larger stores have bigger physical footprint
         # Large (hypermarket/supermarket): 200m base, 250m fuzzy
@@ -5148,9 +5155,23 @@ if st.button("  Run Coverage Agent", type="primary"):
         }
         DEFAULT_RADIUS = (50, 100)
 
-        # Large chain keywords — always use Large radius regardless of tier
-        LARGE_CHAINS = ["lulu","carrefour","hypermarket","hyper","mall","centre","center",
-                        "hypermart","spinneys","waitrose","union","giant","geant"]
+        # Large chain keywords — always use Large radius regardless of tier.
+        # Includes Western, Gulf, Brazilian, and Malaysian chains so the
+        # right radius gets applied no matter what market we're in.
+        LARGE_CHAINS = [
+            # Generic words that flag a hypermarket-format store
+            "hypermarket","hyper","hypermart","mall","centre","center",
+            # Western / Gulf chains
+            "lulu","carrefour","spinneys","waitrose","union","giant","geant",
+            "tesco","lotus","cold storage","village grocer","jaya grocer","mercato",
+            # Brazilian chains
+            "atacadao","assai","assaí","pao de acucar","pão de açúcar","extra",
+            "walmart","big","mercadinho","costco",
+            # Malaysian chains
+            "aeon","nsk","mydin","econsave","the store","kip mart","kipmart",
+            "tf value","tf-value","tf multi","kk mart","kk super","99 speedmart",
+            "billion","jaya superstore","sogo","emporium",
+        ]
 
         def name_similarity(a, b):
             """Bigram similarity between two store names after stripping noise words."""
@@ -5217,6 +5238,24 @@ if st.button("  Run Coverage Agent", type="primary"):
                         if sim >= NAME_SIM_THRESH:
                             matched = True
                             break
+
+            # Match 5: chain-name with geocode noise.
+            # Catches the case where a portfolio store has the registration
+            # / office address while Google's pin is on the storefront — the
+            # two records can be 200-500 m apart but the names are nearly
+            # identical (e.g. "NSK TRADE CITY (NS2) SDN BHD" ↔ "NSK Trade
+            # City Seremban 2"). Without this layer the pipeline silently
+            # double-counts the same chain branch as both a portfolio store
+            # and an opportunity.
+            if not matched:
+                for p in covered_p:
+                    dist = haversine_m(u["lat"],u["lng"],p["lat"],p["lng"])
+                    if dist > CHAIN_NAME_MAX_DIST:
+                        continue
+                    sim = name_similarity(u.get("store_name",""), p.get("store_name",""))
+                    if sim >= CHAIN_NAME_SIM_THRESH:
+                        matched = True
+                        break
 
 
 
