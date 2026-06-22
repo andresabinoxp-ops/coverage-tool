@@ -489,7 +489,21 @@ with tab_market:
     if uploaded:
         try:
             df = None
-            for _enc in ["utf-8","utf-8-sig","latin-1","cp1252","cp1256","iso-8859-1"]:
+            for _enc in [
+                "utf-8", "utf-8-sig",
+                # Asian encodings tried BEFORE Latin-1 because Latin-1 never
+                # raises an error (it accepts any byte) but returns mojibake
+                # for non-Latin scripts. Thai / Chinese / Japanese / Korean
+                # files need their proper encoding first.
+                "cp874", "tis-620",       # Thai
+                "gbk", "gb18030",         # Chinese Simplified
+                "big5",                   # Chinese Traditional
+                "cp932", "shift_jis",     # Japanese
+                "cp949", "euc-kr",        # Korean
+                # Arabic and Latin scripts last (these "succeed" on anything)
+                "cp1256",
+                "latin-1", "cp1252", "iso-8859-1",
+            ]:
                 try:
                     uploaded.seek(0)
                     df = pd.read_csv(uploaded, encoding=_enc)
