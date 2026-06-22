@@ -3076,7 +3076,15 @@ if portfolio_df is None:
         try:
             # Try multiple encodings — handles UTF-8, Latin-1, Arabic Windows, etc.
             df = None
-            for _enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252", "cp1256", "iso-8859-1"]:
+            for _enc in [
+                "utf-8", "utf-8-sig",
+                "cp874", "tis-620",
+                "gbk", "gb18030", "big5",
+                "cp932", "shift_jis",
+                "cp949", "euc-kr",
+                "cp1256",
+                "latin-1", "cp1252", "iso-8859-1",
+            ]:
                 try:
                     up.seek(0)
                     df = pd.read_csv(up, encoding=_enc)

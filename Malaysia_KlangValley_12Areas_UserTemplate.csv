@@ -1,0 +1,17 @@
+﻿Klang Valley area,Sub-areas included in this row,Total stores,Currently covered,Gap (opportunity),Routed by reps,Reps with at least 1 store here,Visits/month,Reps primarily based here,Coverage %
+1. Kuala Lumpur,"KL central, Kepong, Setapak, Wangsa Maju, Brickfields, KLCC, Bangsar, Sentul, Titiwangsa, Segambut (Cheras + Damansara extracted out as separate areas)",523,296,227,447,14,919.0,5,56.6
+2. Petaling Jaya,"PJ central, Kelana Jaya, Ara Damansara (Damansara extracted out as a separate area)",194,108,86,148,7,312.0,1,55.7
+3. Shah Alam,Shah Alam + Puncak Alam,334,150,184,261,9,532.0,2,44.9
+4. Klang,Klang + Kapar + Pulau Indah + Pulau Ketam + Pelabuhan Klang,398,250,148,345,11,621.0,3,62.8
+5. Subang Jaya,Subang Jaya + Puchong + Seri Kembangan + USJ + Bandar Sunway,328,171,157,205,7,492.0,2,52.1
+6. Ampang,Ampang + Pandan + Ulu Kelang + Ukay Perdana,96,69,27,88,4,150.0,1,71.9
+7. Cyberjaya,Cyberjaya only (originally part of Sepang district),42,26,16,33,1,52.0,1,61.9
+8. Putrajaya,Putrajaya only (Federal Territory),26,18,8,20,1,39.0,0,69.2
+9. Kajang,Kajang + Semenyih + Bangi + Beranang + Balakong + Hulu Langat (Cheras extracted out as a separate area),324,107,217,220,8,536.0,2,33.0
+10. Selayang,Selayang + Batu Caves + Gombak + Kuang + Sungai Tua,177,118,59,166,7,277.0,2,66.7
+11. Cheras,"All Cheras-named stores (this area straddles KL DBKL and Kajang MPKj officially, kept as one)",107,62,45,63,10,179.0,0,57.9
+12. Damansara,"All Damansara-named stores + Tropicana + Mont Kiara (straddles KL DBKL and PJ MBPJ officially, kept as one)",46,44,2,43,8,67.0,0,95.7
+13. Other Klang Valley,"Sepang (KLIA, Salak Tinggi, Dengkil, Sungai Pelek, Tanjong Sepat) + Kuala Langat (Banting, Jenjarom, Telok Panglima Garang, Jugra, Morib) + Kuala Selangor (Sungai Buloh, Sekinchan, Sungai Besar, Batang Berjuntai, Tanjong Karang, Sabak Bernam) + Hulu Selangor (Rawang, Serendah, Tanjong Malim, Kuala Kubu Baru, Batang Kali)",707,392,315,591,20,1125.0,9,55.4
+OUTSIDE Klang Valley,Seremban + Nilai (Negeri Sembilan state) + Bentong (Pahang state) + other neighbouring stores outside Klang Valley proper,292,30,262,220,9,517.0,2,10.3
+Other / unmapped,Portfolio rows with non-standard city values that didn't match a known area,341,278,63,301,29,493.0,0,81.5
+Unmapped,Rows with no city AND no coordinates — could not be placed on any map,78,78,0,52,11,119.0,0,100.0
