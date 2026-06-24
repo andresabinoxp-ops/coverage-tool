@@ -263,6 +263,32 @@ if w1_total==100 and w2_total==100:
             "affluence":w2_affluence,"poi":w2_poi}
         st.success("  Scoring weights saved for both groups.")
 
+# ── Data-aware scoring toggle (Option A) ──────────────────────────────────
+# When ticked, signals that are missing (rating == 0 OR review_count == 0)
+# have their weight redistributed across the signals that ARE present.
+# Avoids penalising portfolio stores that aren't on Google Maps. Default
+# OFF for backward compatibility — existing markets keep their behaviour
+# until the user explicitly turns this on.
+st.markdown("**Data-aware scoring (optional)**")
+_da_default = bool(st.session_state.get("admin_data_aware_scoring", False))
+_da_chk = st.checkbox(
+    "Use data-aware scoring",
+    value=_da_default,
+    help=(
+        "When ON, portfolio stores with missing Google data (rating == 0 or "
+        "no reviews) have those weights redistributed proportionally to the "
+        "signals they DO have (sales, lines, POI). Prevents top-selling "
+        "stores from getting low scores just because Google doesn't know "
+        "them. Recommended ON for markets with reliable annual_sales_usd."
+    ),
+    key="admin_data_aware_scoring_chk",
+)
+st.session_state["admin_data_aware_scoring"] = _da_chk
+st.caption(
+    "Default: OFF. Existing markets keep their behaviour. Status line on "
+    "Run Pipeline confirms when this fires."
+)
+
 # ── SECTION 3: STORE SIZE & VISIT BENCHMARKS ──────────────────────────────────
 st.markdown("---")
 sec("3","Store Size & Visit Benchmarks per Sub-channel",

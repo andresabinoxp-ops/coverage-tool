@@ -5111,24 +5111,56 @@ if st.button("  Run Coverage Agent", type="primary"):
                 poi_raw= _safe_num(s.get("poi_count",0))
                 poi_n  = math.log1p(poi_raw) / math.log1p(max_poi) if max_poi > 1 else 0.0
 
+                # Option A — data-aware scoring (Admin Settings toggle, default OFF)
+                # When ticked, signals that are missing (rating == 0 OR
+                # review_count == 0) have their weight redistributed across
+                # the signals that ARE present. Avoids penalising portfolio
+                # stores that aren't on Google Maps.
+                _data_aware = bool(st.session_state.get("admin_data_aware_scoring", False))
+
                 if s.get("source") == "portfolio":
                     # Current Coverage group — uses all 6 signals
                     sal_n = min(1.0, _safe_num(s.get("annual_sales_usd",0)) / max_sales) if max_sales > 0 else 0.0
                     lin_n = min(1.0, _safe_num(s.get("lines_per_store",0))  / max_lines) if max_lines > 0 else 0.0
-                    raw = (r_n   * wcc.get("rating",0.20) +
-                           rv_n  * wcc.get("reviews",0.25) +
-                           aff_n * wcc.get("affluence",0.15) +
-                           poi_n * wcc.get("poi",0.15) +
-                           sal_n * wcc.get("sales",0.15) +
-                           lin_n * wcc.get("lines",0.10))
+                    if _data_aware:
+                        # Build a present-signal map. A signal is "present" if its
+                        # underlying raw value is non-zero (rating > 0, reviews > 0,
+                        # etc.). Then renormalise the weights across only those
+                        # present signals so the score is computed on real data.
+                        present = {
+                            "rating":    _safe_num(s.get("rating",0)) > 0,
+                            "reviews":   _safe_num(s.get("review_count",0)) > 0,
+                            "affluence": pl_raw > 0,
+                            "poi":       poi_raw > 0,
+                            "sales":     _safe_num(s.get("annual_sales_usd",0)) > 0,
+                            "lines":     _safe_num(s.get("lines_per_store",0)) > 0,
+                        }
+                        w = {
+                            "rating":    wcc.get("rating",0.20),
+                            "reviews":   wcc.get("reviews",0.25),
+                            "affluence": wcc.get("affluence",0.15),
+                            "poi":       wcc.get("poi",0.15),
+                            "sales":     wcc.get("sales",0.15),
+                            "lines":     wcc.get("lines",0.10),
+                        }
+                        wsum = sum(w[k] for k,p in present.items() if p)
+                        if wsum > 0:
+                            w = {k: (v / wsum if present[k] else 0.0) for k,v in w.items()}
+                        signals = {"rating": r_n, "reviews": rv_n, "affluence": aff_n,
+                                   "poi": poi_n, "sales": sal_n, "lines": lin_n}
+                        raw = sum(signals[k] * w[k] for k in w)
+                    else:
+                        raw = (r_n   * wcc.get("rating",0.20) +
+                               rv_n  * wcc.get("reviews",0.25) +
+                               aff_n * wcc.get("affluence",0.15) +
+                               poi_n * wcc.get("poi",0.15) +
+                               sal_n * wcc.get("sales",0.15) +
+                               lin_n * wcc.get("lines",0.10))
                 else:
                     # Scraped/Gap group — Google signals only
                     raw = (r_n   * wgap.get("rating",0.25) +
                            rv_n  * wgap.get("reviews",0.25) +
                            aff_n * wgap.get("affluence",0.25) +
-
-
-
                            poi_n * wgap.get("poi",0.25))
                 if not math.isfinite(raw): return 0
                 return min(100, max(0, round(raw * 100)))
@@ -5136,6 +5168,20 @@ if st.button("  Run Coverage Agent", type="primary"):
                 return 0
         for s in all_stores:
             s["score"] = _score_store(s)
+        # Surface a status line when data-aware scoring is on so the user
+        # can confirm it activated (silent otherwise — existing markets see
+        # exactly the same UI as today).
+        if bool(st.session_state.get("admin_data_aware_scoring", False)):
+            _da_count = sum(
+                1 for s in all_stores
+                if s.get("source") == "portfolio"
+                and (_safe_num(s.get("rating",0)) == 0 or _safe_num(s.get("review_count",0)) == 0)
+            )
+            if _da_count:
+                status.info(
+                    f"Stage 3/{total_steps} — Data-aware scoring ON: "
+                    f"redistributed weights for {_da_count:,} portfolio rows with missing Google signals."
+                )
         bar.progress(55)
 
         # Stage 4: Gap match
@@ -5813,6 +5859,41 @@ if st.button("  Run Coverage Agent", type="primary"):
                 st.session_state.get("admin_rep_defaults",{}).get("store_select_pct", 60)))
             n_select = max(1, round(len(combined_sorted) * _store_pct / 100))
             priority = combined_sorted[:n_select]
+
+            # Option B — sales bypass safety net.
+            # Auto-include the top X% of portfolio stores by annual_sales_usd
+            # so a high-revenue portfolio store is never dropped just because
+            # its Google score is low. Default OFF — only fires when the
+            # checkbox on Configure → My Team is ticked.
+            _sb_enabled = bool(cfg.get("sales_bypass_enabled",
+                                       st.session_state.get("sales_bypass_enabled", False)))
+            _sb_pct = int(cfg.get("sales_bypass_pct",
+                                  st.session_state.get("sales_bypass_pct", 20)))
+            if _sb_enabled and _sb_pct > 0 and group_cc:
+                def _sales_of(s):
+                    try:
+                        v = s.get("annual_sales_usd", 0)
+                        if v is None: return 0.0
+                        return float(str(v).replace(",","").replace("$","").strip() or 0)
+                    except Exception:
+                        return 0.0
+                _cc_with_sales = [(s, _sales_of(s)) for s in group_cc if _sales_of(s) > 0]
+                if _cc_with_sales:
+                    _cc_with_sales.sort(key=lambda t: t[1], reverse=True)
+                    _n_keep = max(1, round(len(_cc_with_sales) * _sb_pct / 100))
+                    _must_keep = {id(t[0]) for t in _cc_with_sales[:_n_keep]}
+                    _added = 0
+                    _existing_ids = {id(s) for s in priority}
+                    for s in group_cc:
+                        if id(s) in _must_keep and id(s) not in _existing_ids:
+                            priority.append(s)
+                            _added += 1
+                    if _added:
+                        status.info(
+                            f"Stage 5/{total_steps} — Sales bypass ON: "
+                            f"auto-routed {_added:,} additional portfolio stores "
+                            f"(top {_sb_pct}% by annual_sales_usd)."
+                        )
         else:
             # Fixed mode: all scored stores — rep capacity is the constraint
             priority = priority_all

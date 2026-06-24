@@ -311,6 +311,8 @@ def _collect_config_snapshot():
         "region_city_list_cache",
         "direct_accounts", "sf_rules", "region_boundaries",
         "admin_benchmarks", "admin_scoring_weights", "admin_scoring_weights_gap",
+        "admin_data_aware_scoring",
+        "sales_bypass_enabled", "sales_bypass_pct",
         "enrich_all_portfolio", "market_config",
     ]:
         if k in st.session_state:
@@ -1313,6 +1315,38 @@ with tab_team:
         _store_select_pct = st.slider("Top N% of stores included in routing",
             min_value=10, max_value=100, value=60, step=5, key="store_select_pct_input",
             help="Higher = more stores routed, more reps needed. Lower = focus on top stores.")
+
+        # Option B — sales bypass for top portfolio sellers
+        # Safety net: when ticked, top X% of portfolio by annual_sales_usd
+        # are auto-included in routing regardless of score. Catches the case
+        # where a high-revenue portfolio store gets a low score because it
+        # has no Google rating/reviews and would otherwise be dropped at the
+        # priority cut. Default OFF for backward compatibility.
+        st.markdown("**Top-seller safety net (optional)**")
+        _sb_default = bool(st.session_state.get("sales_bypass_enabled", False))
+        _sb_chk = st.checkbox(
+            "Always route top portfolio sellers (bypass priority cut)",
+            value=_sb_default,
+            help=(
+                "When ON, the top X% of portfolio stores by annual_sales_usd "
+                "are auto-included in routing — even if their score is below "
+                "the Top N% cut above. Use this when you have reliable sales "
+                "data and want to guarantee top-selling accounts are visited."
+            ),
+            key="sales_bypass_chk",
+        )
+        st.session_state["sales_bypass_enabled"] = _sb_chk
+        _sb_pct_default = int(st.session_state.get("sales_bypass_pct", 20))
+        _sb_pct = st.slider(
+            "Top % of portfolio by sales to auto-include",
+            min_value=0, max_value=30, value=_sb_pct_default, step=5,
+            key="sales_bypass_pct_slider",
+            disabled=not _sb_chk,
+            help="20% is the most common FMCG distributor setting.",
+        )
+        st.session_state["sales_bypass_pct"] = _sb_pct
+        if not _sb_chk:
+            st.caption("Default: OFF. Existing markets keep their behaviour.")
     else:
         _store_select_pct = 100
 
@@ -1619,6 +1653,8 @@ else:
                 {"rating":25,"reviews":25,"affluence":25,"poi":25}).items()},
             "sf_rules":                st.session_state.get("sf_rules", []),
             "store_select_pct":        _store_select_pct,
+            "sales_bypass_enabled":    bool(st.session_state.get("sales_bypass_enabled", False)),
+            "sales_bypass_pct":        int(st.session_state.get("sales_bypass_pct", 20)),
             "region_boundaries":       st.session_state.get("region_boundaries", {}),
         }
         st.markdown(f"""
