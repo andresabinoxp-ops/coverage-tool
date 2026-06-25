@@ -589,24 +589,42 @@ If after balancing any cluster still exceeds 110% utilisation:
 
 **Daily breakdown (final step):**
 For each rep's territory:
-- Stores are assigned to one of the working days (Mon–Fri × 4 weeks × 2 months)
-- The day-assignment algorithm uses geographic clustering again (k-means with k=22) so each day's stores are spatially clumped
-- Within each day, stores are visit-ordered using **nearest-neighbour route sort** starting from the cluster centroid
+- Stores are assigned to one of the working days within the plan period (Mon–Fri only). With the default 1-month plan that's 22 working days; if the plan stretches to 2 or 3 months it's 22 × plan_period_months.
+- The day-assignment algorithm uses geographic clustering again (k-means with k = working_days_in_plan) so each day's stores are spatially clumped.
+- Within each day, stores are visit-ordered using **nearest-neighbour route sort** starting from the cluster centroid.
 
 ---
 
 ### 12.8 Visit-frequency math
 
-**Plan period:**
-The pipeline uses a **2-month rolling plan** to support fractional visits. If your smallest visits/month is 0.5 (every 2 months) the plan period needs to be at least 2 months to cover one full visit cycle.
+**Plan period is dynamic — driven by the smallest visit frequency in your Visit Playbook:**
+
+```
+min_freq    = smallest visits_per_month across the stores in this run
+plan_period = max(1, round(1 / min_freq)) if min_freq < 1 else 1
+```
+
+| Smallest frequency in the run | plan_period |
+|---|---|
+| ≥ 1 / month (default — every tier visited at least monthly) | **1 month** |
+| 0.5 / month (some tier visited every 2 months) | 2 months |
+| 0.33 / month (some tier visited every 3 months) | 3 months |
+
+So out of the box the plan is **1 month**. It only stretches when you edit the Visit Playbook to give a tier a sub-monthly frequency (e.g. Occasional = 0.5/mo). The status line in Stage 6b prints `Building {plan_period}-month route plan…` so you can always see which value applied.
 
 **Plan visits per store:**
 ```
-plan_visits = round(visits_per_month × plan_period_months)
-            = round(visits_per_month × 2)
+plan_visits = round(visits_per_month × plan_period)
 ```
 
-Example: a Large store at 4 visits/month → 8 plan visits across 2 months.
+Examples with **plan_period = 1** (default):
+- Large at 4 visits/month → 4 plan visits.
+- Medium at 2 visits/month → 2 plan visits.
+- Small at 1 visit/month → 1 plan visit.
+
+Examples with **plan_period = 2** (only if a tier is set to 0.5/mo):
+- Large at 4 visits/month → 8 plan visits across 2 months.
+- Occasional at 0.5 visit/month → 1 plan visit across 2 months.
 
 **Date assignment:**
 For each store, the pipeline picks specific calendar dates within the plan period so that:
