@@ -6536,21 +6536,9 @@ if st.button("  Run Coverage Agent", type="primary"):
             _rep_p30 = _rep_scores[int(len(_rep_scores) * 0.30)] if _rep_scores else 0
 
             def _is_removable(s):
-                """A store can be removed from an overloaded day only if it
-                is NOT Large / portfolio / dedicated-rule / covered AND has
-                coords. In default mode it also has to be far from THIS rep's
-                centroid AND in THIS rep's bottom 30% — that protects markets
-                like Recife/Malaysia/Oman from over-correction when a day is
-                only slightly over.
-
-                In aggressive-rebalance mode that "far AND low" gate is
-                dropped, because in dense single-cluster territories (e.g.
-                Pattaya inside Chon Buri) every store sits close to the
-                centroid by definition — so the strict filter would always
-                return zero candidates and the day would stay overloaded.
-                Pass-2 still applies the geographic check on the destination
-                day, so stores are only moved to weekdays that already hold
-                geographically-close stores."""
+                """A store can be removed only if it is far from THIS rep's
+                centroid AND in THIS rep's bottom 30% of scores AND not Large /
+                portfolio / dedicated-rule / covered."""
                 if s.get("size_tier") == "Large":
                     return False
                 if s.get("source") == "portfolio" or s.get("covered"):
@@ -6559,8 +6547,6 @@ if st.button("  Run Coverage Agent", type="primary"):
                     return False
                 if not s.get("lat") or not s.get("lng"):
                     return False
-                if _adr_on:
-                    return True
                 try:
                     d = haversine_m(float(s["lat"]), float(s["lng"]), _rc_lat, _rc_lng)
                 except (ValueError, TypeError):
