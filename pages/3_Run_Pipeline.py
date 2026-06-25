@@ -6443,18 +6443,7 @@ if st.button("  Run Coverage Agent", type="primary"):
         WEEKDAYS_ENF         = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
         MAX_DAY_ENF          = 550  # full day capacity (exec + travel + break)
         MAX_DAY_THRESHOLD    = MAX_DAY_ENF
-        # Aggressive daily rebalancing — for dense urban markets where a
-        # single day can land hundreds of minutes over budget (e.g. Pattaya
-        # cluster inside Chon Buri). Default cap of 2 removals per day is
-        # tuned for markets where days drift only slightly over (Recife,
-        # Malaysia, Oman). When the Configure → My Team checkbox is ticked
-        # for a dense market, the cap is lifted so the safety net can keep
-        # moving stores across the rep's other weekdays until the day fits.
-        # Visit frequency is preserved (only the weekday changes). Stores
-        # are never dropped by this branch — they're redistributed.
-        _adr_on = bool(cfg.get("aggressive_daily_rebalance",
-                               st.session_state.get("aggressive_daily_rebalance", False)))
-        MAX_REMOVALS_PER_DAY = 100 if _adr_on else 2  # hard ceiling per rep per day
+        MAX_REMOVALS_PER_DAY = 2     # hard ceiling: at most 2 stores removed per rep per day
         NEIGHBOUR_REP_KM     = 50    # cross-rep transfer distance cap
         SAME_DAY_KM_MIN      = 25    # always allow same-day re-route if within 25 km
 
@@ -6697,9 +6686,8 @@ if st.button("  Run Coverage Agent", type="primary"):
                 )
 
         if _enf_moved > 0 or _enf_dropped > 0:
-            _adr_msg = " [aggressive rebalancing ON]" if _adr_on else ""
             status.info(
-                f"Stage 6b — Daily enforcement{_adr_msg}: {_enf_moved} stores moved, "
+                f"Stage 6b — Daily enforcement: {_enf_moved} stores moved, "
                 f"{_enf_dropped} dropped (cap: max {MAX_REMOVALS_PER_DAY} per rep per day)."
             )
 
