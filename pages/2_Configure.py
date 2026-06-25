@@ -313,6 +313,7 @@ def _collect_config_snapshot():
         "admin_benchmarks", "admin_scoring_weights", "admin_scoring_weights_gap",
         "admin_data_aware_scoring",
         "sales_bypass_enabled", "sales_bypass_pct",
+        "aggressive_daily_rebalance",
         "enrich_all_portfolio", "market_config",
     ]:
         if k in st.session_state:
@@ -1347,6 +1348,37 @@ with tab_team:
         st.session_state["sales_bypass_pct"] = _sb_pct
         if not _sb_chk:
             st.caption("Default: OFF. Existing markets keep their behaviour.")
+
+        # Aggressive daily rebalancing — for dense urban markets where one
+        # rep's stores all sit in a tight geographic cluster (e.g. Pattaya
+        # inside Chon Buri, central Bangkok, central Manila). The daily-route
+        # safety net normally removes at most 2 stores per overloaded day —
+        # enough for markets where days drift only slightly over budget.
+        # In hyper-dense single-cluster territories, a single day can land
+        # 800+ minutes over budget — beyond what 2 removals can fix. When
+        # this checkbox is ON, the safety net lifts that 2-per-day cap and
+        # keeps redistributing stores across the same rep's other weekdays
+        # until every day fits. Visit frequency is preserved (a Wednesday
+        # monthly visit becomes a Thursday monthly visit, not a different
+        # week). Default OFF — existing markets are unaffected.
+        st.markdown("**Daily route rebalancing (optional)**")
+        _adr_default = bool(st.session_state.get("aggressive_daily_rebalance", False))
+        _adr_chk = st.checkbox(
+            "Aggressive daily rebalancing (for dense urban markets)",
+            value=_adr_default,
+            help=(
+                "When ON, if a rep's day is over the daily-minutes cap, the "
+                "pipeline redistributes stores across the rep's other "
+                "weekdays until each day fits. Visit frequency stays the same "
+                "— only the weekday moves. Recommended for markets like "
+                "Pattaya (Chon Buri), central Bangkok, central Manila — "
+                "anywhere one rep's territory is geographically very dense."
+            ),
+            key="aggressive_daily_rebalance_chk",
+        )
+        st.session_state["aggressive_daily_rebalance"] = _adr_chk
+        if not _adr_chk:
+            st.caption("Default: OFF. Existing markets keep their behaviour.")
     else:
         _store_select_pct = 100
 
@@ -1655,6 +1687,7 @@ else:
             "store_select_pct":        _store_select_pct,
             "sales_bypass_enabled":    bool(st.session_state.get("sales_bypass_enabled", False)),
             "sales_bypass_pct":        int(st.session_state.get("sales_bypass_pct", 20)),
+            "aggressive_daily_rebalance": bool(st.session_state.get("aggressive_daily_rebalance", False)),
             "region_boundaries":       st.session_state.get("region_boundaries", {}),
         }
         st.markdown(f"""
