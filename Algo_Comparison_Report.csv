@@ -1,0 +1,5 @@
+﻿market,universe_size,with_coords,tier_mix,total_exec_min,total_travel_min_A,total_work_min_A,reps_A_existing,fleet_util_A_pct,total_travel_min_B,total_work_min_B,reps_B_proposed,fleet_util_B_pct,suggested_drops_B,delta_reps,delta_util_pp
+Chon Buri (Thailand),290,290,"{'Large': 175, 'Medium': 115}",38400,8621,47021,5,95.0,8621,47021,7,67.9,0,2,-27.1
+Recife (Brazil),1779,1779,"{'Large': 1450, 'Medium': 329}",280740,7140,287880,30,96.9,7140,287880,42,69.2,0,12,-27.7
+Klang Valley (Malaysia),2534,0,{'Small': 2534},63350,0,63350,7,91.4,0,63350,10,64.0,0,3,-27.4
+Oman,644,644,"{'Large': 550, 'Medium': 94}",104640,116829,221469,23,97.3,116829,221469,32,69.9,0,9,-27.4
