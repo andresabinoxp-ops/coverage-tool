@@ -4891,6 +4891,33 @@ if st.button("  Run Coverage Agent", type="primary"):
                 "petrol","fuel","station","carwash",
             }
 
+            # When the user explicitly scrapes a category, don't let the
+            # relevance filter delete results matching that category. For
+            # example, if "pharmacy" is in the selected categories, the
+            # word "pharmacy" should NOT be an exclusion keyword for this
+            # run — otherwise nearly every result (Boots Pharmacy, X
+            # Pharmacy, etc.) gets dropped right after scraping.
+            _CATEGORY_KEYWORD_CONFLICTS = {
+                "pharmacy":    {"pharmacy", "dispensary"},
+                "gas_station": {"petrol", "fuel", "station", "carwash"},
+                "hospital":    {"hospital", "clinic", "polyclinic"},
+                "bakery":      {"bakery"},
+                "restaurant":  {"restaurant", "cafe", "café", "cafè", "cafeteria",
+                                "eatery", "diner", "bistro", "pizza", "pizzeria",
+                                "burger", "grill"},
+            }
+            _selected_cats = set(cfg.get("categories", []) or [])
+            _excl_lift = set()
+            for _cat in _selected_cats:
+                _excl_lift |= _CATEGORY_KEYWORD_CONFLICTS.get(_cat, set())
+            if _excl_lift:
+                _EXCL_WORDS = _EXCL_WORDS - _excl_lift
+                status.info(
+                    f"Stage 2/{total_steps} — Relevance filter: keeping "
+                    f"{', '.join(sorted(_excl_lift))} results because matching "
+                    f"category was explicitly selected."
+                )
+
             def _is_relevant(store_name):
                 name = str(store_name).strip()
                 if not name or len(name) < 3:
