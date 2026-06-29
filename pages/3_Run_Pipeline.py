@@ -3534,12 +3534,43 @@ else:
                 "convenience_store", "department_store",
                 "food", "store",
             }
+            # Map each user-selected category → the Google type tags that
+            # legitimately match it. When the user explicitly scrapes a
+            # category, places carrying that category's tags must NOT be
+            # filtered out — otherwise the scrape returns nothing useful
+            # (e.g. picking 'pharmacy' but the strong-set was hardcoded
+            # to grocery tags only → nearly every pharmacy got dropped).
+            _CATEGORY_TYPE_MAP = {
+                "supermarket":           {"supermarket"},
+                "grocery_or_supermarket":{"grocery_or_supermarket"},
+                "convenience_store":     {"convenience_store"},
+                "hypermarket":           {"supermarket","grocery_or_supermarket","department_store"},
+                "pharmacy":              {"pharmacy","drugstore"},
+                "gas_station":           {"gas_station"},
+                "liquor_store":          {"liquor_store"},
+                "dollar_store":          {"store","variety_store"},
+                "variety_store":         {"variety_store","store"},
+                "department_store":      {"department_store"},
+                "bakery":                {"bakery"},
+            }
+            # Build the strong-set dynamically from the user's selection.
+            # Default (grocery focus) stays as the original hardcoded set
+            # when no categories are provided.
+            _selected_cats_b = set(cfg.get("categories", []) or [])
+            _dynamic_strong  = set()
+            for _c in _selected_cats_b:
+                _dynamic_strong |= _CATEGORY_TYPE_MAP.get(_c, {_c})
+            if not _dynamic_strong:
+                _dynamic_strong = {"supermarket","grocery_or_supermarket",
+                                   "convenience_store","department_store"}
+
             def _is_grocery_by_types(place_types):
-                """True only if Google tags this place with a grocery/retail type."""
+                """True only if Google tags this place with one of the types
+                that match the user-selected categories. The function name is
+                legacy — it actually checks 'matches the user's category
+                selection', not specifically grocery."""
                 ts = set(place_types)
-                # Must have supermarket, grocery, convenience, or department_store
-                strong = {"supermarket","grocery_or_supermarket","convenience_store","department_store"}
-                return bool(ts & strong)
+                return bool(ts & _dynamic_strong)
 
             # Choose scrape geometry: rectangle bbox (default) or city-anchored
             _scrape_mode_b = st.session_state.get("scrape_mode", "rectangle")
